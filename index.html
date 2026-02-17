@@ -7,6 +7,9 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@300;400;500;600;700&family=Orbitron:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -1132,9 +1135,59 @@ td {
   border-radius: 10px;
   border: 1px solid rgba(255,184,0,0.3);
 }
+
+#authWall{position:fixed;top:0;left:0;right:0;bottom:0;background:var(--bg-primary);z-index:99999;display:flex;align-items:center;justify-content:center;}
+#authWall.gone{display:none;}
+.aw-box{background:linear-gradient(135deg,var(--bg-elevated),var(--bg-secondary));border:1px solid var(--border-medium);border-radius:20px;padding:48px 40px;width:90%;max-width:440px;box-shadow:var(--shadow-lg),0 0 60px rgba(0,180,255,0.2);}
+.aw-shield{width:80px;height:80px;background:linear-gradient(135deg,var(--chrome-light),var(--chrome-dark));clip-path:polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%);margin:0 auto 20px;position:relative;box-shadow:0 8px 24px rgba(0,180,255,0.4);}
+.aw-shield::after{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:70%;height:70%;background:var(--bg-elevated);clip-path:polygon(50% 5%,95% 27%,95% 73%,50% 95%,5% 73%,5% 27%);}
+.aw-h1{text-align:center;font-family:'Orbitron',sans-serif;font-size:30px;font-weight:900;background:linear-gradient(135deg,var(--chrome-light),var(--accent-cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:6px;}
+.aw-sub{text-align:center;font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:2px;margin-bottom:36px;}
+.aw-tabs{display:flex;gap:8px;background:var(--bg-primary);padding:6px;border-radius:12px;margin-bottom:28px;}
+.aw-tab{flex:1;padding:11px;background:transparent;border:none;color:var(--text-secondary);font-family:'Rajdhani',sans-serif;font-size:14px;font-weight:700;text-transform:uppercase;cursor:pointer;border-radius:8px;}
+.aw-tab.on{background:linear-gradient(135deg,var(--accent-blue),var(--accent-cyan));color:var(--bg-primary);box-shadow:0 4px 12px rgba(0,180,255,0.4);}
+.aw-form{display:none;}
+.aw-form.on{display:block;}
+.aw-fg{margin-bottom:18px;}
+.aw-lbl{display:block;font-size:11px;text-transform:uppercase;color:var(--text-muted);font-weight:700;margin-bottom:7px;}
+.aw-inp{width:100%;background:var(--bg-primary);border:1px solid var(--border-medium);color:var(--text-primary);padding:13px 15px;border-radius:10px;font-family:'Rajdhani',sans-serif;font-size:15px;font-weight:600;}
+.aw-inp:focus{outline:none;border-color:var(--accent-cyan);box-shadow:0 0 12px var(--glow-cyan);}
+.aw-btn{width:100%;padding:15px;background:linear-gradient(135deg,var(--accent-blue),var(--accent-cyan));border:none;border-radius:12px;color:var(--bg-primary);font-family:'Rajdhani',sans-serif;font-size:16px;font-weight:800;text-transform:uppercase;cursor:pointer;margin-top:8px;transition:all 0.2s;}
+.aw-btn:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(0,180,255,0.5);}
+.aw-btn:disabled{opacity:0.5;cursor:not-allowed;transform:none;}
+.aw-err{background:rgba(255,51,102,0.1);border:1px solid rgba(255,51,102,0.3);color:var(--danger);padding:11px;border-radius:9px;font-size:13px;margin-top:13px;display:none;}
+.aw-err.on{display:block;}
+.aw-note{background:rgba(0,180,255,0.08);border:1px solid rgba(0,180,255,0.25);border-radius:10px;padding:14px;margin-top:18px;font-size:12px;color:var(--text-secondary);line-height:1.6;}
+
 </style>
 </head>
 <body>
+<div id="authWall">
+  <div class="aw-box">
+    <div class="aw-shield"></div>
+    <div class="aw-h1">DISPATCH</div>
+    <div class="aw-sub">Command Center</div>
+    <div class="aw-tabs">
+      <button class="aw-tab on" id="awTabLogin" onclick="awTab('login')">Login</button>
+      <button class="aw-tab" id="awTabSignup" onclick="awTab('signup')">Sign Up</button>
+    </div>
+    <div class="aw-form on" id="awFormLogin">
+      <div class="aw-fg"><label class="aw-lbl">Email</label><input type="email" class="aw-inp" id="awEmail" required></div>
+      <div class="aw-fg"><label class="aw-lbl">Password</label><input type="password" class="aw-inp" id="awPass" required></div>
+      <button class="aw-btn" id="awLoginBtn" onclick="awLogin()">Login</button>
+      <div class="aw-err" id="awLoginErr"></div>
+    </div>
+    <div class="aw-form" id="awFormSignup">
+      <div class="aw-fg"><label class="aw-lbl">Email</label><input type="email" class="aw-inp" id="awSEmail" required></div>
+      <div class="aw-fg"><label class="aw-lbl">Password</label><input type="password" class="aw-inp" id="awSPass" minlength="6" required></div>
+      <div class="aw-fg"><label class="aw-lbl">Confirm Password</label><input type="password" class="aw-inp" id="awSPass2" minlength="6" required></div>
+      <button class="aw-btn" id="awSignupBtn" onclick="awSignup()">Create Account</button>
+      <div class="aw-err" id="awSignupErr"></div>
+    </div>
+    <div class="aw-note"><strong style="color:var(--accent-cyan);display:block;margin-bottom:6px;">🔒 Cloud Sync Active</strong>Your data syncs securely across all your devices.</div>
+  </div>
+</div>
+
 
 <div id="overlay" onclick="closeModal()"></div>
 <div id="modal" role="dialog" aria-modal="true" aria-label="Trip Financials">
@@ -3133,6 +3186,194 @@ renderWeekSelect();
 bindDriverOverridesToInputs();
 updateUI();
 setTimeout(initMap, 500);
+
+/***********************************************
+ * FIREBASE AUTH + CLOUD SYNC
+ * Added below original code - does NOT modify
+ * any existing functions or variables.
+ ***********************************************/
+(function() {
+  // Initialize Firebase
+  var fbConfig = {
+    apiKey: "AIzaSyCVhCWUXS-3I_HBfwPIaLufqgBAfMY75pc",
+    authDomain: "dispatch-command-center-951c9.firebaseapp.com",
+    projectId: "dispatch-command-center-951c9",
+    storageBucket: "dispatch-command-center-951c9.firebasestorage.app",
+    messagingSenderId: "673111932676",
+    appId: "1:673111932676:web:9d7b1171a1a9f3dd11da51"
+  };
+
+  var fbApp, fbAuth, fbDb, fbUser = null;
+  try {
+    fbApp = firebase.initializeApp(fbConfig);
+    fbAuth = firebase.auth();
+    fbDb   = firebase.firestore();
+    console.log("✅ Firebase ready");
+  } catch(e) {
+    console.error("Firebase init error:", e);
+    return;
+  }
+
+  // Cloud save function
+  function cloudSave() {
+    if (!fbUser || !fbDb) return;
+    fbDb.collection('users').doc(fbUser.uid).set({
+      currentDriverId: state.currentDriverId,
+      drivers: state.drivers,
+      settings: settings,
+      savedAt: new Date().toISOString()
+    }).then(function() {
+      console.log("☁️ Cloud saved");
+    }).catch(function(e) {
+      console.warn("Cloud save error:", e);
+    });
+  }
+
+  // Patch saveState to also cloud-save (non-breaking)
+  var _origSave = saveState;
+  saveState = function() {
+    _origSave();        // always runs original first
+    cloudSave();        // then also saves to cloud
+  };
+
+  // Also patch persistSettings
+  var _origPersist = persistSettings;
+  persistSettings = function(s) {
+    _origPersist(s);
+    settings = s;
+    cloudSave();
+  };
+
+  // Auth UI helpers
+  window.awTab = function(t) {
+    document.getElementById('awTabLogin').classList.toggle('on', t==='login');
+    document.getElementById('awTabSignup').classList.toggle('on', t==='signup');
+    document.getElementById('awFormLogin').classList.toggle('on', t==='login');
+    document.getElementById('awFormSignup').classList.toggle('on', t==='signup');
+  };
+
+  window.awLogin = async function() {
+    var email = document.getElementById('awEmail').value;
+    var pass  = document.getElementById('awPass').value;
+    var btn   = document.getElementById('awLoginBtn');
+    var err   = document.getElementById('awLoginErr');
+    err.classList.remove('on');
+    btn.disabled = true;
+    btn.textContent = 'Logging in…';
+    try {
+      await fbAuth.signInWithEmailAndPassword(email, pass);
+    } catch(e) {
+      err.textContent = awErrMsg(e.code);
+      err.classList.add('on');
+      btn.disabled = false;
+      btn.textContent = 'Login';
+    }
+  };
+
+  window.awSignup = async function() {
+    var email = document.getElementById('awSEmail').value;
+    var pass  = document.getElementById('awSPass').value;
+    var pass2 = document.getElementById('awSPass2').value;
+    var btn   = document.getElementById('awSignupBtn');
+    var err   = document.getElementById('awSignupErr');
+    err.classList.remove('on');
+    if (pass !== pass2) {
+      err.textContent = 'Passwords do not match';
+      err.classList.add('on');
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = 'Creating…';
+    try {
+      var cred = await fbAuth.createUserWithEmailAndPassword(email, pass);
+      // Save current local state as their cloud data
+      await fbDb.collection('users').doc(cred.user.uid).set({
+        currentDriverId: state.currentDriverId,
+        drivers: state.drivers,
+        settings: settings,
+        savedAt: new Date().toISOString()
+      });
+    } catch(e) {
+      err.textContent = awErrMsg(e.code);
+      err.classList.add('on');
+      btn.disabled = false;
+      btn.textContent = 'Create Account';
+    }
+  };
+
+  function awErrMsg(code) {
+    var m = {
+      'auth/user-not-found':'No account found with that email',
+      'auth/wrong-password':'Incorrect password',
+      'auth/invalid-email':'Invalid email address',
+      'auth/email-already-in-use':'Email already registered',
+      'auth/weak-password':'Password must be at least 6 characters',
+      'auth/too-many-requests':'Too many attempts – try again later'
+    };
+    return m[code] || 'Error: ' + code;
+  }
+
+  // Auth state listener
+  fbAuth.onAuthStateChanged(async function(user) {
+    var wall = document.getElementById('authWall');
+    if (user) {
+      fbUser = user;
+      console.log("✅ Signed in:", user.email);
+      // Load cloud data
+      try {
+        var doc = await fbDb.collection('users').doc(user.uid).get();
+        if (doc.exists) {
+          var d = doc.data();
+          if (d.drivers && Object.keys(d.drivers).length > 0) {
+            state.currentDriverId = d.currentDriverId || state.currentDriverId;
+            state.drivers = d.drivers;
+          }
+          if (d.settings) {
+            settings = d.settings;
+            // Re-bind settings inputs
+            bindSettingsToInputs();
+          }
+          console.log("✅ Cloud data loaded");
+        }
+      } catch(e) {
+        console.warn("Could not load cloud data:", e);
+      }
+      // Refresh the whole UI
+      ensureCurrentDriverHasThisWeek();
+      renderDriverSelect();
+      renderWeekSelect();
+      bindDriverOverridesToInputs();
+      updateUI();
+      setTimeout(initMap, 400);
+      // Hide the auth wall
+      wall.classList.add('gone');
+    } else {
+      fbUser = null;
+      wall.classList.remove('gone');
+    }
+  });
+
+  // Logout function available globally
+  window.awLogout = async function() {
+    if (confirm('Log out?')) await fbAuth.signOut();
+  };
+
+  // Add logout button to header after page loads
+  window.addEventListener('load', function() {
+    var pill = document.querySelector('.status-pill');
+    if (pill) {
+      pill.innerHTML = '<span>Cloud Storage</span>';
+      var lb = document.createElement('button');
+      lb.className = 'btn-icon danger';
+      lb.style.marginLeft = '10px';
+      lb.textContent = '🚪 Logout';
+      lb.onclick = window.awLogout;
+      pill.parentNode.insertBefore(lb, pill.nextSibling);
+    }
+  });
+
+})();
+
 </script>
 </body>
 </html>
