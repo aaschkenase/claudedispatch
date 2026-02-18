@@ -1237,7 +1237,7 @@ td {
       </button>
       
       <div class="status-pill no-print">
-        <span>Local Storage</span>
+        <span>Cloud Storage</span>
       </div>
     </div>
     
@@ -1372,7 +1372,7 @@ td {
             <button class="btn-primary" onclick="addLoad()">Add Load to Week</button>
 
             <div class="hint-text">
-              Tip: Each driver can have their own split % configured in Settings → Driver Overrides
+              Tip: Each driver can have their own split % and target net configured in Settings → Driver Overrides
             </div>
           </div>
         </div>
@@ -1680,7 +1680,7 @@ td {
             </div>
             <div class="input-row">
               <div class="input-group">
-                <label>Target Net / Week</label>
+                <label>Default Target Net / Week</label>
                 <input id="s_target_net" type="number" inputmode="decimal" min="0" step="0.01">
               </div>
             </div>
@@ -1692,7 +1692,7 @@ td {
             </div>
             <button class="btn-primary no-print" onclick="saveSettings()">Save Global Settings</button>
             <div class="hint-text">
-              Global split is the default. You can override split per driver below.
+              Global split and target net are defaults. You can override per driver below.
             </div>
           </div>
         </div>
@@ -1706,9 +1706,16 @@ td {
                 <input id="d_split" type="number" inputmode="decimal" min="0" max="1" step="0.01" />
               </div>
             </div>
+            <div class="input-row">
+              <div class="input-group">
+                <label>Target Net / Week for this driver</label>
+                <input id="d_target_net" type="number" inputmode="decimal" min="0" step="0.01" />
+              </div>
+            </div>
             <button class="btn-primary no-print" onclick="saveDriverOverrides()">Save Driver Override</button>
             <div class="hint-text">
-              Example: 0.80 (80%), 0.88 (88%). This affects new loads + company cut analytics. Existing loads keep their saved split.
+              Example split: 0.80 (80%), 0.88 (88%). This affects new loads + company cut analytics. Existing loads keep their saved split.<br/>
+              Target net: Set a specific weekly goal for this driver (e.g., 1500, 2000). Leave blank to use global default.
             </div>
           </div>
         </div>
@@ -1716,7 +1723,7 @@ td {
     </div>
 
     <div class="hint-text" style="margin-top: 20px;">
-      Privacy: this tool stores data in your browser (local). Use "Factory Reset" if you're switching phones/devices.
+      Privacy: this tool stores data in the cloud (Firebase). All users with login credentials share the same company data.
     </div>
   </div>
 </div>
@@ -1807,6 +1814,7 @@ function migrateOrCreateState(){
       [driverId]: {
         name: "Driver 1",
         splitOverride: null,
+        targetNetOverride: null,
         currentWeekId: baseId,
         weeks: {
           [baseId]: {
@@ -1892,6 +1900,13 @@ function getDriverSplit(driver){
   return s.split;
 }
 
+function getDriverTargetNet(driver){
+  const s = getSpecs();
+  const ov = Number(driver?.targetNetOverride);
+  if (Number.isFinite(ov) && ov >= 0) return ov;
+  return s.targetNet;
+}
+
 /************************* 
  * NAV 
  *************************/
@@ -1940,6 +1955,7 @@ function addDriver(){
   state.drivers[id] = {
     name: name.trim(),
     splitOverride: null,
+    targetNetOverride: null,
     currentWeekId: baseId,
     weeks: {
       [baseId]: {
@@ -1962,7 +1978,7 @@ function addDriver(){
 
 function removeDriver(){
   const d = getDriver();
-  if (!confirm(`Remove driver "${d.name}" and all their data on THIS device?`)) return;
+  if (!confirm(`Remove driver "${d.name}" and all their data?`)) return;
   
   const ids = Object.keys(state.drivers);
   if (ids.length <= 1) return alert("You must keep at least one driver.");
@@ -2115,26 +2131,38 @@ function saveSettings(){
   
   settings = { ...defaultSettings, ...s };
   persistSettings(settings);
-  alert("Global settings saved on this device.");
+  alert("Global settings saved.");
   updateUI();
 }
 
 function bindDriverOverridesToInputs(){
   const d = getDriver();
-  const el = document.getElementById("d_split");
-  const val = Number(d.splitOverride);
-  el.value = (Number.isFinite(val) ? val : getSpecs().split);
+  const s = getSpecs();
+  
+  const splitEl = document.getElementById("d_split");
+  const splitVal = Number(d.splitOverride);
+  splitEl.value = (Number.isFinite(splitVal) ? splitVal : s.split);
+  
+  const targetEl = document.getElementById("d_target_net");
+  const targetVal = Number(d.targetNetOverride);
+  targetEl.value = (Number.isFinite(targetVal) ? targetVal : "");
+  targetEl.placeholder = `Default: ${s.targetNet}`;
 }
 
 function saveDriverOverrides(){
   const d = getDriver();
-  const v = parseFloat(document.getElementById("d_split").value);
-  if (!(Number.isFinite(v) && v > 0 && v < 1.00001)) 
+  
+  const splitVal = parseFloat(document.getElementById("d_split").value);
+  if (!(Number.isFinite(splitVal) && splitVal > 0 && splitVal < 1.00001)) 
     return alert("Enter a valid split like 0.80 or 0.88.");
   
-  d.splitOverride = v;
+  const targetVal = parseFloat(document.getElementById("d_target_net").value);
+  
+  d.splitOverride = splitVal;
+  d.targetNetOverride = (Number.isFinite(targetVal) && targetVal >= 0) ? targetVal : null;
+  
   saveState();
-  alert("Driver split override saved.");
+  alert("Driver overrides saved.");
   updateUI();
 }
 
@@ -2233,15 +2261,16 @@ function preview(){
 }
 
 function updateWarnBanner(){
-  const s = getSpecs();
+  const driver = getDriver();
+  const targetNet = getDriverTargetNet(driver);
   const wk = getCurrentWeek();
   const t = computeWeekTotals(wk);
   const warn = document.getElementById("warn");
   
-  if (wk.loads.length > 0 && t.net < s.targetNet) {
-    const gap = s.targetNet - t.net;
+  if (wk.loads.length > 0 && t.net < targetNet) {
+    const gap = targetNet - t.net;
     warn.style.display = "block";
-    warn.innerHTML = `⚠️ Target not met for <b>${escapeHtml(getDriver().name)}</b>: goal <b>${money(s.targetNet)}</b> • currently <b>${money(t.net)}</b> • gap <b>${money(gap)}</b>.`;
+    warn.innerHTML = `⚠️ Target not met for <b>${escapeHtml(driver.name)}</b>: goal <b>${money(targetNet)}</b> • currently <b>${money(t.net)}</b> • gap <b>${money(gap)}</b>.`;
   } else {
     warn.style.display = "none";
     warn.innerHTML = "";
@@ -2803,7 +2832,7 @@ function swapCities(){
 async function copySummary(){
   const d = getDriver();
   const wk = getCurrentWeek();
-  const s = getSpecs();
+  const targetNet = getDriverTargetNet(d);
   const t = computeWeekTotals(wk);
   const split = getDriverSplit(d);
   
@@ -2819,7 +2848,7 @@ Miles: ${t.miles.toLocaleString()}
 Net: ${money(t.net)}
 Gross RPM: ${money(t.miles>0 ? t.gross/t.miles : 0)}
 
-Target: ${money(s.targetNet)} (${t.net>=s.targetNet ? "MET ✅" : "SHORT ❌ by " + money(s.targetNet - t.net)})`;
+Target: ${money(targetNet)} (${t.net>=targetNet ? "MET ✅" : "SHORT ❌ by " + money(targetNet - t.net)})`;
   
   try{
     await navigator.clipboard.writeText(summary);
@@ -3136,7 +3165,7 @@ function updateUI(){
  * FACTORY RESET 
  *************************/
 function factoryReset(){
-  if (!confirm("Factory reset clears ALL drivers + weeks + loads + settings on this device. Continue?")) return;
+  if (!confirm("Factory reset clears ALL drivers + weeks + loads + settings. Continue?")) return;
   
   localStorage.removeItem(STORE_KEY);
   localStorage.removeItem(SETTINGS_KEY);
@@ -3188,9 +3217,8 @@ updateUI();
 setTimeout(initMap, 500);
 
 /***********************************************
- * FIREBASE AUTH + CLOUD SYNC
- * Added below original code - does NOT modify
- * any existing functions or variables.
+ * FIREBASE AUTH + CLOUD SYNC (SEPARATE ACCOUNTS)
+ * Each user has their own drivers and data
  ***********************************************/
 (function() {
   // Initialize Firebase
@@ -3204,6 +3232,7 @@ setTimeout(initMap, 500);
   };
 
   var fbApp, fbAuth, fbDb, fbUser = null;
+  
   try {
     fbApp = firebase.initializeApp(fbConfig);
     fbAuth = firebase.auth();
@@ -3214,7 +3243,7 @@ setTimeout(initMap, 500);
     return;
   }
 
-  // Cloud save function
+  // Cloud save function - saves to user's own document (separate accounts)
   function cloudSave() {
     if (!fbUser || !fbDb) return;
     fbDb.collection('users').doc(fbUser.uid).set({
@@ -3286,7 +3315,7 @@ setTimeout(initMap, 500);
     btn.textContent = 'Creating…';
     try {
       var cred = await fbAuth.createUserWithEmailAndPassword(email, pass);
-      // Save current local state as their cloud data
+      // Save current local state as their own cloud data
       await fbDb.collection('users').doc(cred.user.uid).set({
         currentDriverId: state.currentDriverId,
         drivers: state.drivers,
@@ -3313,13 +3342,13 @@ setTimeout(initMap, 500);
     return m[code] || 'Error: ' + code;
   }
 
-  // Auth state listener
+  // Auth state listener - loads SHARED company data
   fbAuth.onAuthStateChanged(async function(user) {
     var wall = document.getElementById('authWall');
     if (user) {
       fbUser = user;
       console.log("✅ Signed in:", user.email);
-      // Load cloud data
+      // Load user's own cloud data
       try {
         var doc = await fbDb.collection('users').doc(user.uid).get();
         if (doc.exists) {
@@ -3330,7 +3359,6 @@ setTimeout(initMap, 500);
           }
           if (d.settings) {
             settings = d.settings;
-            // Re-bind settings inputs
             bindSettingsToInputs();
           }
           console.log("✅ Cloud data loaded");
@@ -3353,12 +3381,12 @@ setTimeout(initMap, 500);
     }
   });
 
-  // Logout function available globally
+  // Logout function
   window.awLogout = async function() {
     if (confirm('Log out?')) await fbAuth.signOut();
   };
 
-  // Add logout button to header after page loads
+  // Add logout button to header
   window.addEventListener('load', function() {
     var pill = document.querySelector('.status-pill');
     if (pill) {
