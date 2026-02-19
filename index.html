@@ -1228,10 +1228,6 @@ td {
         <select id="weekSelect" onchange="onWeekChange()"></select>
       </div>
       
-      <button class="btn-icon" onclick="startNewWeek()">
-        <span>➕</span> New Week
-      </button>
-      
       <button class="btn-icon danger" onclick="resetCurrentWeek()">
         <span>🧹</span> Clear Week
       </button>
@@ -1251,6 +1247,7 @@ td {
     <button class="nav-tab" onclick="showTab('dispatch', this)">Dispatch View</button>
     <button class="nav-tab active" onclick="showTab('dashboard', this)">Dashboard</button>
     <button class="nav-tab" onclick="showTab('analytics', this)">Analytics</button>
+    <button class="nav-tab" onclick="showTab('calendar', this)">📅 Calendar</button>
     <button class="nav-tab" onclick="showTab('companycut', this)">Company Cut</button>
     <button class="nav-tab" onclick="showTab('settings', this)">Settings</button>
   </nav>
@@ -1323,6 +1320,14 @@ td {
         <div class="card no-print">
           <div class="card-header">New Trip Entry</div>
           <div class="card-body">
+            <!-- RECENT LOADS -->
+            <div class="input-group" style="margin-bottom: 12px;">
+              <label>📋 Recent Loads (Quick Select)</label>
+              <select id="recentLoads" onchange="fillFromRecentLoad()" style="font-size: 13px;">
+                <option value="">-- Select a recent route --</option>
+              </select>
+            </div>
+
             <div class="input-row">
               <div class="input-group">
                 <label>Pickup Location</label>
@@ -1333,6 +1338,55 @@ td {
                 <input id="dest" placeholder="City, State" autocomplete="off" />
               </div>
             </div>
+
+            <!-- DAY PICKERS -->
+            <div class="input-row">
+              <div class="input-group">
+                <label>Pickup Day</label>
+                <select id="pickup_day">
+                  <option value="">Select day...</option>
+                  <option value="Monday">Monday</option>
+                  <option value="Tuesday">Tuesday</option>
+                  <option value="Wednesday">Wednesday</option>
+                  <option value="Thursday">Thursday</option>
+                  <option value="Friday">Friday</option>
+                  <option value="Saturday">Saturday</option>
+                  <option value="Sunday">Sunday</option>
+                </select>
+              </div>
+              <div class="input-group">
+                <label>Delivery Day</label>
+                <select id="delivery_day">
+                  <option value="">Select day...</option>
+                  <option value="Monday">Monday</option>
+                  <option value="Tuesday">Tuesday</option>
+                  <option value="Wednesday">Wednesday</option>
+                  <option value="Thursday">Thursday</option>
+                  <option value="Friday">Friday</option>
+                  <option value="Saturday">Saturday</option>
+                  <option value="Sunday">Sunday</option>
+                  <option value="Next Monday" style="background: rgba(255,184,0,0.2); font-weight: 700;">📅 Next Monday (Next Week)</option>
+                </select>
+              </div>
+            </div>
+            
+            <div class="hint-text" style="font-size: 12px; margin-top: 8px; color: var(--text-muted);">
+              💡 Select "Next Monday" for loads that pick up this week but deliver next week. Revenue will count toward next week.
+            </div>
+
+            <!-- MULTI-STOP SECTION -->
+            <div id="multiStopSection" style="display: none; margin: 16px 0; padding: 16px; background: rgba(0,180,255,0.05); border: 1px solid var(--border-medium); border-radius: 10px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <div style="font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-primary);">
+                  🚛 Additional Stops
+                </div>
+                <button onclick="closeMultiStop()" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 18px; padding: 4px 8px;">✕</button>
+              </div>
+              <div id="stopsList"></div>
+              <button class="btn-tool" onclick="addStop()" style="margin-top: 8px;">➕ Add Another Stop</button>
+            </div>
+
+            <button class="btn-tool" onclick="openMultiStop()" id="multiStopBtn" style="margin-bottom: 12px;">🚛 Multi-Stop Load</button>
 
             <div class="tool-buttons">
               <button class="btn-tool" onclick="calcRoute()">📡 Get Miles</button>
@@ -1539,8 +1593,26 @@ td {
     <div class="quick-actions no-print" style="margin-top: 20px;">
       <button class="btn-icon" onclick="exportCSV('ytd')">⬇️ Export YTD CSV</button>
       <button class="btn-icon" onclick="printDriverYTD()">🖨️ Print YTD</button>
+      <button class="btn-icon" onclick="closeAllWeeks()" style="background: var(--warning); color: #000;">🔒 Close Week for All Drivers</button>
+      <button class="btn-icon" onclick="undoCloseWeek()" style="background: rgba(255,136,0,0.2); color: var(--warning);">↩️ Undo Close Week</button>
       <button class="btn-icon danger" onclick="factoryReset()">🔥 Factory Reset</button>
     </div>
+  </div>
+
+  <!-- CALENDAR TAB -->
+  <div id="calendar" class="tab-content">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+      <h2 style="font-size: 24px; font-weight: 700; color: var(--text-primary);">
+        Week of <span id="cal_week_label"></span>
+      </h2>
+      <div style="display: flex; gap: 12px;">
+        <button class="btn-tool" onclick="calPrevWeek()">← Prev</button>
+        <button class="btn-tool" onclick="calThisWeek()">This Week</button>
+        <button class="btn-tool" onclick="calNextWeek()">Next →</button>
+      </div>
+    </div>
+    
+    <div id="calendar_content"></div>
   </div>
 
   <!-- COMPANY CUT TAB -->
@@ -1714,19 +1786,87 @@ td {
             <div class="input-row">
               <div class="input-group">
                 <label>Split % for this driver</label>
-                <input id="d_split" type="number" inputmode="decimal" min="0" max="1" step="0.01" />
+                <input id="d_split" type="number" inputmode="decimal" min="0" max="1" step="0.01" onfocus="this.dataset.editing='true'" onblur="this.dataset.editing='false'" />
               </div>
             </div>
             <div class="input-row">
               <div class="input-group">
                 <label>Target Net / Week for this driver</label>
-                <input id="d_target_net" type="number" inputmode="decimal" min="0" step="0.01" />
+                <input id="d_target_net" type="number" inputmode="decimal" min="0" step="0.01" onfocus="this.dataset.editing='true'" onblur="this.dataset.editing='false'" />
+              </div>
+            </div>
+            <div class="input-row">
+              <div class="input-group">
+                <label>Miles Per Day Capacity</label>
+                <input id="d_miles_per_day" type="number" inputmode="numeric" min="400" max="800" step="50" onfocus="this.dataset.editing='true'" onblur="this.dataset.editing='false'" placeholder="600" />
               </div>
             </div>
             <button class="btn-primary no-print" onclick="saveDriverOverrides()">Save Driver Override</button>
             <div class="hint-text">
               Example split: 0.80 (80%), 0.88 (88%). This affects new loads + company cut analytics. Existing loads keep their saved split.<br/>
-              Target net: Set a specific weekly goal for this driver (e.g., 1500, 2000). Leave blank to use global default.
+              Target net: Set a specific weekly goal for this driver (e.g., 1500, 2000). Leave blank to use global default.<br/>
+              Miles/day: How many miles this driver can realistically drive per day (default: 600). Used in Load Analyzer.
+            </div>
+          </div>
+        </div>
+
+        <!-- DRIVER STATUS -->
+        <div class="card">
+          <div class="card-header">Driver Status (Selected Driver)</div>
+          <div class="card-body">
+            <div class="input-row">
+              <div class="input-group">
+                <label>Current Status</label>
+                <div style="display: flex; gap: 16px; margin-top: 8px;">
+                  <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="radio" name="driver_status" value="active" checked onchange="updateDriverStatusUI()">
+                    <span>✅ Active</span>
+                  </label>
+                  <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="radio" name="driver_status" value="paused" onchange="updateDriverStatusUI()">
+                    <span>⏸️ Paused</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div id="pauseReasonSection" style="display: none; margin-top: 16px;">
+              <div class="input-row">
+                <div class="input-group">
+                  <label>Reason for Pause</label>
+                  <select id="pause_reason" onchange="updateDriverStatusUI()">
+                    <option value="">Select reason...</option>
+                    <option value="sick">🏥 Sick</option>
+                    <option value="home_time">🏠 Home Time</option>
+                    <option value="vacation">🌴 Vacation</option>
+                    <option value="repairs">🔧 Repairs</option>
+                    <option value="other">📝 Other</option>
+                  </select>
+                </div>
+              </div>
+
+              <div id="pauseNoteSection" style="display: none; margin-top: 12px;">
+                <div class="input-group">
+                  <label>Custom Note</label>
+                  <input id="pause_note" type="text" placeholder="Enter reason..." />
+                </div>
+              </div>
+
+              <div id="pausedSince" style="margin-top: 12px; font-size: 13px; color: var(--text-muted);"></div>
+            </div>
+
+            <button class="btn-primary no-print" onclick="saveDriverStatus()">Save Driver Status</button>
+
+            <!-- PAUSE HISTORY -->
+            <div id="pauseHistory" style="margin-top: 20px; display: none;">
+              <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 8px;">
+                Status History
+              </div>
+              <div id="pauseHistoryList" style="max-height: 150px; overflow-y: auto;"></div>
+            </div>
+
+            <div class="hint-text" style="margin-top: 12px;">
+              Paused drivers will show a warning when you try to add loads. Adding a load automatically resumes the driver.
             </div>
           </div>
         </div>
@@ -1930,6 +2070,14 @@ function showTab(id, btn){
   if (id === "dashboard") setTimeout(initMap, 200);
   if (id === "analytics") setTimeout(renderWeeklyChart, 200);
   if (id === "dispatch") setTimeout(()=>{ renderDispatchView(); initDispatchMap(); }, 200);
+  if (id === "calendar") {
+    calendarWeekStart = null; // Reset to show driver's current week
+    setTimeout(renderCalendar, 200);
+  }
+  if (id === "settings") {
+    bindDriverStatusToInputs();
+    bindDriverOverridesToInputs();
+  }
 }
 
 /************************* 
@@ -1941,16 +2089,29 @@ function renderDriverSelect(){
   sel.innerHTML = ids.map(id => {
     const d = state.drivers[id];
     const selected = (id === state.currentDriverId) ? "selected" : "";
-    return `<option value="${id}" ${selected}>${escapeHtml(d.name)}</option>`;
+    
+    // Status badge
+    let statusBadge = '';
+    if (d.status === 'paused') {
+      const emoji = d.pauseReason === 'sick' ? '🏥' :
+                    d.pauseReason === 'home_time' ? '🏠' :
+                    d.pauseReason === 'vacation' ? '🌴' :
+                    d.pauseReason === 'repairs' ? '🔧' : '⏸️';
+      statusBadge = ` ${emoji}`;
+    }
+    
+    return `<option value="${id}" ${selected}>${escapeHtml(d.name)}${statusBadge}</option>`;
   }).join("");
 }
 
 function onDriverChange(){
   const sel = document.getElementById("driverSelect");
   state.currentDriverId = sel.value;
+  calendarWeekStart = null; // Reset calendar to show new driver's current week
   saveState();
   renderWeekSelect();
   bindDriverOverridesToInputs();
+  bindDriverStatusToInputs();
   updateUI();
   setTimeout(initMap, 150);
 }
@@ -1967,6 +2128,11 @@ function addDriver(){
     name: name.trim(),
     splitOverride: null,
     targetNetOverride: null,
+    status: 'active', // 'active' or 'paused'
+    pauseReason: null, // 'sick', 'home_time', 'vacation', 'repairs', 'other'
+    pauseNote: null, // custom note for 'other'
+    pausedAt: null, // timestamp
+    pauseHistory: [], // array of {status, reason, note, timestamp}
     currentWeekId: baseId,
     weeks: {
       [baseId]: {
@@ -2027,6 +2193,7 @@ function onWeekChange(){
   if (!d.weeks[id]) return;
   
   d.currentWeekId = id;
+  calendarWeekStart = null; // Reset calendar to show selected week
   saveState();
   updateUI();
   setTimeout(initMap, 150);
@@ -2156,21 +2323,35 @@ function bindDriverOverridesToInputs(){
   
   const splitEl = document.getElementById("d_split");
   const splitVal = Number(d.splitOverride);
-  if (splitEl) {
+  if (splitEl && splitEl.dataset.editing !== 'true') {
     splitEl.value = (Number.isFinite(splitVal) ? splitVal : s.split);
     console.log('  - Split input set to:', splitEl.value);
+  } else if (splitEl) {
+    console.log('  - Split input being edited, not overwriting');
   } else {
     console.error('❌ Split input element not found!');
   }
   
   const targetEl = document.getElementById("d_target_net");
   const targetVal = Number(d.targetNetOverride);
-  if (targetEl) {
+  if (targetEl && targetEl.dataset.editing !== 'true') {
     targetEl.value = (Number.isFinite(targetVal) ? targetVal : "");
     targetEl.placeholder = `Default: ${s.targetNet}`;
     console.log('  - Target input set to:', targetEl.value || '(empty, using default)');
+  } else if (targetEl) {
+    console.log('  - Target input being edited, not overwriting');
   } else {
     console.error('❌ Target net input element not found!');
+  }
+  
+  const milesPerDayEl = document.getElementById("d_miles_per_day");
+  const milesPerDayVal = Number(d.milesPerDayOverride);
+  if (milesPerDayEl && milesPerDayEl.dataset.editing !== 'true') {
+    milesPerDayEl.value = (Number.isFinite(milesPerDayVal) ? milesPerDayVal : "");
+    milesPerDayEl.placeholder = "600";
+    console.log('  - Miles/day input set to:', milesPerDayEl.value || '(empty, using default 600)');
+  } else if (milesPerDayEl) {
+    console.log('  - Miles/day input being edited, not overwriting');
   }
 }
 
@@ -2190,15 +2371,309 @@ function saveDriverOverrides(){
   const targetVal = parseFloat(document.getElementById("d_target_net").value);
   console.log('  - Target input value:', targetVal);
   
+  const milesPerDayVal = parseFloat(document.getElementById("d_miles_per_day").value);
+  console.log('  - Miles/day input value:', milesPerDayVal);
+  
   d.splitOverride = splitVal;
   d.targetNetOverride = (Number.isFinite(targetVal) && targetVal >= 0) ? targetVal : null;
+  d.milesPerDayOverride = (Number.isFinite(milesPerDayVal) && milesPerDayVal >= 400) ? milesPerDayVal : null;
   
   console.log('✅ Saved overrides:');
   console.log('  - splitOverride:', d.splitOverride);
   console.log('  - targetNetOverride:', d.targetNetOverride);
+  console.log('  - milesPerDayOverride:', d.milesPerDayOverride);
   
   saveState();
   alert("Driver overrides saved.");
+  updateUI();
+}
+
+/************************* 
+ * DRIVER STATUS MANAGEMENT
+ *************************/
+function updateDriverStatusUI(){
+  const activeRadio = document.querySelector('input[name="driver_status"][value="active"]');
+  const pausedRadio = document.querySelector('input[name="driver_status"][value="paused"]');
+  const pauseSection = document.getElementById('pauseReasonSection');
+  const pauseNoteSection = document.getElementById('pauseNoteSection');
+  const pauseReason = document.getElementById('pause_reason');
+  
+  if (pausedRadio && pausedRadio.checked) {
+    pauseSection.style.display = 'block';
+    if (pauseReason.value === 'other') {
+      pauseNoteSection.style.display = 'block';
+    } else {
+      pauseNoteSection.style.display = 'none';
+    }
+  } else {
+    pauseSection.style.display = 'none';
+    pauseNoteSection.style.display = 'none';
+  }
+}
+
+function bindDriverStatusToInputs(){
+  const d = getDriver();
+  if (!d) return;
+  
+  // Ensure driver has status fields (migration for old data)
+  if (!d.status) d.status = 'active';
+  if (!d.pauseHistory) d.pauseHistory = [];
+  
+  const activeRadio = document.querySelector('input[name="driver_status"][value="active"]');
+  const pausedRadio = document.querySelector('input[name="driver_status"][value="paused"]');
+  const pauseReason = document.getElementById('pause_reason');
+  const pauseNote = document.getElementById('pause_note');
+  const pausedSince = document.getElementById('pausedSince');
+  const historySection = document.getElementById('pauseHistory');
+  const historyList = document.getElementById('pauseHistoryList');
+  
+  if (activeRadio) activeRadio.checked = d.status === 'active';
+  if (pausedRadio) pausedRadio.checked = d.status === 'paused';
+  if (pauseReason) pauseReason.value = d.pauseReason || '';
+  if (pauseNote) pauseNote.value = d.pauseNote || '';
+  
+  if (d.status === 'paused' && d.pausedAt && pausedSince) {
+    const date = new Date(d.pausedAt);
+    pausedSince.innerText = `Paused since: ${date.toLocaleDateString()}`;
+    pausedSince.style.display = 'block';
+  } else if (pausedSince) {
+    pausedSince.style.display = 'none';
+  }
+  
+  // Show pause history if exists
+  if (d.pauseHistory && d.pauseHistory.length > 0 && historySection && historyList) {
+    historySection.style.display = 'block';
+    historyList.innerHTML = d.pauseHistory.slice().reverse().map(h => {
+      const date = new Date(h.timestamp);
+      const reasonMap = {
+        sick: '🏥 Sick',
+        home_time: '🏠 Home Time',
+        vacation: '🌴 Vacation',
+        repairs: '🔧 Repairs',
+        other: '📝 Other'
+      };
+      const reasonText = h.reason ? reasonMap[h.reason] || h.reason : '';
+      const noteText = h.note ? ` - ${h.note}` : '';
+      return `
+        <div style="padding: 8px; background: rgba(0,180,255,0.05); border-radius: 6px; margin-bottom: 6px; font-size: 12px;">
+          <div style="font-weight: 700; color: ${h.status === 'paused' ? 'var(--warning)' : 'var(--success)'};">
+            ${h.status === 'paused' ? '⏸️ Paused' : '▶️ Resumed'}
+          </div>
+          <div style="color: var(--text-muted); margin-top: 2px;">
+            ${date.toLocaleString()}${reasonText ? ' • ' + reasonText + noteText : ''}
+          </div>
+        </div>
+      `;
+    }).join('');
+  } else if (historySection) {
+    historySection.style.display = 'none';
+  }
+  
+  updateDriverStatusUI();
+}
+
+function saveDriverStatus(){
+  const d = getDriver();
+  if (!d) return alert("No driver selected");
+  
+  const activeRadio = document.querySelector('input[name="driver_status"][value="active"]');
+  const pausedRadio = document.querySelector('input[name="driver_status"][value="paused"]');
+  const pauseReason = document.getElementById('pause_reason');
+  const pauseNote = document.getElementById('pause_note');
+  
+  const newStatus = pausedRadio && pausedRadio.checked ? 'paused' : 'active';
+  const oldStatus = d.status || 'active';
+  
+  // Only log if status changed
+  if (newStatus !== oldStatus) {
+    const historyEntry = {
+      status: newStatus,
+      timestamp: new Date().toISOString()
+    };
+    
+    if (newStatus === 'paused') {
+      const reason = pauseReason.value;
+      if (!reason) return alert("Please select a pause reason");
+      
+      historyEntry.reason = reason;
+      if (reason === 'other') {
+        const note = pauseNote.value.trim();
+        if (!note) return alert("Please enter a custom reason");
+        historyEntry.note = note;
+      }
+      
+      d.pauseReason = reason;
+      d.pauseNote = reason === 'other' ? pauseNote.value.trim() : null;
+      d.pausedAt = new Date().toISOString();
+    } else {
+      d.pauseReason = null;
+      d.pauseNote = null;
+      d.pausedAt = null;
+    }
+    
+    if (!d.pauseHistory) d.pauseHistory = [];
+    d.pauseHistory.push(historyEntry);
+  }
+  
+  d.status = newStatus;
+  saveState();
+  alert(`Driver status updated to: ${newStatus === 'paused' ? 'Paused' : 'Active'}`);
+  bindDriverStatusToInputs();
+  renderDriverSelect(); // Update driver dropdown to show status
+}
+
+function checkPausedDriverWarning(){
+  const d = getDriver();
+  if (!d) return false;
+  
+  // Ensure status field exists
+  if (!d.status) d.status = 'active';
+  
+  if (d.status === 'paused') {
+    const reasonMap = {
+      sick: '🏥 Sick',
+      home_time: '🏠 Home Time',
+      vacation: '🌴 Vacation',
+      repairs: '🔧 Repairs',
+      other: '📝 Other'
+    };
+    const reason = d.pauseReason ? reasonMap[d.pauseReason] || d.pauseReason : 'Unknown';
+    const note = d.pauseNote ? ` (${d.pauseNote})` : '';
+    
+    const resume = confirm(
+      `⚠️ WARNING: ${d.name} is currently PAUSED\n\n` +
+      `Reason: ${reason}${note}\n` +
+      `Paused since: ${d.pausedAt ? new Date(d.pausedAt).toLocaleDateString() : 'Unknown'}\n\n` +
+      `Adding this load will automatically resume the driver.\n\n` +
+      `Click OK to add load and resume driver, or Cancel to go back.`
+    );
+    
+    if (resume) {
+      // Auto-resume driver
+      d.status = 'active';
+      if (!d.pauseHistory) d.pauseHistory = [];
+      d.pauseHistory.push({
+        status: 'active',
+        timestamp: new Date().toISOString(),
+        note: 'Auto-resumed when load added'
+      });
+      d.pauseReason = null;
+      d.pauseNote = null;
+      d.pausedAt = null;
+      saveState();
+      return true; // Allow load to be added
+    } else {
+      return false; // Cancel load addition
+    }
+  }
+  
+  return true; // Driver is active, proceed normally
+}
+
+/************************* 
+ * CLOSE ALL WEEKS
+ *************************/
+function closeAllWeeks(){
+  const confirmMsg = `Close week for ALL drivers?\n\nThis will:\n• Mark current week as CLOSED (read-only)\n• All data will be SAVED and preserved\n• Create new week starting next Monday\n• Make new week active for all drivers\n\nProceed?`;
+  
+  if (!confirm(confirmMsg)) return;
+  
+  const drivers = Object.values(state.drivers);
+  let closedCount = 0;
+  const closedInfo = [];
+  
+  drivers.forEach(d => {
+    const wk = d.weeks[d.currentWeekId];
+    if (wk && !wk.closed) {
+      // Mark week as closed
+      wk.closed = true;
+      wk.closedAt = new Date().toISOString();
+      
+      // Calculate next Monday (7 days from current week start)
+      const currentWeekStart = new Date(wk.start + 'T00:00:00');
+      currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+      const nextMonday = startOfWeekMonday(currentWeekStart);
+      const nextId = isoDate(nextMonday);
+      
+      // Find loads that deliver next week
+      const crossWeekLoads = wk.loads.filter(l => l.deliversNextWeek);
+      
+      // Copy cross-week loads to new week and mark them as from previous week
+      const carriedLoads = crossWeekLoads.map(load => ({
+        ...load,
+        deliversNextWeek: false, // No longer delivers next week
+        fromPreviousWeek: true, // Flag to show it was picked up previous week
+        originalPickupDay: load.pickupDay // Store original pickup day
+      }));
+      
+      // Create new week with carried-over loads
+      d.weeks[nextId] = {
+        start: nextId,
+        label: fmtWeekLabel(nextMonday),
+        loads: carriedLoads,
+        lastDropCoords: wk.lastDropCoords
+      };
+      
+      // Store info for undo
+      closedInfo.push({
+        driverId: Object.keys(state.drivers).find(id => state.drivers[id] === d),
+        oldWeekId: d.currentWeekId,
+        newWeekId: nextId
+      });
+      
+      // Set new week as active
+      d.currentWeekId = nextId;
+      closedCount++;
+    }
+  });
+  
+  // Store undo info
+  state.lastCloseWeekAction = {
+    timestamp: new Date().toISOString(),
+    closedInfo: closedInfo
+  };
+  
+  saveState();
+  calendarWeekStart = null; // Reset calendar to show new week
+  alert(`✅ Week closed for ${closedCount} driver(s).\n\nOld week data is SAVED.\nNew week is now active.\n\nTo undo: Analytics tab → "Undo Close Week"`);
+  renderWeekSelect();
+  updateUI();
+}
+
+function undoCloseWeek(){
+  if (!state.lastCloseWeekAction) {
+    return alert("❌ No recent close week action to undo.");
+  }
+  
+  const confirmMsg = `Undo the last "Close Week" action?\n\nThis will:\n• Reopen the closed week\n• Delete the new week that was created\n• Restore previous state\n\nProceed?`;
+  
+  if (!confirm(confirmMsg)) return;
+  
+  const { closedInfo } = state.lastCloseWeekAction;
+  
+  closedInfo.forEach(info => {
+    const driver = state.drivers[info.driverId];
+    if (!driver) return;
+    
+    // Reopen the old week
+    const oldWeek = driver.weeks[info.oldWeekId];
+    if (oldWeek) {
+      oldWeek.closed = false;
+      delete oldWeek.closedAt;
+    }
+    
+    // Delete the new week that was created
+    delete driver.weeks[info.newWeekId];
+    
+    // Restore old week as active
+    driver.currentWeekId = info.oldWeekId;
+  });
+  
+  delete state.lastCloseWeekAction;
+  saveState();
+  calendarWeekStart = null;
+  alert("✅ Close week action undone. Previous week restored.");
+  renderWeekSelect();
   updateUI();
 }
 
@@ -2207,13 +2682,16 @@ function saveDriverOverrides(){
  *************************/
 function computeWeekTotals(week){
   const loads = week.loads || [];
-  const gross = loads.reduce((s,l) => s + (Number(l.gross)||0), 0);
-  const miles = loads.reduce((s,l) => s + (Number(l.miles)||0), 0);
-  const net = loads.reduce((s,l) => s + (Number(l.net)||0), 0);
-  const fuel = loads.reduce((s,l)=> s + (Number(l.details?.fuel)||0), 0);
-  const maint = loads.reduce((s,l)=> s + (Number(l.details?.maint)||0), 0);
-  const tolls = loads.reduce((s,l)=> s + (Number(l.details?.tolls)||0), 0);
-  const fixed = loads.reduce((s,l)=> s + (Number(l.details?.fixed)||0), 0);
+  // Exclude loads that deliver next week from this week's revenue
+  const currentWeekLoads = loads.filter(l => !l.deliversNextWeek);
+  
+  const gross = currentWeekLoads.reduce((s,l) => s + (Number(l.gross)||0), 0);
+  const miles = currentWeekLoads.reduce((s,l) => s + (Number(l.miles)||0), 0);
+  const net = currentWeekLoads.reduce((s,l) => s + (Number(l.net)||0), 0);
+  const fuel = currentWeekLoads.reduce((s,l)=> s + (Number(l.details?.fuel)||0), 0);
+  const maint = currentWeekLoads.reduce((s,l)=> s + (Number(l.details?.maint)||0), 0);
+  const tolls = currentWeekLoads.reduce((s,l)=> s + (Number(l.details?.tolls)||0), 0);
+  const fixed = currentWeekLoads.reduce((s,l)=> s + (Number(l.details?.fixed)||0), 0);
   const rpm = miles>0 ? gross/miles : 0;
   return { gross,miles,net,fuel,maint,tolls,fixed,rpm };
 }
@@ -2303,8 +2781,8 @@ function analyzeLoad(){
   const beGross = miles > 0 ? ((fuel + maint + fixed + tolls) / split) : 0;
   const beRpm = miles > 0 ? (beGross / miles) : 0;
   
-  // Multi-day calculation
-  const AVG_MILES_PER_DAY = 550; // Middle of 500-600 range
+  // Multi-day calculation - use driver's setting or default to 600
+  const AVG_MILES_PER_DAY = driver.milesPerDayOverride || 600;
   const TARGET_GROSS_PER_DAY = 1200;
   const daysOnLoad = Math.ceil(miles / AVG_MILES_PER_DAY);
   const expectedGross = daysOnLoad * TARGET_GROSS_PER_DAY;
@@ -2567,6 +3045,60 @@ function updateWarnBanner(){
 }
 
 /************************* 
+ * RECENT LOADS
+ *************************/
+function saveRecentLoad(origin, dest){
+  if (!state.recentLoads) state.recentLoads = [];
+  
+  const route = `${origin}|${dest}`;
+  
+  // Remove if already exists
+  state.recentLoads = state.recentLoads.filter(r => r !== route);
+  
+  // Add to beginning
+  state.recentLoads.unshift(route);
+  
+  // Keep only last 15
+  if (state.recentLoads.length > 15) {
+    state.recentLoads = state.recentLoads.slice(0, 15);
+  }
+  
+  saveState();
+  renderRecentLoads();
+}
+
+function renderRecentLoads(){
+  const sel = document.getElementById('recentLoads');
+  if (!sel) return;
+  
+  if (!state.recentLoads || state.recentLoads.length === 0) {
+    sel.innerHTML = '<option value="">-- No recent loads yet --</option>';
+    return;
+  }
+  
+  sel.innerHTML = '<option value="">-- Select a recent route --</option>' + 
+    state.recentLoads.map((route, i) => {
+      const [origin, dest] = route.split('|');
+      return `<option value="${i}">${origin} → ${dest}</option>`;
+    }).join('');
+}
+
+function fillFromRecentLoad(){
+  const sel = document.getElementById('recentLoads');
+  const idx = parseInt(sel.value);
+  
+  if (!Number.isFinite(idx) || !state.recentLoads || !state.recentLoads[idx]) return;
+  
+  const [origin, dest] = state.recentLoads[idx].split('|');
+  
+  document.getElementById('origin').value = origin;
+  document.getElementById('dest').value = dest;
+  
+  // Reset dropdown
+  sel.value = "";
+}
+
+/************************* 
  * LOAD CRUD 
  *************************/
 function addLoad(){
@@ -2575,12 +3107,23 @@ function addLoad(){
   const origin = originEl.value.trim();
   const dest = destEl.value.trim();
   const gross = parseFloat(document.getElementById('pay_gross').value) || 0;
-  const miles = (parseFloat(document.getElementById('mi_load').value)||0) 
-    + (parseFloat(document.getElementById('mi_dh').value)||0);
+  const loadedMiles = parseFloat(document.getElementById('mi_load').value) || 0;
+  const dhMiles = parseFloat(document.getElementById('mi_dh').value) || 0;
+  const miles = loadedMiles + dhMiles;
   const tolls = parseFloat(document.getElementById('cost_tolls').value) || 0;
+  
+  // Get days
+  const pickupDay = document.getElementById('pickup_day').value;
+  const deliveryDay = document.getElementById('delivery_day').value;
+  
+  // Check if this is a cross-week load (delivers next week)
+  const deliversNextWeek = deliveryDay === "Next Monday";
   
   if (!origin || !dest) return alert("Enter pickup & drop first.");
   if (gross <= 0 || miles <= 0) return alert("Enter miles and gross pay.");
+  
+  // Check if driver is paused
+  if (!checkPausedDriverWarning()) return;
   
   const oLat = Number(originEl.dataset.lat);
   const oLon = Number(originEl.dataset.lon);
@@ -2603,13 +3146,18 @@ function addLoad(){
   } catch(e){ routeGeo=null; }
   
   const wk = getCurrentWeek();
-  wk.loads.push({
+  const loadData = {
     origin,
     dest,
     gross,
     miles,
+    loadedMiles,
     net,
     createdAt: new Date().toISOString(),
+    pickupDay,
+    deliveryDay: deliversNextWeek ? "Monday" : deliveryDay, // Store as Monday for next week
+    deliversNextWeek: deliversNextWeek, // Flag to indicate cross-week load
+    stops: multiStops.length > 0 ? [...multiStops] : null,
     details: {
       fuel,
       maint,
@@ -2626,7 +3174,9 @@ function addLoad(){
       ? { start:{lat:oLat, lon:oLon}, end:{lat:dLat, lon:dLon} }
       : null,
     routeGeo
-  });
+  };
+  
+  wk.loads.push(loadData);
   
   if (Number.isFinite(dLat) && Number.isFinite(dLon)) 
     wk.lastDropCoords = { lat: dLat, lon: dLon };
@@ -2634,10 +3184,11 @@ function addLoad(){
     wk.lastDropCoords = null;
   
   saveState();
+  saveRecentLoad(origin, dest); // Add to recent loads dropdown
   updateUI();
   initMap();
   
-  ['origin','dest','mi_load','mi_dh','cost_tolls','pay_gross'].forEach(i => 
+  ['origin','dest','mi_load','mi_dh','cost_tolls','pay_gross','pickup_day','delivery_day'].forEach(i => 
     document.getElementById(i).value=""
   );
   originEl.dataset.lat="";
@@ -2648,6 +3199,11 @@ function addLoad(){
   document.getElementById('preview_net').innerText="$0.00";
   document.getElementById('preview_hint').innerText="";
   document.getElementById('sticky_preview').innerText="$0.00";
+  
+  // Clear multi-stops
+  if (multiStops.length > 0) {
+    closeMultiStop();
+  }
 }
 
 function delLoad(i){
@@ -2716,15 +3272,315 @@ function viewDetail(i){
       Miles: <b>${Number(l.miles||0).toLocaleString()}</b> • 
       Gross RPM: <b>${money(l.miles>0 ? l.gross/l.miles : 0)}</b>
     </div>
+    <button class="btn-primary" onclick="editLoad(${i})" style="margin-top: 16px;">✏️ Edit Load</button>
   `;
   
   document.getElementById('modal').style.display='block';
   document.getElementById('overlay').style.display='block';
 }
 
+function editLoad(i){
+  const wk = getCurrentWeek();
+  const l = wk.loads[i];
+  if (!l) return;
+  
+  const dayOptions = ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  
+  document.getElementById('modal-content').innerHTML = `
+    <div style="margin-bottom: 20px;">
+      <h3 style="color: var(--accent-cyan); margin-bottom: 16px;">Edit Load</h3>
+      
+      <div class="input-group" style="margin-bottom: 12px;">
+        <label>Route</label>
+        <input type="text" id="edit_route" value="${escapeHtml(l.origin)} → ${escapeHtml(l.dest)}" disabled style="background: var(--bg-secondary); color: var(--text-muted);" />
+      </div>
+      
+      <div class="input-group" style="margin-bottom: 12px;">
+        <label>Gross Pay ($)</label>
+        <input type="number" id="edit_gross" value="${l.gross}" step="0.01" min="0" />
+      </div>
+      
+      <div class="input-row" style="margin-bottom: 12px;">
+        <div class="input-group">
+          <label>Pickup Day</label>
+          <select id="edit_pickup_day">
+            ${dayOptions.map(d => `<option value="${d}" ${l.pickupDay === d ? 'selected' : ''}>${d || 'Not set'}</option>`).join('')}
+          </select>
+        </div>
+        <div class="input-group">
+          <label>Delivery Day</label>
+          <select id="edit_delivery_day">
+            ${dayOptions.map(d => `<option value="${d}" ${l.deliveryDay === d ? 'selected' : ''}>${d || 'Not set'}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      
+      <div class="hint-text" style="margin-bottom: 16px;">
+        Changing gross will recalculate net profit. Miles cannot be changed (would affect route).
+      </div>
+      
+      <div style="display: flex; gap: 8px;">
+        <button class="btn-primary" onclick="saveLoadEdit(${i})">💾 Save Changes</button>
+        <button class="btn-primary" onclick="viewDetail(${i})" style="background: var(--bg-secondary);">↩️ Back</button>
+      </div>
+    </div>
+  `;
+}
+
+function saveLoadEdit(i){
+  const wk = getCurrentWeek();
+  const l = wk.loads[i];
+  if (!l) return;
+  
+  const newGross = parseFloat(document.getElementById('edit_gross').value);
+  const newPickupDay = document.getElementById('edit_pickup_day').value;
+  const newDeliveryDay = document.getElementById('edit_delivery_day').value;
+  
+  if (!Number.isFinite(newGross) || newGross <= 0) {
+    return alert("Enter a valid gross amount");
+  }
+  
+  // Recalculate net if gross changed
+  if (newGross !== l.gross) {
+    const oldGross = l.gross;
+    l.gross = newGross;
+    
+    // Recalculate using stored split
+    const split = l.details?.split || getDriverSplit(getDriver());
+    const s = getSpecs();
+    const miles = l.miles || 0;
+    const tolls = l.details?.tolls || 0;
+    
+    const fuel = (miles / s.mpg) * s.fuel;
+    const maint = miles * s.maint;
+    const fixed = s.fixedPerLoad;
+    const cut = newGross * split;
+    l.net = cut - fuel - maint - fixed - tolls;
+    
+    // Update details
+    if (l.details) {
+      l.details.cut = cut;
+      l.details.fuel = fuel;
+      l.details.maint = maint;
+      l.details.fixed = fixed;
+    }
+  }
+  
+  // Update days
+  l.pickupDay = newPickupDay || undefined;
+  l.deliveryDay = newDeliveryDay || undefined;
+  
+  saveState();
+  alert("✅ Load updated");
+  updateUI();
+  closeModal();
+}
+
 function closeModal(){
   document.getElementById('modal').style.display='none';
   document.getElementById('overlay').style.display='none';
+}
+
+/************************* 
+ * CALENDAR VIEW
+ *************************/
+let calendarWeekStart = null;
+
+function calThisWeek(){
+  // Go to the current driver's selected week
+  calendarWeekStart = null; // Reset to use driver's current week
+  renderCalendar();
+}
+
+function calPrevWeek(){
+  // Get the week start - either from stored calendar view or driver's current week
+  const d = getDriver();
+  const current = calendarWeekStart || d.currentWeekId.split('_')[0];
+  const date = new Date(current + 'T00:00:00'); // Add time to ensure proper parsing
+  date.setDate(date.getDate() - 7);
+  const prevMonday = startOfWeekMonday(date);
+  calendarWeekStart = isoDate(prevMonday);
+  renderCalendar();
+}
+
+function calNextWeek(){
+  // Get the week start - either from stored calendar view or driver's current week
+  const d = getDriver();
+  const current = calendarWeekStart || d.currentWeekId.split('_')[0];
+  const date = new Date(current + 'T00:00:00'); // Add time to ensure proper parsing
+  date.setDate(date.getDate() + 7);
+  const nextMonday = startOfWeekMonday(date);
+  calendarWeekStart = isoDate(nextMonday);
+  renderCalendar();
+}
+
+function renderCalendar(){
+  console.log('📅 Rendering calendar...');
+  
+  try {
+    // Use the currently selected driver's current week if calendar week not set
+    const d = getDriver();
+    const weekStart = calendarWeekStart || d.currentWeekId.split('_')[0];
+    const startDate = new Date(weekStart + 'T00:00:00'); // Add time to ensure proper parsing
+    
+    console.log('Week:', weekStart);
+    console.log('Driver current week:', d.currentWeekId);
+    
+    // Use the EXACT same label format as the dashboard
+    const currentWeekObj = d.weeks[d.currentWeekId];
+    if (calendarWeekStart === null && currentWeekObj) {
+      // If viewing driver's current week, use its exact label
+      document.getElementById('cal_week_label').innerText = currentWeekObj.label || fmtWeekLabel(startDate);
+    } else {
+      // If navigating to other weeks, generate label
+      document.getElementById('cal_week_label').innerText = fmtWeekLabel(startDate);
+    }
+    
+    // Show ALL drivers for this same week period
+    const allDrivers = Object.values(state.drivers);
+    const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    
+    console.log('Drivers:', allDrivers.length);
+    
+    if (allDrivers.length === 0) {
+      document.getElementById('calendar_content').innerHTML = '<div style="text-align: center; padding: 40px; color: var(--text-muted);">No drivers yet. Add a driver to get started.</div>';
+      return;
+    }
+    
+    let html = '<div style="margin-bottom: 30px;">';
+    
+    allDrivers.forEach(driver => {
+      // Find the week for this driver that matches this week start date
+      const week = driver.weeks[weekStart];
+      const loads = week ? (week.loads || []) : [];
+      
+      console.log(`  ${driver.name}: ${loads.length} loads (viewing week ${weekStart})`);
+      
+      // Status badge
+      const statusEmoji = {
+        active: '✅',
+        paused: driver.pauseReason === 'sick' ? '🏥' :
+                driver.pauseReason === 'home_time' ? '🏠' :
+                driver.pauseReason === 'vacation' ? '🌴' :
+                driver.pauseReason === 'repairs' ? '🔧' : '⏸️'
+      };
+      const status = driver.status || 'active';
+      const statusText = status === 'paused' ? (driver.pauseReason ? driver.pauseReason.replace('_', ' ') : 'Paused') : 'Active';
+      
+      // Show if this is the driver's current week
+      const isCurrentWeek = driver.currentWeekId.split('_')[0] === weekStart;
+      
+      html += `
+        <div style="background: var(--bg-elevated); border: 1px solid ${isCurrentWeek ? 'var(--accent-cyan)' : 'var(--border-medium)'}; border-radius: 12px; padding: 20px; margin-bottom: 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <div style="font-size: 18px; font-weight: 700; color: var(--text-primary);">
+              🚛 ${escapeHtml(driver.name)} ${isCurrentWeek ? '<span style="font-size: 12px; color: var(--accent-cyan); margin-left: 8px;">← Current Week</span>' : ''}
+            </div>
+            <div style="font-size: 13px; padding: 4px 12px; background: ${status === 'paused' ? 'rgba(255,184,0,0.2)' : 'rgba(0,255,136,0.2)'}; color: ${status === 'paused' ? 'var(--warning)' : 'var(--success)'}; border-radius: 6px; font-weight: 700;">
+              ${statusEmoji[status]} ${statusText}
+            </div>
+          </div>
+          
+          <div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; margin-bottom: 12px;">
+      `;
+      
+      // Day headers
+      dayNames.forEach((day) => {
+        html += `
+          <div style="text-align: center; font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; padding: 8px 4px; background: rgba(0,180,255,0.05); border-radius: 6px;">
+            ${day.substring(0, 3)}
+          </div>
+        `;
+      });
+      
+      // Calculate height based on number of loads (minimum 60px)
+      const loadsWithDays = loads.filter(l => l.pickupDay && l.deliveryDay);
+      const timelineHeight = Math.max(60, loadsWithDays.length * 20 + 10);
+      
+      html += `</div><div style="position: relative; height: ${timelineHeight}px; background: var(--bg-primary); border-radius: 8px; overflow: hidden;">`;
+      
+      // Draw load bars
+      loads.forEach((load, loadIndex) => {
+        if (!load.pickupDay || !load.deliveryDay) {
+          console.log(`    Skipping load ${loadIndex}: no days`);
+          return;
+        }
+        
+        let pickupIndex = dayNames.indexOf(load.pickupDay);
+        let deliveryIndex = dayNames.indexOf(load.deliveryDay);
+        
+        // Handle cross-week loads
+        if (load.deliversNextWeek) {
+          // Load picks up this week, delivers next week
+          // Show from pickup day through Sunday
+          deliveryIndex = 6; // Sunday (last day of week)
+        } else if (load.fromPreviousWeek) {
+          // Load picked up previous week, delivers this week
+          // Show from Monday through delivery day
+          pickupIndex = 0; // Monday (first day of week)
+        }
+        
+        if (pickupIndex === -1 || deliveryIndex === -1) {
+          console.log(`    Skipping load ${loadIndex}: invalid days`);
+          return;
+        }
+        
+        const left = (pickupIndex / 7) * 100;
+        const width = ((deliveryIndex - pickupIndex + 1) / 7) * 100;
+        
+        const colors = ['#00b4ff', '#00ff88', '#ffb800', '#ff3366', '#8b5cf6', '#ec4899'];
+        const color = colors[loadIndex % colors.length];
+        
+        // Special styling for cross-week loads
+        const borderStyle = load.deliversNextWeek ? 'border-right: 3px dashed rgba(255,184,0,0.8);' : 
+                           load.fromPreviousWeek ? 'border-left: 3px dashed rgba(0,180,255,0.8);' : '';
+        
+        const tooltipText = load.deliversNextWeek ? 
+          `${escapeHtml(load.origin)} → ${escapeHtml(load.dest)} | ${money(load.gross)} | Pick ${load.pickupDay}, Del Next Monday (Next Week)` :
+          load.fromPreviousWeek ?
+          `${escapeHtml(load.origin)} → ${escapeHtml(load.dest)} | ${money(load.gross)} | Pick ${load.originalPickupDay} (Prev Week), Del ${load.deliveryDay}` :
+          `${escapeHtml(load.origin)} → ${escapeHtml(load.dest)} | ${money(load.gross)} | Pick ${load.pickupDay}, Del ${load.deliveryDay}`;
+        
+        html += `
+          <div style="position: absolute; left: ${left}%; width: ${width}%; top: ${loadIndex * 20}px; height: 18px; background: ${color}; ${borderStyle} border-radius: 4px; padding: 2px 6px; font-size: 10px; font-weight: 700; color: #fff; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;" title="${tooltipText}">
+            ${escapeHtml(load.origin.split(',')[0])}→${escapeHtml(load.dest.split(',')[0])} | ${money(load.gross)}${load.deliversNextWeek ? ' 📅' : ''}${load.fromPreviousWeek ? ' ←' : ''}
+          </div>
+        `;
+      });
+      
+      html += '</div>';
+      
+      // Week summary
+      if (loads.length > 0) {
+        const totals = computeWeekTotals(week);
+        html += `
+          <div style="margin-top: 12px; padding: 12px; background: rgba(0,180,255,0.05); border-radius: 8px; font-size: 13px;">
+            <strong>${loads.length} load${loads.length > 1 ? 's' : ''}</strong> • 
+            ${money(totals.gross)} gross • 
+            ${money(totals.net)} net
+          </div>
+        `;
+      } else {
+        html += '<div style="margin-top: 12px; text-align: center; color: var(--text-muted); font-size: 13px;">No loads this week</div>';
+      }
+      
+      html += '</div>';
+    });
+    
+    html += '</div>';
+    
+    document.getElementById('calendar_content').innerHTML = html;
+    console.log('✅ Calendar rendered');
+  } catch (error) {
+    console.error('❌ Calendar error:', error);
+    document.getElementById('calendar_content').innerHTML = `
+      <div style="padding: 40px; text-align: center; color: var(--danger);">
+        <div style="font-size: 18px; margin-bottom: 12px;">⚠️ Error loading calendar</div>
+        <div style="font-size: 13px; color: var(--text-muted);">${error.message}</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">Open console (F12) for details</div>
+      </div>
+    `;
+  }
 }
 
 /************************* 
@@ -2751,11 +3607,27 @@ function initMap(){
   wk.loads.forEach((l,i)=>{
     if (l.coords && l.coords.start && l.coords.end){
       const s = l.coords.start, e = l.coords.end;
+      const loadNum = i + 1;
       
-      L.marker([s.lat,s.lon]).addTo(map)
-        .bindPopup(`<b>Load ${i+1} Pickup</b><br>${escapeHtml(l.origin)}`);
-      L.marker([e.lat,e.lon]).addTo(map)
-        .bindPopup(`<b>Load ${i+1} Drop</b><br>${escapeHtml(l.dest)}`);
+      // Create numbered markers
+      const pickupIcon = L.divIcon({
+        className: 'custom-marker',
+        html: `<div style="background:#00b4ff;color:#fff;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:11px;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);">${loadNum}P</div>`,
+        iconSize: [32, 32],
+        iconAnchor: [16, 16]
+      });
+      
+      const dropIcon = L.divIcon({
+        className: 'custom-marker',
+        html: `<div style="background:#00ff88;color:#000;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:11px;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);">${loadNum}D</div>`,
+        iconSize: [32, 32],
+        iconAnchor: [16, 16]
+      });
+      
+      L.marker([s.lat,s.lon], {icon: pickupIcon}).addTo(map)
+        .bindPopup(`<b>Load ${loadNum} Pickup</b><br>${escapeHtml(l.origin)}${l.pickupDay ? '<br><small>Pick ' + l.pickupDay + '</small>' : ''}`);
+      L.marker([e.lat,e.lon], {icon: dropIcon}).addTo(map)
+        .bindPopup(`<b>Load ${loadNum} Delivery</b><br>${escapeHtml(l.dest)}${l.deliveryDay ? '<br><small>Del ' + l.deliveryDay + '</small>' : ''}`);
       
       pts.push([s.lat,s.lon],[e.lat,e.lon]);
       
@@ -3030,6 +3902,107 @@ async function osrmRouteMilesGeo(lon1, lat1, lon2, lat2){
   };
 }
 
+/************************* 
+ * MULTI-STOP MANAGEMENT
+ *************************/
+let multiStops = [];
+
+function openMultiStop(){
+  document.getElementById('multiStopSection').style.display = 'block';
+  document.getElementById('multiStopBtn').style.display = 'none';
+  if (multiStops.length === 0) {
+    addStop();
+  } else {
+    renderStops();
+  }
+}
+
+function closeMultiStop(){
+  document.getElementById('multiStopSection').style.display = 'none';
+  document.getElementById('multiStopBtn').style.display = 'inline-flex';
+  multiStops = [];
+  renderStops();
+  preview();
+}
+
+function addStop(){
+  multiStops.push({
+    location: '',
+    type: 'Delivery',
+    lat: null,
+    lon: null
+  });
+  renderStops();
+}
+
+function removeStop(index){
+  multiStops.splice(index, 1);
+  renderStops();
+  preview();
+}
+
+function moveStopUp(index){
+  if (index === 0) return;
+  const temp = multiStops[index];
+  multiStops[index] = multiStops[index - 1];
+  multiStops[index - 1] = temp;
+  renderStops();
+}
+
+function moveStopDown(index){
+  if (index === multiStops.length - 1) return;
+  const temp = multiStops[index];
+  multiStops[index] = multiStops[index + 1];
+  multiStops[index + 1] = temp;
+  renderStops();
+}
+
+function renderStops(){
+  const container = document.getElementById('stopsList');
+  if (multiStops.length === 0) {
+    container.innerHTML = '<div style="color: var(--text-muted); font-size: 13px; text-align: center; padding: 20px;">Click "Add Another Stop" to create a multi-stop load</div>';
+    return;
+  }
+  
+  container.innerHTML = multiStops.map((stop, i) => `
+    <div style="display: flex; gap: 8px; margin-bottom: 8px; align-items: center; background: var(--bg-primary); padding: 10px; border-radius: 8px;">
+      <div style="min-width: 30px; font-weight: 700; color: var(--accent-cyan);">#${i+1}</div>
+      <div style="flex: 1;">
+        <input 
+          type="text" 
+          placeholder="City, State" 
+          value="${escapeHtml(stop.location)}"
+          onchange="multiStops[${i}].location = this.value; preview();"
+          style="width: 100%; background: var(--bg-secondary); border: 1px solid var(--border-subtle); color: var(--text-primary); padding: 8px; border-radius: 6px; font-size: 13px;"
+        />
+      </div>
+      <select 
+        onchange="multiStops[${i}].type = this.value;"
+        style="background: var(--bg-secondary); border: 1px solid var(--border-subtle); color: var(--text-primary); padding: 8px; border-radius: 6px; font-size: 13px;"
+      >
+        <option value="Pickup" ${stop.type === 'Pickup' ? 'selected' : ''}>Pickup</option>
+        <option value="Delivery" ${stop.type === 'Delivery' ? 'selected' : ''}>Delivery</option>
+      </select>
+      <div style="display: flex; gap: 4px;">
+        <button 
+          onclick="moveStopUp(${i})" 
+          ${i === 0 ? 'disabled' : ''}
+          style="background: rgba(0,180,255,0.1); border: 1px solid var(--border-subtle); color: var(--accent-cyan); padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 14px;"
+        >⬆️</button>
+        <button 
+          onclick="moveStopDown(${i})" 
+          ${i === multiStops.length - 1 ? 'disabled' : ''}
+          style="background: rgba(0,180,255,0.1); border: 1px solid var(--border-subtle); color: var(--accent-cyan); padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 14px;"
+        >⬇️</button>
+        <button 
+          onclick="removeStop(${i})"
+          style="background: rgba(255,51,102,0.1); border: 1px solid rgba(255,51,102,0.3); color: var(--danger); padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 14px;"
+        >❌</button>
+      </div>
+    </div>
+  `).join('');
+}
+
 async function calcRoute(){
   const o = document.getElementById('origin').value;
   const d = document.getElementById('dest').value;
@@ -3055,29 +4028,100 @@ async function calcRoute(){
     document.getElementById('dest').dataset.lon = dLon;
     
     setStatus("Calculating loaded route…", true);
-    const loaded = await osrmRouteMilesGeo(oLon,oLat,dLon,dLat);
-    document.getElementById('mi_load').value = loaded.miles;
     
-    const wk = getCurrentWeek();
-    if (wk.lastDropCoords?.lat && wk.lastDropCoords?.lon){
-      setStatus("Calculating deadhead…", true);
-      const dh = await osrmRouteMilesGeo(
-        wk.lastDropCoords.lon, 
-        wk.lastDropCoords.lat, 
-        oLon, 
-        oLat
+    try {
+      const loaded = await osrmRouteMilesGeo(oLon,oLat,dLon,dLat);
+      document.getElementById('mi_load').value = loaded.miles;
+      
+      const wk = getCurrentWeek();
+      if (wk.lastDropCoords?.lat && wk.lastDropCoords?.lon){
+        setStatus("Calculating deadhead…", true);
+        const dh = await osrmRouteMilesGeo(
+          wk.lastDropCoords.lon, 
+          wk.lastDropCoords.lat, 
+          oLon, 
+          oLat
+        );
+        document.getElementById('mi_dh').value = dh.miles;
+      } else {
+        document.getElementById('mi_dh').value = 0;
+      }
+      
+      document.getElementById('origin').dataset.routeGeo = JSON.stringify(loaded.geo || null);
+      setStatus("", false);
+      preview();
+    } catch(routeError) {
+      // Routing failed - offer manual entry
+      console.error("Routing error:", routeError);
+      
+      // Calculate straight-line distance as estimate
+      const R = 3959; // Earth radius in miles
+      const lat1 = oLat * Math.PI / 180;
+      const lat2 = dLat * Math.PI / 180;
+      const dLat_rad = (dLat - oLat) * Math.PI / 180;
+      const dLon_rad = (dLon - oLon) * Math.PI / 180;
+      
+      const a = Math.sin(dLat_rad/2) * Math.sin(dLat_rad/2) +
+                Math.cos(lat1) * Math.cos(lat2) *
+                Math.sin(dLon_rad/2) * Math.sin(dLon_rad/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      const straightLine = Math.round(R * c);
+      const estimate = Math.round(straightLine * 1.25); // Add 25% for roads
+      
+      setStatus("", false);
+      
+      const userMiles = prompt(
+        `⚠️ Auto-routing unavailable (network restriction)\n\n` +
+        `Estimated distance: ${estimate} miles\n` +
+        `(Straight-line: ${straightLine} mi × 1.25 for roads)\n\n` +
+        `Enter actual loaded miles (or click Cancel to use estimate):`,
+        estimate
       );
-      document.getElementById('mi_dh').value = dh.miles;
-    } else {
-      document.getElementById('mi_dh').value = 0;
+      
+      if (userMiles !== null) {
+        const miles = parseInt(userMiles, 10);
+        if (miles > 0) {
+          document.getElementById('mi_load').value = miles;
+          
+          const wk = getCurrentWeek();
+          if (wk.lastDropCoords?.lat && wk.lastDropCoords?.lon) {
+            // Also estimate deadhead
+            const dhLat1 = wk.lastDropCoords.lat * Math.PI / 180;
+            const dhLat2 = oLat * Math.PI / 180;
+            const dhDLat = (oLat - wk.lastDropCoords.lat) * Math.PI / 180;
+            const dhDLon = (oLon - wk.lastDropCoords.lon) * Math.PI / 180;
+            
+            const dhA = Math.sin(dhDLat/2) * Math.sin(dhDLat/2) +
+                        Math.cos(dhLat1) * Math.cos(dhLat2) *
+                        Math.sin(dhDLon/2) * Math.sin(dhDLon/2);
+            const dhC = 2 * Math.atan2(Math.sqrt(dhA), Math.sqrt(1-dhA));
+            const dhStraight = Math.round(R * dhC);
+            const dhEstimate = Math.round(dhStraight * 1.25);
+            
+            const userDH = prompt(
+              `Enter deadhead miles from last drop:\n` +
+              `Estimated: ${dhEstimate} miles\n` +
+              `(or enter 0 if no deadhead)`,
+              dhEstimate
+            );
+            
+            if (userDH !== null) {
+              document.getElementById('mi_dh').value = parseInt(userDH, 10) || 0;
+            } else {
+              document.getElementById('mi_dh').value = dhEstimate;
+            }
+          } else {
+            document.getElementById('mi_dh').value = 0;
+          }
+          
+          alert("✅ Manual entry saved. Miles may be approximate - verify with mapping tool.");
+          preview();
+        }
+      }
     }
-    
-    document.getElementById('origin').dataset.routeGeo = JSON.stringify(loaded.geo || null);
-    setStatus("", false);
-    preview();
   } catch(e){
     console.error(e);
-    setStatus("Routing failed (try again in 30s)", true);
+    setStatus("Error: " + e.message, true);
     setTimeout(()=>setStatus("", false), 3500);
   }
 }
@@ -3260,6 +4304,7 @@ function printWeeklySummary(){
       <tr>
         <th>#</th>
         <th>Route</th>
+        <th>Days</th>
         <th>Miles</th>
         <th>Gross</th>
         <th>Net</th>
@@ -3270,7 +4315,8 @@ function printWeeklySummary(){
       ${wk.loads.map((l, i) => `
         <tr>
           <td>${i+1}</td>
-          <td>${escapeHtml(l.origin)} → ${escapeHtml(l.dest)}</td>
+          <td>${escapeHtml(l.origin)} → ${escapeHtml(l.dest)}${l.stops && l.stops.length > 0 ? ` <small>(${l.stops.length + 2} stops)</small>` : ''}</td>
+          <td><small>${l.pickupDay && l.deliveryDay ? `Pick ${l.pickupDay}<br/>Del ${l.deliveryDay}` : '—'}</small></td>
           <td>${(l.miles||0).toLocaleString()}</td>
           <td class="positive">${money(l.gross)}</td>
           <td class="${(l.net||0)>=0?'positive':'negative'}">${money(l.net)}</td>
@@ -3542,11 +4588,14 @@ function renderWeeklyChart(){
   const d = getDriver();
   const weekIds = Object.keys(d.weeks).sort();
   
+  // Show only last 8 weeks
+  const recentWeekIds = weekIds.slice(-8);
+  
   const labels = [];
   const netData = [];
   const grossData = [];
   
-  weekIds.forEach(id => {
+  recentWeekIds.forEach(id => {
     const w = d.weeks[id];
     const t = computeWeekTotals(w);
     labels.push(w.label || id);
@@ -3562,27 +4611,23 @@ function renderWeeklyChart(){
   }
   
   weeklyChart = new Chart(ctx, {
-    type: 'line',
+    type: 'bar',
     data: {
       labels: labels,
       datasets: [
         {
-          label: 'Net Profit',
-          data: netData,
-          borderColor: '#00ff88',
-          backgroundColor: 'rgba(0,255,136,0.1)',
-          borderWidth: 3,
-          tension: 0.4,
-          fill: true
-        },
-        {
           label: 'Gross Revenue',
           data: grossData,
+          backgroundColor: 'rgba(0,180,255,0.7)',
           borderColor: '#00b4ff',
-          backgroundColor: 'rgba(0,180,255,0.1)',
-          borderWidth: 3,
-          tension: 0.4,
-          fill: true
+          borderWidth: 2
+        },
+        {
+          label: 'Net Profit',
+          data: netData,
+          backgroundColor: 'rgba(0,255,136,0.7)',
+          borderColor: '#00ff88',
+          borderWidth: 2
         }
       ]
     },
@@ -3591,12 +4636,29 @@ function renderWeeklyChart(){
       maintainAspectRatio: false,
       plugins: {
         legend: {
+          display: true,
+          position: 'top',
           labels: {
             color: '#f0f4f8',
             font: {
               family: 'Rajdhani',
               size: 14,
               weight: 700
+            },
+            padding: 20
+          }
+        },
+        tooltip: {
+          backgroundColor: 'rgba(17, 24, 39, 0.95)',
+          titleColor: '#f0f4f8',
+          bodyColor: '#f0f4f8',
+          borderColor: '#00b4ff',
+          borderWidth: 1,
+          padding: 12,
+          displayColors: true,
+          callbacks: {
+            label: function(context) {
+              return context.dataset.label + ': $' + context.parsed.y.toLocaleString();
             }
           }
         }
@@ -3608,7 +4670,8 @@ function renderWeeklyChart(){
             color: '#a8b5c7',
             font: {
               family: 'Rajdhani',
-              size: 12
+              size: 12,
+              weight: 600
             },
             callback: function(value) {
               return '$' + value.toLocaleString();
@@ -3623,13 +4686,14 @@ function renderWeeklyChart(){
             color: '#a8b5c7',
             font: {
               family: 'Rajdhani',
-              size: 11
+              size: 11,
+              weight: 600
             },
             maxRotation: 45,
             minRotation: 45
           },
           grid: {
-            color: 'rgba(200,210,220,0.05)'
+            display: false
           }
         }
       }
@@ -3641,6 +4705,8 @@ function renderWeeklyChart(){
  * UI RENDER 
  *************************/
 function updateUI(){
+  renderRecentLoads(); // Update recent loads dropdown
+  
   const d = getDriver();
   const wk = getCurrentWeek();
   const loads = wk.loads;
@@ -3664,12 +4730,42 @@ function updateUI(){
   
   document.getElementById('loadList').innerHTML = loads.map((l,i)=>{
     const grossRpm = l.miles>0 ? l.gross/l.miles : 0;
+    const isMultiStop = l.stops && l.stops.length > 0;
+    
+    // Build day info with cross-week indicators
+    let dayInfo = '';
+    if (l.pickupDay && l.deliveryDay) {
+      if (l.deliversNextWeek) {
+        dayInfo = `<div style="font-size:11px;color:var(--warning);margin-top:2px;font-weight:700;">Pick ${l.pickupDay} • Del Next Monday 📅</div>`;
+      } else if (l.fromPreviousWeek) {
+        dayInfo = `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Pick ${l.originalPickupDay} (Prev Week) • Del ${l.deliveryDay}</div>`;
+      } else {
+        dayInfo = `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Pick ${l.pickupDay} • Del ${l.deliveryDay}</div>`;
+      }
+    }
+    
+    const multiStopBadge = isMultiStop 
+      ? `<span style="display:inline-block;background:rgba(0,180,255,0.2);color:var(--accent-cyan);padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;margin-left:8px;">${l.stops.length + 2} stops</span>`
+      : '';
+    
+    const crossWeekBadge = l.deliversNextWeek 
+      ? `<span style="display:inline-block;background:rgba(255,184,0,0.2);color:var(--warning);padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;margin-left:8px;">Next Week Revenue</span>`
+      : '';
+    
+    const prevWeekBadge = l.fromPreviousWeek 
+      ? `<span style="display:inline-block;background:rgba(0,180,255,0.15);color:var(--accent-cyan);padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;margin-left:8px;">From Prev Week</span>`
+      : '';
+    
     return `
-      <tr>
+      <tr style="${l.deliversNextWeek ? 'opacity: 0.7;' : ''}">
         <td style="font-weight:700;font-size:13px;">
           ${escapeHtml(l.origin)} 
           <span style="color:var(--accent-cyan)">➜</span> 
           ${escapeHtml(l.dest)}
+          ${multiStopBadge}
+          ${crossWeekBadge}
+          ${prevWeekBadge}
+          ${dayInfo}
         </td>
         <td>${Number(l.miles||0).toLocaleString()}</td>
         <td class="positive">${money(l.gross)}</td>
