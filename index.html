@@ -1369,6 +1369,17 @@ td {
               <div class="preview-hint" id="preview_hint"></div>
             </div>
 
+            <!-- LOAD ANALYZER -->
+            <div id="loadAnalyzer" style="display: none; margin-bottom: 16px; background: var(--bg-elevated); border: 1px solid var(--border-medium); border-radius: 12px; overflow: hidden;">
+              <button onclick="toggleLoadAnalyzer()" style="width: 100%; background: rgba(0,180,255,0.1); border: none; padding: 14px 20px; color: var(--text-primary); font-family: 'Rajdhani', sans-serif; font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; transition: all 0.3s;">
+                <span>📊 Load Analysis</span>
+                <span id="analyzerToggle">▼</span>
+              </button>
+              <div id="analyzerContent" style="display: none; padding: 20px; border-top: 1px solid var(--border-subtle);">
+                <div id="analyzerOutput"></div>
+              </div>
+            </div>
+
             <button class="btn-primary" onclick="addLoad()">Add Load to Week</button>
 
             <div class="hint-text">
@@ -2139,27 +2150,52 @@ function bindDriverOverridesToInputs(){
   const d = getDriver();
   const s = getSpecs();
   
+  console.log('📋 Binding driver overrides for:', d.name);
+  console.log('  - splitOverride:', d.splitOverride);
+  console.log('  - targetNetOverride:', d.targetNetOverride);
+  
   const splitEl = document.getElementById("d_split");
   const splitVal = Number(d.splitOverride);
-  splitEl.value = (Number.isFinite(splitVal) ? splitVal : s.split);
+  if (splitEl) {
+    splitEl.value = (Number.isFinite(splitVal) ? splitVal : s.split);
+    console.log('  - Split input set to:', splitEl.value);
+  } else {
+    console.error('❌ Split input element not found!');
+  }
   
   const targetEl = document.getElementById("d_target_net");
   const targetVal = Number(d.targetNetOverride);
-  targetEl.value = (Number.isFinite(targetVal) ? targetVal : "");
-  targetEl.placeholder = `Default: ${s.targetNet}`;
+  if (targetEl) {
+    targetEl.value = (Number.isFinite(targetVal) ? targetVal : "");
+    targetEl.placeholder = `Default: ${s.targetNet}`;
+    console.log('  - Target input set to:', targetEl.value || '(empty, using default)');
+  } else {
+    console.error('❌ Target net input element not found!');
+  }
 }
 
 function saveDriverOverrides(){
   const d = getDriver();
   
+  console.log('💾 Saving driver overrides for:', d.name);
+  
   const splitVal = parseFloat(document.getElementById("d_split").value);
-  if (!(Number.isFinite(splitVal) && splitVal > 0 && splitVal < 1.00001)) 
+  console.log('  - Split input value:', splitVal);
+  
+  if (!(Number.isFinite(splitVal) && splitVal > 0 && splitVal < 1.00001)) {
+    console.error('❌ Invalid split value:', splitVal);
     return alert("Enter a valid split like 0.80 or 0.88.");
+  }
   
   const targetVal = parseFloat(document.getElementById("d_target_net").value);
+  console.log('  - Target input value:', targetVal);
   
   d.splitOverride = splitVal;
   d.targetNetOverride = (Number.isFinite(targetVal) && targetVal >= 0) ? targetVal : null;
+  
+  console.log('✅ Saved overrides:');
+  console.log('  - splitOverride:', d.splitOverride);
+  console.log('  - targetNetOverride:', d.targetNetOverride);
   
   saveState();
   alert("Driver overrides saved.");
@@ -2228,6 +2264,256 @@ function totalsForDriverInRange(driver, startDate, endDate){
 /************************* 
  * PREVIEW + WARN 
  *************************/
+function toggleLoadAnalyzer(){
+  const content = document.getElementById('analyzerContent');
+  const toggle = document.getElementById('analyzerToggle');
+  const isOpen = content.style.display === 'block';
+  
+  content.style.display = isOpen ? 'none' : 'block';
+  toggle.innerText = isOpen ? '▼' : '▲';
+}
+
+function analyzeLoad(){
+  const s = getSpecs();
+  const driver = getDriver();
+  const split = getDriverSplit(driver);
+  const targetNet = getDriverTargetNet(driver);
+  
+  const gross = parseFloat(document.getElementById('pay_gross').value) || 0;
+  const loadedMiles = parseFloat(document.getElementById('mi_load').value) || 0;
+  const dhMiles = parseFloat(document.getElementById('mi_dh').value) || 0;
+  const miles = loadedMiles + dhMiles;
+  const tolls = parseFloat(document.getElementById('cost_tolls').value) || 0;
+  
+  // If no data entered yet, hide analyzer
+  if (gross === 0 || miles === 0) {
+    document.getElementById('loadAnalyzer').style.display = 'none';
+    return;
+  }
+  
+  // Show analyzer
+  document.getElementById('loadAnalyzer').style.display = 'block';
+  
+  // Calculate this load's metrics
+  const fuel = (miles / s.mpg) * s.fuel;
+  const maint = miles * s.maint;
+  const fixed = s.fixedPerLoad;
+  const net = (gross * split) - fuel - maint - fixed - tolls;
+  const rpm = miles > 0 ? gross / miles : 0;
+  const beGross = miles > 0 ? ((fuel + maint + fixed + tolls) / split) : 0;
+  const beRpm = miles > 0 ? (beGross / miles) : 0;
+  
+  // Multi-day calculation
+  const AVG_MILES_PER_DAY = 550; // Middle of 500-600 range
+  const TARGET_GROSS_PER_DAY = 1200;
+  const daysOnLoad = Math.ceil(miles / AVG_MILES_PER_DAY);
+  const expectedGross = daysOnLoad * TARGET_GROSS_PER_DAY;
+  const grossPerDay = daysOnLoad > 0 ? gross / daysOnLoad : 0;
+  const netPerDay = daysOnLoad > 0 ? net / daysOnLoad : 0;
+  
+  // Current week metrics
+  const wk = getCurrentWeek();
+  const wkTotals = computeWeekTotals(wk);
+  const currentNet = wkTotals.net;
+  const currentAvgRpm = wkTotals.rpm;
+  const gapBefore = targetNet - currentNet;
+  const newNet = currentNet + net;
+  const newGap = targetNet - newNet;
+  const gapClosed = gapBefore - newGap;
+  const progressBefore = currentNet > 0 ? (currentNet / targetNet * 100) : 0;
+  const progressAfter = newNet > 0 ? (newNet / targetNet * 100) : 0;
+  
+  // Week load quality analysis
+  let bestRpm = 0, worstRpm = 999999;
+  wk.loads.forEach(l => {
+    const r = l.miles > 0 ? l.gross / l.miles : 0;
+    if (r > bestRpm) bestRpm = r;
+    if (r < worstRpm && r > 0) worstRpm = r;
+  });
+  
+  // If no loads yet, use this load as baseline
+  if (wk.loads.length === 0) {
+    bestRpm = rpm;
+    worstRpm = rpm;
+  }
+  
+  // Star rating (1-5)
+  let stars = 3; // Default
+  if (rpm >= beRpm * 1.5) stars = 5;
+  else if (rpm >= beRpm * 1.25) stars = 4;
+  else if (rpm >= beRpm) stars = 3;
+  else if (rpm >= beRpm * 0.8) stars = 2;
+  else stars = 1;
+  
+  // Final recommendation
+  let recommendation = '';
+  let recColor = '';
+  let recIcon = '';
+  
+  if (net <= 0) {
+    recommendation = 'SKIP IT';
+    recColor = 'var(--danger)';
+    recIcon = '🔴';
+  } else if (grossPerDay < TARGET_GROSS_PER_DAY * 0.85) {
+    recommendation = 'MARGINAL';
+    recColor = 'var(--warning)';
+    recIcon = '🟡';
+  } else if (rpm < beRpm * 1.1) {
+    recommendation = 'MARGINAL';
+    recColor = 'var(--warning)';
+    recIcon = '🟡';
+  } else if (grossPerDay >= TARGET_GROSS_PER_DAY && rpm >= currentAvgRpm) {
+    recommendation = 'TAKE IT';
+    recColor = 'var(--success)';
+    recIcon = '🟢';
+  } else {
+    recommendation = 'MARGINAL';
+    recColor = 'var(--warning)';
+    recIcon = '🟡';
+  }
+  
+  // Build output HTML
+  const output = `
+    <div style="display: grid; gap: 16px;">
+      
+      <!-- Days & Daily Metrics -->
+      <div style="background: rgba(0,180,255,0.05); padding: 14px; border-radius: 10px; border-left: 4px solid var(--accent-blue);">
+        <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); font-weight: 700; margin-bottom: 8px;">
+          📅 LOAD DURATION
+        </div>
+        <div style="font-size: 15px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">
+          <strong>${daysOnLoad} Day${daysOnLoad > 1 ? 's' : ''}</strong> (${miles.toLocaleString()} miles ÷ ${AVG_MILES_PER_DAY} mi/day)
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 13px;">
+          <div>
+            <div style="color: var(--text-muted); font-size: 11px;">Gross/Day</div>
+            <div style="font-weight: 700; color: ${grossPerDay >= TARGET_GROSS_PER_DAY ? 'var(--success)' : 'var(--danger)'};">
+              ${money(grossPerDay)} ${grossPerDay >= TARGET_GROSS_PER_DAY ? '✅' : '❌'}
+            </div>
+            <div style="font-size: 10px; color: var(--text-muted);">Target: ${money(TARGET_GROSS_PER_DAY)}/day</div>
+          </div>
+          <div>
+            <div style="color: var(--text-muted); font-size: 11px;">Net/Day</div>
+            <div style="font-weight: 700; color: var(--text-primary);">${money(netPerDay)}</div>
+            <div style="font-size: 10px; color: var(--text-muted);">${daysOnLoad > 1 ? `${daysOnLoad} days @ ${money(netPerDay)}/day` : 'Single day run'}</div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Target Impact -->
+      <div style="background: rgba(0,255,136,0.05); padding: 14px; border-radius: 10px; border-left: 4px solid var(--success);">
+        <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); font-weight: 700; margin-bottom: 8px;">
+          🎯 TARGET IMPACT
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 13px; margin-bottom: 10px;">
+          <div>
+            <div style="color: var(--text-muted); font-size: 11px;">Current Progress</div>
+            <div style="font-weight: 700; color: var(--text-primary);">${money(currentNet)} / ${money(targetNet)}</div>
+            <div style="font-size: 11px; color: var(--text-muted);">${progressBefore.toFixed(1)}% of target</div>
+          </div>
+          <div>
+            <div style="color: var(--text-muted); font-size: 11px;">After This Load</div>
+            <div style="font-weight: 700; color: ${newNet >= targetNet ? 'var(--success)' : 'var(--text-primary)'};">
+              ${money(newNet)} / ${money(targetNet)}
+            </div>
+            <div style="font-size: 11px; color: var(--text-muted);">${progressAfter.toFixed(1)}% of target</div>
+          </div>
+        </div>
+        <div style="font-size: 14px; font-weight: 700; padding: 10px; background: var(--bg-primary); border-radius: 8px; text-align: center;">
+          ${net > 0 
+            ? `Closes gap by <span style="color: var(--success);">${money(gapClosed)}</span> ${newGap <= 0 ? '✅ Target met!' : ''}`
+            : `<span style="color: var(--danger);">Widens gap by ${money(Math.abs(net))}</span>`
+          }
+        </div>
+      </div>
+      
+      <!-- RPM Quality -->
+      <div style="background: rgba(0,180,255,0.05); padding: 14px; border-radius: 10px; border-left: 4px solid var(--accent-cyan);">
+        <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); font-weight: 700; margin-bottom: 8px;">
+          💰 RPM QUALITY
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 13px;">
+          <div>
+            <div style="color: var(--text-muted); font-size: 11px;">This Load RPM</div>
+            <div style="font-weight: 700; color: var(--accent-cyan); font-size: 18px;">${money(rpm)}</div>
+          </div>
+          <div>
+            <div style="color: var(--text-muted); font-size: 11px;">Week Avg RPM</div>
+            <div style="font-weight: 700; color: var(--text-primary);">${money(currentAvgRpm)}</div>
+            <div style="font-size: 11px; color: ${rpm > currentAvgRpm ? 'var(--success)' : 'var(--danger)'};">
+              ${rpm > currentAvgRpm 
+                ? `⬆️ Above avg (+${money(rpm - currentAvgRpm)})`
+                : `⬇️ Below avg (${money(rpm - currentAvgRpm)})`
+              }
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Profitability -->
+      <div style="background: rgba(255,184,0,0.05); padding: 14px; border-radius: 10px; border-left: 4px solid var(--warning);">
+        <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); font-weight: 700; margin-bottom: 8px;">
+          📊 PROFITABILITY CHECK
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; font-size: 13px;">
+          <div>
+            <div style="color: var(--text-muted); font-size: 11px;">Net Profit</div>
+            <div style="font-weight: 700; color: ${net >= 0 ? 'var(--success)' : 'var(--danger)'};">
+              ${money(net)} ${net >= 0 ? '✅' : '❌'}
+            </div>
+          </div>
+          <div>
+            <div style="color: var(--text-muted); font-size: 11px;">Break-even RPM</div>
+            <div style="font-weight: 700; color: var(--text-primary);">${money(beRpm)}</div>
+          </div>
+          <div>
+            <div style="color: var(--text-muted); font-size: 11px;">Margin</div>
+            <div style="font-weight: 700; color: ${rpm >= beRpm ? 'var(--success)' : 'var(--danger)'};">
+              ${money(rpm - beRpm)}
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Efficiency Rating -->
+      <div style="background: rgba(200,200,200,0.05); padding: 14px; border-radius: 10px; border-left: 4px solid var(--chrome-accent);">
+        <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); font-weight: 700; margin-bottom: 8px;">
+          ⭐ EFFICIENCY VS WEEK
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+          <div style="font-size: 24px;">${'⭐'.repeat(stars)}${'☆'.repeat(5-stars)}</div>
+          <div style="flex: 1;">
+            <div style="font-size: 13px; color: var(--text-secondary);">
+              Best: ${money(bestRpm)} RPM • Worst: ${money(worstRpm)} RPM
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Final Recommendation -->
+      <div style="background: linear-gradient(135deg, ${recColor}15, ${recColor}05); padding: 20px; border-radius: 12px; border: 2px solid ${recColor}; text-align: center;">
+        <div style="font-size: 13px; text-transform: uppercase; letter-spacing: 2px; color: var(--text-muted); font-weight: 700; margin-bottom: 10px;">
+          RECOMMENDATION
+        </div>
+        <div style="font-size: 28px; font-weight: 900; color: ${recColor}; font-family: 'Orbitron', sans-serif; margin-bottom: 8px;">
+          ${recIcon} ${recommendation}
+        </div>
+        <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.5;">
+          ${recommendation === 'TAKE IT' 
+            ? `Strong load: Meets daily target, good RPM, helps reach weekly goal`
+            : recommendation === 'MARGINAL'
+            ? `Acceptable but not ideal: Consider if it helps positioning or fills a gap`
+            : `Below standards: Negative impact on week - consider passing unless necessary`
+          }
+        </div>
+      </div>
+      
+    </div>
+  `;
+  
+  document.getElementById('analyzerOutput').innerHTML = output;
+}
+
 function preview(){
   const s = getSpecs();
   const driver = getDriver();
@@ -2258,6 +2544,9 @@ function preview(){
   const stickyEl = document.getElementById('sticky_preview');
   stickyEl.innerText = money(net);
   stickyEl.className = 'sticky-preview-value ' + (net >= 0 ? 'positive' : 'negative');
+  
+  // Run load analyzer
+  analyzeLoad();
 }
 
 function updateWarnBanner(){
@@ -2863,11 +3152,294 @@ function exportCSV(scope="week"){
 }
 
 function printWeeklySummary(){
-  alert("Print functionality is available. Would you like me to add full print templates?");
+  const d = getDriver();
+  const wk = getCurrentWeek();
+  const targetNet = getDriverTargetNet(d);
+  const t = computeWeekTotals(wk);
+  const split = getDriverSplit(d);
+  const s = getSpecs();
+  
+  const printContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Weekly Summary - ${escapeHtml(d.name)}</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 40px; }
+    h1 { color: #333; border-bottom: 3px solid #00b4ff; padding-bottom: 10px; }
+    .header { margin-bottom: 30px; }
+    .info-row { display: flex; justify-content: space-between; margin: 10px 0; padding: 8px; background: #f5f5f5; }
+    .label { font-weight: bold; color: #666; }
+    .value { color: #000; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+    th { background: #00b4ff; color: white; }
+    tr:hover { background: #f5f5f5; }
+    .positive { color: #00cc66; font-weight: bold; }
+    .negative { color: #ff3366; font-weight: bold; }
+    .footer { margin-top: 30px; padding-top: 20px; border-top: 2px solid #ddd; font-size: 12px; color: #666; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>DISPATCH COMMAND CENTER - WEEKLY SUMMARY</h1>
+    <div class="info-row">
+      <span class="label">Driver:</span>
+      <span class="value">${escapeHtml(d.name)}</span>
+    </div>
+    <div class="info-row">
+      <span class="label">Week:</span>
+      <span class="value">${escapeHtml(wk.label)}</span>
+    </div>
+    <div class="info-row">
+      <span class="label">Split:</span>
+      <span class="value">${(split*100).toFixed(0)}%</span>
+    </div>
+    <div class="info-row">
+      <span class="label">Target Net:</span>
+      <span class="value">${money(targetNet)}</span>
+    </div>
+  </div>
+  
+  <table>
+    <thead>
+      <tr>
+        <th>Metric</th>
+        <th>Value</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Total Loads</td>
+        <td>${wk.loads.length}</td>
+      </tr>
+      <tr>
+        <td>Total Miles</td>
+        <td>${t.miles.toLocaleString()}</td>
+      </tr>
+      <tr>
+        <td>Gross Revenue</td>
+        <td class="positive">${money(t.gross)}</td>
+      </tr>
+      <tr>
+        <td>Fuel Cost</td>
+        <td class="negative">-${money(t.fuel)}</td>
+      </tr>
+      <tr>
+        <td>Maintenance</td>
+        <td class="negative">-${money(t.maint)}</td>
+      </tr>
+      <tr>
+        <td>Fixed Costs</td>
+        <td class="negative">-${money(t.fixed)}</td>
+      </tr>
+      <tr>
+        <td>Tolls</td>
+        <td class="negative">-${money(t.tolls)}</td>
+      </tr>
+      <tr style="background: #f0f0f0; font-weight: bold; font-size: 16px;">
+        <td>NET PROFIT</td>
+        <td class="${t.net>=0?'positive':'negative'}">${money(t.net)}</td>
+      </tr>
+      <tr>
+        <td>Gross RPM</td>
+        <td>${money(t.rpm)}</td>
+      </tr>
+      <tr>
+        <td>Target Status</td>
+        <td class="${t.net>=targetNet?'positive':'negative'}">
+          ${t.net>=targetNet ? 'MET ✅' : 'SHORT ❌ by ' + money(targetNet - t.net)}
+        </td>
+      </tr>
+    </tbody>
+  </table>
+  
+  <h2 style="margin-top: 40px;">Load Details</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Route</th>
+        <th>Miles</th>
+        <th>Gross</th>
+        <th>Net</th>
+        <th>RPM</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${wk.loads.map((l, i) => `
+        <tr>
+          <td>${i+1}</td>
+          <td>${escapeHtml(l.origin)} → ${escapeHtml(l.dest)}</td>
+          <td>${(l.miles||0).toLocaleString()}</td>
+          <td class="positive">${money(l.gross)}</td>
+          <td class="${(l.net||0)>=0?'positive':'negative'}">${money(l.net)}</td>
+          <td>${money(l.miles>0 ? l.gross/l.miles : 0)}</td>
+        </tr>
+      `).join('')}
+    </tbody>
+  </table>
+  
+  <div class="footer">
+    Generated: ${new Date().toLocaleString()}<br/>
+    Dispatch Command Center
+  </div>
+</body>
+</html>
+  `;
+  
+  const printWindow = window.open('', '_blank');
+  printWindow.document.write(printContent);
+  printWindow.document.close();
+  printWindow.focus();
+  setTimeout(() => printWindow.print(), 250);
 }
 
 function printDriverYTD(){
-  alert("Print YTD is available. Would you like me to add full print templates?");
+  const d = getDriver();
+  const split = getDriverSplit(d);
+  const s = getSpecs();
+  const now = new Date();
+  const yearStart = new Date(now.getFullYear(), 0, 1, 0,0,0,0);
+  const ytd = totalsForDriverInRange(d, yearStart, now);
+  
+  const printContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <title>YTD Report - ${escapeHtml(d.name)}</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 40px; }
+    h1 { color: #333; border-bottom: 3px solid #00b4ff; padding-bottom: 10px; }
+    .header { margin-bottom: 30px; }
+    .info-row { display: flex; justify-content: space-between; margin: 10px 0; padding: 8px; background: #f5f5f5; }
+    .label { font-weight: bold; color: #666; }
+    .value { color: #000; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+    th { background: #00b4ff; color: white; }
+    tr:hover { background: #f5f5f5; }
+    .positive { color: #00cc66; font-weight: bold; }
+    .negative { color: #ff3366; font-weight: bold; }
+    .footer { margin-top: 30px; padding-top: 20px; border-top: 2px solid #ddd; font-size: 12px; color: #666; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>YEAR-TO-DATE REPORT ${now.getFullYear()}</h1>
+    <div class="info-row">
+      <span class="label">Driver:</span>
+      <span class="value">${escapeHtml(d.name)}</span>
+    </div>
+    <div class="info-row">
+      <span class="label">Period:</span>
+      <span class="value">Jan 1 - ${now.toLocaleDateString()}</span>
+    </div>
+    <div class="info-row">
+      <span class="label">Default Split:</span>
+      <span class="value">${(split*100).toFixed(0)}%</span>
+    </div>
+  </div>
+  
+  <table>
+    <thead>
+      <tr>
+        <th>Metric</th>
+        <th>Value</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Total Miles</td>
+        <td>${ytd.miles.toLocaleString()}</td>
+      </tr>
+      <tr>
+        <td>Gross Revenue</td>
+        <td class="positive">${money(ytd.gross)}</td>
+      </tr>
+      <tr>
+        <td>Average RPM</td>
+        <td>${money(ytd.rpm)}</td>
+      </tr>
+      <tr>
+        <td>Fuel Cost</td>
+        <td class="negative">-${money(ytd.fuel)}</td>
+      </tr>
+      <tr>
+        <td>Maintenance</td>
+        <td class="negative">-${money(ytd.maint)}</td>
+      </tr>
+      <tr>
+        <td>Fixed Costs</td>
+        <td class="negative">-${money(ytd.fixed)}</td>
+      </tr>
+      <tr>
+        <td>Tolls</td>
+        <td class="negative">-${money(ytd.tolls)}</td>
+      </tr>
+      <tr style="background: #f0f0f0; font-weight: bold; font-size: 16px;">
+        <td>NET PROFIT (YTD)</td>
+        <td class="${ytd.net>=0?'positive':'negative'}">${money(ytd.net)}</td>
+      </tr>
+      <tr>
+        <td>Estimated Tax Liability (${(s.taxRate*100).toFixed(0)}%)</td>
+        <td class="negative">-${money(ytd.net * s.taxRate)}</td>
+      </tr>
+      <tr style="background: #e8f4ff; font-weight: bold;">
+        <td>After-Tax Profit</td>
+        <td class="positive">${money(ytd.net * (1 - s.taxRate))}</td>
+      </tr>
+      <tr>
+        <td>Company Cut (YTD)</td>
+        <td>${money(ytd.companyCut)}</td>
+      </tr>
+    </tbody>
+  </table>
+  
+  <h2 style="margin-top: 40px;">Week History</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Week</th>
+        <th>Loads</th>
+        <th>Miles</th>
+        <th>Gross</th>
+        <th>Net</th>
+        <th>RPM</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${Object.keys(d.weeks).sort().reverse().map(wkId => {
+        const w = d.weeks[wkId];
+        const t = computeWeekTotals(w);
+        const rpm = t.miles>0 ? (t.gross/t.miles) : 0;
+        return `
+          <tr>
+            <td>${escapeHtml(w.label || wkId)}</td>
+            <td>${(w.loads||[]).length}</td>
+            <td>${t.miles.toLocaleString()}</td>
+            <td class="positive">${money(t.gross)}</td>
+            <td class="${t.net>=0?'positive':'negative'}">${money(t.net)}</td>
+            <td>${money(rpm)}</td>
+          </tr>
+        `;
+      }).join('')}
+    </tbody>
+  </table>
+  
+  <div class="footer">
+    Generated: ${new Date().toLocaleString()}<br/>
+    Dispatch Command Center
+  </div>
+</body>
+</html>
+  `;
+  
+  const printWindow = window.open('', '_blank');
+  printWindow.document.write(printContent);
+  printWindow.document.close();
+  printWindow.focus();
+  setTimeout(() => printWindow.print(), 250);
 }
 
 /************************* 
