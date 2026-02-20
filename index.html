@@ -3,6 +3,10 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=0" />
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta http-equiv="Expires" content="0" />
+<!-- VERSION: V2-FIXED - Feb 20, 2026 - Enhanced Driver Modal (getTargetNet bug fixed) -->
 <title>Dispatch Command Center</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -1264,24 +1268,16 @@ td {
         <div class="stat-value" id="fleet_loads">0</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Fleet Weekly Gross</div>
-        <div class="stat-value positive" id="fleet_gross">$0.00</div>
+        <div class="stat-label">Avg Gross Per Driver</div>
+        <div class="stat-value positive" id="fleet_avg_gross">$0.00</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Fleet Weekly Net</div>
-        <div class="stat-value positive" id="fleet_net">$0.00</div>
+        <div class="stat-label">Avg Fleet Weekly Net</div>
+        <div class="stat-value positive" id="fleet_avg_net">$0.00</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Fleet Avg RPM</div>
         <div class="stat-value" id="fleet_rpm">$0.00</div>
-      </div>
-    </div>
-
-    <!-- Combined Fleet Map -->
-    <div class="card">
-      <div class="card-header">Fleet Map - All Current Week Routes</div>
-      <div class="card-body" style="padding: 0;">
-        <div id="dispatchMap" class="dispatch-map"></div>
       </div>
     </div>
 
@@ -1504,109 +1500,135 @@ td {
 
   <!-- ANALYTICS TAB -->
   <div id="analytics" class="tab-content">
-    <div class="stats-grid">
-      <div class="stat-card">
-        <div class="stat-label">YTD Gross</div>
-        <div class="stat-value" id="ytd_gross">$0.00</div>
+    
+    <!-- SECTION 1: ALERTS & ACTION ITEMS -->
+    <div class="card" style="border-left: 4px solid var(--warning);">
+      <div class="card-header" style="background: rgba(255, 136, 0, 0.1); display: flex; align-items: center; gap: 10px;">
+        <span style="font-size: 20px;">🚨</span>
+        <span style="font-weight: 700;">Attention Needed</span>
       </div>
-      <div class="stat-card">
-        <div class="stat-label">YTD Net Profit</div>
-        <div class="stat-value positive" id="ytd_profit">$0.00</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Est. Tax Liability</div>
-        <div class="stat-value negative" id="ytd_tax">$0.00</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Operating Expense Ratio</div>
-        <div class="stat-value" id="oer_val">0%</div>
+      <div class="card-body" id="alertsContainer">
+        <div style="text-align: center; color: var(--text-secondary); padding: 20px;">
+          <div style="font-size: 48px; opacity: 0.3;">✅</div>
+          <div style="margin-top: 10px;">No alerts! Everything looks good.</div>
+        </div>
       </div>
     </div>
 
-    <!-- WEEKLY TREND CHART -->
+    <!-- SECTION 2: PERFORMANCE TRENDS -->
     <div class="card">
-      <div class="card-header">Weekly Net Profit Trend</div>
+      <div class="card-header">📈 Performance Trends (Last 30 Days)</div>
       <div class="card-body">
+        <div class="stats-grid" style="margin-bottom: 24px;">
+          <div class="stat-card">
+            <div class="stat-label">Avg RPM</div>
+            <div class="stat-value" id="trend_rpm">$0.00</div>
+            <div class="stat-change" id="trend_rpm_change"></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Avg Weekly Net</div>
+            <div class="stat-value" id="trend_net">$0</div>
+            <div class="stat-change" id="trend_net_change"></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Total Loads</div>
+            <div class="stat-value" id="trend_loads">0</div>
+            <div class="stat-change" id="trend_loads_change"></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Avg Cost/Mile</div>
+            <div class="stat-value" id="trend_cpm">$0.00</div>
+            <div class="stat-change" id="trend_cpm_change"></div>
+          </div>
+        </div>
         <div class="chart-container">
-          <canvas id="weeklyChart"></canvas>
+          <canvas id="trendsChart"></canvas>
         </div>
       </div>
     </div>
 
-    <!-- BUSINESS HEALTH -->
+    <!-- SECTION 3: LANE PROFITABILITY -->
     <div class="card">
-      <div class="card-header">Business Health</div>
+      <div class="card-header">🗺️ Lane Profitability Analysis</div>
       <div class="card-body">
-        <div class="breakdown-row">
-          <span>Total Fuel Spend (YTD):</span>
-          <span id="ytd_fuel" class="negative">$0.00</span>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+          
+          <!-- Top Profitable Lanes -->
+          <div>
+            <div style="font-weight: 700; font-size: 16px; margin-bottom: 16px; color: var(--success);">
+              ✅ Most Profitable Lanes
+            </div>
+            <div class="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th style="text-align: left;">Lane</th>
+                    <th>Avg RPM</th>
+                    <th>Avg Net</th>
+                    <th>Loads</th>
+                  </tr>
+                </thead>
+                <tbody id="topLanesTable"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Worst Performing Lanes -->
+          <div>
+            <div style="font-weight: 700; font-size: 16px; margin-bottom: 16px; color: var(--danger);">
+              ⚠️ Least Profitable Lanes
+            </div>
+            <div class="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th style="text-align: left;">Lane</th>
+                    <th>Avg RPM</th>
+                    <th>Avg Net</th>
+                    <th>Loads</th>
+                  </tr>
+                </thead>
+                <tbody id="worstLanesTable"></tbody>
+              </table>
+            </div>
+          </div>
+          
         </div>
-        <div class="breakdown-row">
-          <span>Total Maintenance Saved (YTD):</span>
-          <span id="ytd_maint" class="positive">$0.00</span>
-        </div>
-        <div class="breakdown-row">
-          <span>Best Week Net:</span>
-          <span id="best_week" class="positive">$0.00</span>
-        </div>
-        <div class="breakdown-row">
-          <span>Worst Week Net:</span>
-          <span id="worst_week" class="negative">$0.00</span>
+        <div class="hint-text" style="margin-top: 16px;">
+          Data combines historical Excel loads + all entered loads. Customer names excluded for privacy.
         </div>
       </div>
     </div>
 
-    <!-- WEEK HISTORY -->
+    <!-- SECTION 4: DRIVER RANKINGS -->
     <div class="card">
-      <div class="card-header">Week History</div>
-      <div class="table-wrapper">
-        <table>
-          <thead>
-            <tr>
-              <th>Week</th>
-              <th>Loads</th>
-              <th>Miles</th>
-              <th>Gross</th>
-              <th>Net</th>
-              <th>Gross RPM</th>
-            </tr>
-          </thead>
-          <tbody id="weekHistory"></tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- FLEET OVERVIEW -->
-    <div class="card">
-      <div class="card-header">Fleet Overview</div>
-      <div class="table-wrapper">
-        <table>
-          <thead>
-            <tr>
-              <th>Driver</th>
-              <th>Split</th>
-              <th>CW Gross</th>
-              <th>CW RPM</th>
-              <th>CW Net</th>
-              <th>MTD Gross</th>
-              <th>MTD RPM</th>
-              <th>MTD Net</th>
-              <th>YTD Gross</th>
-              <th>YTD RPM</th>
-              <th>YTD Net</th>
-              <th>Quick</th>
-            </tr>
-          </thead>
-          <tbody id="fleetTable"></tbody>
-        </table>
-      </div>
+      <div class="card-header">🏆 Driver Performance Rankings (Current Week)</div>
       <div class="card-body">
-        <div class="hint-text">
-          MTD/YTD are based on each load's timestamp. CW = Current Week.
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th style="text-align: left;">Driver</th>
+                <th>Loads</th>
+                <th>Miles</th>
+                <th>Gross</th>
+                <th>Net</th>
+                <th>RPM</th>
+                <th>Deadhead %</th>
+                <th>Efficiency</th>
+              </tr>
+            </thead>
+            <tbody id="driverRankingsTable"></tbody>
+          </table>
+        </div>
+        <div class="hint-text" style="margin-top: 16px;">
+          Efficiency score based on: RPM performance, deadhead ratio, and target achievement
         </div>
       </div>
     </div>
 
+    <!-- ACTION BUTTONS -->
     <div class="quick-actions no-print" style="margin-top: 20px;">
       <button class="btn-icon" onclick="exportCSV('ytd')">⬇️ Export YTD CSV</button>
       <button class="btn-icon" onclick="printDriverYTD()">🖨️ Print YTD</button>
@@ -1690,58 +1712,51 @@ td {
     <div class="dash-grid">
       <div>
         <div class="card">
-          <div class="card-header">Fixed Weekly Costs</div>
+          <div class="card-header">Fixed Weekly Costs (Selected Driver)</div>
           <div class="card-body">
             <div class="input-row">
               <div class="input-group">
                 <label>Truck Payment</label>
-                <input id="f_truck" type="number" inputmode="decimal" min="0" step="0.01">
+                <input id="f_truck" type="number" inputmode="decimal" min="0" step="0.01" oninput="this.dataset.dirty='true'">
               </div>
             </div>
             <div class="input-row">
               <div class="input-group">
                 <label>Trailer Payment</label>
-                <input id="f_trailer" type="number" inputmode="decimal" min="0" step="0.01">
+                <input id="f_trailer" type="number" inputmode="decimal" min="0" step="0.01" oninput="this.dataset.dirty='true'">
               </div>
             </div>
             <div class="input-row">
               <div class="input-group">
                 <label>Insurance</label>
-                <input id="f_ins" type="number" inputmode="decimal" min="0" step="0.01">
+                <input id="f_ins" type="number" inputmode="decimal" min="0" step="0.01" oninput="this.dataset.dirty='true'">
               </div>
             </div>
-            <div class="hint-text">
-              Fixed costs are split across loads using "Loads per week" below.
-            </div>
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="card-header">Variable Weekly Deductions</div>
-          <div class="card-body">
             <div class="input-row">
               <div class="input-group">
                 <label>Advances</label>
-                <input id="f_adv" type="number" inputmode="decimal" min="0" step="0.01">
+                <input id="f_adv" type="number" inputmode="decimal" min="0" step="0.01" oninput="this.dataset.dirty='true'">
               </div>
             </div>
             <div class="input-row">
               <div class="input-group">
                 <label>Food/Personal</label>
-                <input id="f_food" type="number" inputmode="decimal" min="0" step="0.01">
+                <input id="f_food" type="number" inputmode="decimal" min="0" step="0.01" oninput="this.dataset.dirty='true'">
               </div>
             </div>
             <div class="input-row">
               <div class="input-group">
                 <label>Repairs (Actual)</label>
-                <input id="f_rep" type="number" inputmode="decimal" min="0" step="0.01">
+                <input id="f_rep" type="number" inputmode="decimal" min="0" step="0.01" oninput="this.dataset.dirty='true'">
               </div>
             </div>
+            <button class="btn-primary no-print" onclick="saveSettings()">Save Fixed Costs for This Driver</button>
             <div class="hint-text">
-              Tip: keep "Repairs" for true out-of-pocket repairs; maintenance savings is calculated per mile.
+              Fixed costs are split across loads using "Loads per week" below. These costs are saved individually for each driver.
             </div>
           </div>
         </div>
+
       </div>
 
       <div>
@@ -1803,19 +1818,19 @@ td {
             <div class="input-row">
               <div class="input-group">
                 <label>Split % for this driver</label>
-                <input id="d_split" type="number" inputmode="decimal" min="0" max="1" step="0.01" onfocus="this.dataset.editing='true'" onblur="this.dataset.editing='false'" />
+                <input id="d_split" type="number" inputmode="decimal" min="0" max="1" step="0.01" oninput="this.dataset.dirty='true'" onfocus="this.dataset.editing='true'" onblur="this.dataset.editing='false'" />
               </div>
             </div>
             <div class="input-row">
               <div class="input-group">
                 <label>Target Net / Week for this driver</label>
-                <input id="d_target_net" type="number" inputmode="decimal" min="0" step="0.01" onfocus="this.dataset.editing='true'" onblur="this.dataset.editing='false'" />
+                <input id="d_target_net" type="number" inputmode="decimal" min="0" step="0.01" oninput="this.dataset.dirty='true'" onfocus="this.dataset.editing='true'" onblur="this.dataset.editing='false'" />
               </div>
             </div>
             <div class="input-row">
               <div class="input-group">
                 <label>Miles Per Day Capacity</label>
-                <input id="d_miles_per_day" type="number" inputmode="numeric" min="400" max="800" step="50" onfocus="this.dataset.editing='true'" onblur="this.dataset.editing='false'" placeholder="600" />
+                <input id="d_miles_per_day" type="number" inputmode="numeric" min="400" max="800" step="50" oninput="this.dataset.dirty='true'" onfocus="this.dataset.editing='true'" onblur="this.dataset.editing='false'" placeholder="600" />
               </div>
             </div>
             <button class="btn-primary no-print" onclick="saveDriverOverrides()">Save Driver Override</button>
@@ -1823,6 +1838,27 @@ td {
               Example split: 0.80 (80%), 0.88 (88%). This affects new loads + company cut analytics. Existing loads keep their saved split.<br/>
               Target net: Set a specific weekly goal for this driver (e.g., 1500, 2000). Leave blank to use global default.<br/>
               Miles/day: How many miles this driver can realistically drive per day (default: 600). Used in Load Analyzer.
+            </div>
+          </div>
+        </div>
+
+        <!-- TRUCK & TRAILER INFO -->
+        <div class="card">
+          <div class="card-header">Truck & Trailer Info (Selected Driver)</div>
+          <div class="card-body">
+            <div class="input-row">
+              <div class="input-group">
+                <label>Truck Number</label>
+                <input id="d_truck_number" type="text" placeholder="e.g., 101, T-205" oninput="this.dataset.dirty='true'" />
+              </div>
+              <div class="input-group">
+                <label>Trailer Number</label>
+                <input id="d_trailer_number" type="text" placeholder="e.g., TR-45, 301" oninput="this.dataset.dirty='true'" />
+              </div>
+            </div>
+            <button class="btn-primary no-print" onclick="saveTruckTrailerInfo()">Save Truck/Trailer Info</button>
+            <div class="hint-text">
+              Keep track of which truck and trailer each driver is using.
             </div>
           </div>
         </div>
@@ -2323,6 +2359,28 @@ function getDriverTargetNet(driver){
   return s.targetNet;
 }
 
+function getDriverFixedWeekly(driver){
+  const fixedCosts = driver?.fixedCosts;
+  
+  // If driver has custom fixed costs, use those
+  if (fixedCosts) {
+    return (fixedCosts.truck || 0) + 
+           (fixedCosts.trailer || 0) + 
+           (fixedCosts.ins || 0) + 
+           (fixedCosts.adv || 0) + 
+           (fixedCosts.food || 0) + 
+           (fixedCosts.rep || 0);
+  }
+  
+  // Otherwise use default values for new drivers
+  return 800 + 400 + 350; // truck + trailer + insurance defaults
+}
+
+function getDriverVariableDeductions(driver){
+  // Not needed anymore - all costs are in fixedCosts
+  return 0;
+}
+
 /************************* 
  * NAV 
  *************************/
@@ -2333,8 +2391,8 @@ function showTab(id, btn){
   btn.classList.add('active');
   
   if (id === "dashboard") setTimeout(initMap, 200);
-  if (id === "analytics") setTimeout(renderWeeklyChart, 200);
-  if (id === "dispatch") setTimeout(()=>{ renderDispatchView(); initDispatchMap(); }, 200);
+  if (id === "analytics") setTimeout(renderAnalytics, 200);
+  if (id === "dispatch") setTimeout(()=>{ renderDispatchView(); }, 200);
   if (id === "calendar") {
     calendarWeekStart = null; // Reset to show driver's current week
     setTimeout(renderCalendar, 200);
@@ -2377,6 +2435,7 @@ function onDriverChange(){
   renderWeekSelect();
   bindDriverOverridesToInputs();
   bindDriverStatusToInputs();
+  bindSettingsToInputs(); // Reload fixed costs for new driver
   updateUI();
   setTimeout(initMap, 150);
 }
@@ -2533,12 +2592,27 @@ function getSpecs(){
 
 function bindSettingsToInputs(){
   const s = settings;
-  document.getElementById('f_truck').value = s.f_truck;
-  document.getElementById('f_trailer').value = s.f_trailer;
-  document.getElementById('f_ins').value = s.f_ins;
-  document.getElementById('f_adv').value = s.f_adv;
-  document.getElementById('f_food').value = s.f_food;
-  document.getElementById('f_rep').value = s.f_rep;
+  const d = getDriver();
+  
+  // Load driver-specific fixed costs if they exist, otherwise use global defaults
+  const fixedCosts = d.fixedCosts || {};
+  
+  const fTruck = document.getElementById('f_truck');
+  const fTrailer = document.getElementById('f_trailer');
+  const fIns = document.getElementById('f_ins');
+  const fAdv = document.getElementById('f_adv');
+  const fFood = document.getElementById('f_food');
+  const fRep = document.getElementById('f_rep');
+  
+  // Use driver's custom value if it exists, otherwise use global default
+  if (fTruck && fTruck.dataset.dirty !== 'true') fTruck.value = fixedCosts.truck !== undefined ? fixedCosts.truck : s.f_truck;
+  if (fTrailer && fTrailer.dataset.dirty !== 'true') fTrailer.value = fixedCosts.trailer !== undefined ? fixedCosts.trailer : s.f_trailer;
+  if (fIns && fIns.dataset.dirty !== 'true') fIns.value = fixedCosts.ins !== undefined ? fixedCosts.ins : s.f_ins;
+  if (fAdv && fAdv.dataset.dirty !== 'true') fAdv.value = fixedCosts.adv !== undefined ? fixedCosts.adv : s.f_adv;
+  if (fFood && fFood.dataset.dirty !== 'true') fFood.value = fixedCosts.food !== undefined ? fixedCosts.food : s.f_food;
+  if (fRep && fRep.dataset.dirty !== 'true') fRep.value = fixedCosts.rep !== undefined ? fixedCosts.rep : s.f_rep;
+  
+  // Other settings remain global
   document.getElementById('s_split').value = s.s_split;
   document.getElementById('s_fuel').value = s.s_fuel;
   document.getElementById('s_mpg').value = s.s_mpg;
@@ -2546,6 +2620,13 @@ function bindSettingsToInputs(){
   document.getElementById('s_loads_per_week').value = s.s_loads_per_week;
   document.getElementById('s_target_net').value = s.s_target_net;
   document.getElementById('s_tax').value = s.s_tax;
+}
+
+// Initialize event listeners once on page load
+let settingsListenersInitialized = false;
+function initSettingsListeners(){
+  if (settingsListenersInitialized) return;
+  settingsListenersInitialized = true;
   
   document.querySelectorAll("#settings input").forEach(inp => 
     inp.addEventListener("input", ()=>{ 
@@ -2556,13 +2637,26 @@ function bindSettingsToInputs(){
 }
 
 function saveSettings(){
+  const d = getDriver();
+  
+  // Save fixed costs to current driver
+  d.fixedCosts = {
+    truck: parseFloat(document.getElementById('f_truck').value) || 0,
+    trailer: parseFloat(document.getElementById('f_trailer').value) || 0,
+    ins: parseFloat(document.getElementById('f_ins').value) || 0,
+    adv: parseFloat(document.getElementById('f_adv').value) || 0,
+    food: parseFloat(document.getElementById('f_food').value) || 0,
+    rep: parseFloat(document.getElementById('f_rep').value) || 0
+  };
+  
+  // Save other settings globally
   const s = {
-    f_truck: parseFloat(document.getElementById('f_truck').value) || 0,
-    f_trailer: parseFloat(document.getElementById('f_trailer').value) || 0,
-    f_ins: parseFloat(document.getElementById('f_ins').value) || 0,
-    f_adv: parseFloat(document.getElementById('f_adv').value) || 0,
-    f_food: parseFloat(document.getElementById('f_food').value) || 0,
-    f_rep: parseFloat(document.getElementById('f_rep').value) || 0,
+    f_truck: settings.f_truck, // Keep global defaults unchanged
+    f_trailer: settings.f_trailer,
+    f_ins: settings.f_ins,
+    f_adv: settings.f_adv,
+    f_food: settings.f_food,
+    f_rep: settings.f_rep,
     s_split: parseFloat(document.getElementById('s_split').value) || 0.8,
     s_fuel: parseFloat(document.getElementById('s_fuel').value) || 3.25,
     s_mpg: parseFloat(document.getElementById('s_mpg').value) || 6.5,
@@ -2574,8 +2668,54 @@ function saveSettings(){
   
   settings = { ...defaultSettings, ...s };
   persistSettings(settings);
-  alert("Global settings saved.");
+  saveState(); // Save driver data with fixed costs
+  
+  // Clear dirty flags so values reload properly on driver switch
+  ['f_truck', 'f_trailer', 'f_ins', 'f_adv', 'f_food', 'f_rep'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.dataset.dirty = 'false';
+  });
+  
+  alert(`Fixed costs saved for ${d.name}. Other settings saved globally.`);
   updateUI();
+}
+
+function saveDriverFixedCosts(){
+  const d = getDriver();
+  
+  if (!d.fixedCosts) d.fixedCosts = {};
+  
+  d.fixedCosts.truck = parseFloat(document.getElementById('f_truck').value) || 0;
+  d.fixedCosts.trailer = parseFloat(document.getElementById('f_trailer').value) || 0;
+  d.fixedCosts.ins = parseFloat(document.getElementById('f_ins').value) || 0;
+  
+  // Clear dirty flags
+  document.getElementById('f_truck').dataset.dirty = 'false';
+  document.getElementById('f_trailer').dataset.dirty = 'false';
+  document.getElementById('f_ins').dataset.dirty = 'false';
+  
+  saveState();
+  alert(`Fixed costs saved for ${d.name}.`);
+  console.log('✅ Saved fixed costs for', d.name, ':', d.fixedCosts);
+}
+
+function saveDriverVariableCosts(){
+  const d = getDriver();
+  
+  if (!d.fixedCosts) d.fixedCosts = {};
+  
+  d.fixedCosts.adv = parseFloat(document.getElementById('f_adv').value) || 0;
+  d.fixedCosts.food = parseFloat(document.getElementById('f_food').value) || 0;
+  d.fixedCosts.rep = parseFloat(document.getElementById('f_rep').value) || 0;
+  
+  // Clear dirty flags
+  document.getElementById('f_adv').dataset.dirty = 'false';
+  document.getElementById('f_food').dataset.dirty = 'false';
+  document.getElementById('f_rep').dataset.dirty = 'false';
+  
+  saveState();
+  alert(`Variable deductions saved for ${d.name}.`);
+  console.log('✅ Saved variable costs for', d.name, ':', d.fixedCosts);
 }
 
 function bindDriverOverridesToInputs(){
@@ -2588,36 +2728,71 @@ function bindDriverOverridesToInputs(){
   
   const splitEl = document.getElementById("d_split");
   const splitVal = Number(d.splitOverride);
-  if (splitEl && splitEl.dataset.editing !== 'true') {
+  // Don't overwrite if currently editing OR if field has been modified
+  if (splitEl && splitEl.dataset.editing !== 'true' && splitEl.dataset.dirty !== 'true') {
     splitEl.value = (Number.isFinite(splitVal) ? splitVal : s.split);
     console.log('  - Split input set to:', splitEl.value);
   } else if (splitEl) {
-    console.log('  - Split input being edited, not overwriting');
+    console.log('  - Split input being edited/modified, not overwriting');
   } else {
     console.error('❌ Split input element not found!');
   }
   
   const targetEl = document.getElementById("d_target_net");
   const targetVal = Number(d.targetNetOverride);
-  if (targetEl && targetEl.dataset.editing !== 'true') {
+  // Don't overwrite if currently editing OR if field has been modified
+  if (targetEl && targetEl.dataset.editing !== 'true' && targetEl.dataset.dirty !== 'true') {
     targetEl.value = (Number.isFinite(targetVal) ? targetVal : "");
     targetEl.placeholder = `Default: ${s.targetNet}`;
     console.log('  - Target input set to:', targetEl.value || '(empty, using default)');
   } else if (targetEl) {
-    console.log('  - Target input being edited, not overwriting');
+    console.log('  - Target input being edited/modified, not overwriting');
   } else {
     console.error('❌ Target net input element not found!');
   }
   
   const milesPerDayEl = document.getElementById("d_miles_per_day");
   const milesPerDayVal = Number(d.milesPerDayOverride);
-  if (milesPerDayEl && milesPerDayEl.dataset.editing !== 'true') {
+  // Don't overwrite if currently editing OR if field has been modified
+  if (milesPerDayEl && milesPerDayEl.dataset.editing !== 'true' && milesPerDayEl.dataset.dirty !== 'true') {
     milesPerDayEl.value = (Number.isFinite(milesPerDayVal) ? milesPerDayVal : "");
     milesPerDayEl.placeholder = "600";
     console.log('  - Miles/day input set to:', milesPerDayEl.value || '(empty, using default 600)');
   } else if (milesPerDayEl) {
-    console.log('  - Miles/day input being edited, not overwriting');
+    console.log('  - Miles/day input being edited/modified, not overwriting');
   }
+  
+  // Bind truck/trailer info
+  const truckEl = document.getElementById("d_truck_number");
+  const trailerEl = document.getElementById("d_trailer_number");
+  
+  if (truckEl && truckEl.dataset.dirty !== 'true') {
+    truckEl.value = d.truckNumber || "";
+  }
+  if (trailerEl && trailerEl.dataset.dirty !== 'true') {
+    trailerEl.value = d.trailerNumber || "";
+  }
+}
+
+function saveTruckTrailerInfo(){
+  const d = getDriver();
+  
+  const truckEl = document.getElementById("d_truck_number");
+  const trailerEl = document.getElementById("d_trailer_number");
+  
+  const truckNum = truckEl.value.trim();
+  const trailerNum = trailerEl.value.trim();
+  
+  d.truckNumber = truckNum || null;
+  d.trailerNumber = trailerNum || null;
+  
+  // Clear dirty flags
+  truckEl.dataset.dirty = 'false';
+  trailerEl.dataset.dirty = 'false';
+  
+  saveState();
+  alert("Truck/Trailer info saved.");
+  console.log('✅ Saved truck/trailer:', {truck: d.truckNumber, trailer: d.trailerNumber});
 }
 
 function saveDriverOverrides(){
@@ -2625,7 +2800,11 @@ function saveDriverOverrides(){
   
   console.log('💾 Saving driver overrides for:', d.name);
   
-  const splitVal = parseFloat(document.getElementById("d_split").value);
+  const splitEl = document.getElementById("d_split");
+  const targetEl = document.getElementById("d_target_net");
+  const milesPerDayEl = document.getElementById("d_miles_per_day");
+  
+  const splitVal = parseFloat(splitEl.value);
   console.log('  - Split input value:', splitVal);
   
   if (!(Number.isFinite(splitVal) && splitVal > 0 && splitVal < 1.00001)) {
@@ -2633,10 +2812,10 @@ function saveDriverOverrides(){
     return alert("Enter a valid split like 0.80 or 0.88.");
   }
   
-  const targetVal = parseFloat(document.getElementById("d_target_net").value);
+  const targetVal = parseFloat(targetEl.value);
   console.log('  - Target input value:', targetVal);
   
-  const milesPerDayVal = parseFloat(document.getElementById("d_miles_per_day").value);
+  const milesPerDayVal = parseFloat(milesPerDayEl.value);
   console.log('  - Miles/day input value:', milesPerDayVal);
   
   d.splitOverride = splitVal;
@@ -2647,6 +2826,11 @@ function saveDriverOverrides(){
   console.log('  - splitOverride:', d.splitOverride);
   console.log('  - targetNetOverride:', d.targetNetOverride);
   console.log('  - milesPerDayOverride:', d.milesPerDayOverride);
+  
+  // Clear dirty flags after successful save
+  splitEl.dataset.dirty = 'false';
+  targetEl.dataset.dirty = 'false';
+  milesPerDayEl.dataset.dirty = 'false';
   
   saveState();
   alert("Driver overrides saved.");
@@ -3037,10 +3221,13 @@ function analyzeLoad(){
   // Show analyzer
   document.getElementById('loadAnalyzer').style.display = 'block';
   
-  // Calculate this load's metrics
+  // Calculate this load's metrics - USE DRIVER-SPECIFIC COSTS
+  const driverFixedWeekly = getDriverFixedWeekly(driver);
+  const fixedPerLoad = driverFixedWeekly / s.loadsPerWeek;
+  
   const fuel = (miles / s.mpg) * s.fuel;
   const maint = miles * s.maint;
-  const fixed = s.fixedPerLoad;
+  const fixed = fixedPerLoad;
   const net = (gross * split) - fuel - maint - fixed - tolls;
   const rpm = miles > 0 ? gross / miles : 0;
   const beGross = miles > 0 ? ((fuel + maint + fixed + tolls) / split) : 0;
@@ -3295,9 +3482,13 @@ function preview(){
     + (parseFloat(document.getElementById('mi_dh').value)||0);
   const tolls = parseFloat(document.getElementById('cost_tolls').value) || 0;
   
+  // USE DRIVER-SPECIFIC COSTS
+  const driverFixedWeekly = getDriverFixedWeekly(driver);
+  const fixedPerLoad = driverFixedWeekly / s.loadsPerWeek;
+  
   const fuel = (miles / s.mpg) * s.fuel;
   const maint = miles * s.maint;
-  const fixed = s.fixedPerLoad;
+  const fixed = fixedPerLoad;
   const net = (gross * split) - fuel - maint - fixed - tolls;
   
   const el = document.getElementById('preview_net');
@@ -3476,9 +3667,13 @@ function addLoad(){
   const driver = getDriver();
   const split = getDriverSplit(driver);
   
+  // USE DRIVER-SPECIFIC COSTS
+  const driverFixedWeekly = getDriverFixedWeekly(driver);
+  const fixedPerLoad = driverFixedWeekly / s.loadsPerWeek;
+  
   const fuel = (miles / s.mpg) * s.fuel;
   const maint = miles * s.maint;
-  const fixed = s.fixedPerLoad;
+  const fixed = fixedPerLoad;
   const cut = gross * split;
   const net = cut - fuel - maint - fixed - tolls;
   
@@ -3688,14 +3883,19 @@ function saveLoadEdit(i){
     l.gross = newGross;
     
     // Recalculate using stored split
-    const split = l.details?.split || getDriverSplit(getDriver());
+    const driver = getDriver();
+    const split = l.details?.split || getDriverSplit(driver);
     const s = getSpecs();
     const miles = l.miles || 0;
     const tolls = l.details?.tolls || 0;
     
+    // USE DRIVER-SPECIFIC COSTS
+    const driverFixedWeekly = getDriverFixedWeekly(driver);
+    const fixedPerLoad = driverFixedWeekly / s.loadsPerWeek;
+    
     const fuel = (miles / s.mpg) * s.fuel;
     const maint = miles * s.maint;
-    const fixed = s.fixedPerLoad;
+    const fixed = fixedPerLoad;
     const cut = newGross * split;
     l.net = cut - fuel - maint - fixed - tolls;
     
@@ -3949,6 +4149,12 @@ function initMap(){
   wk.loads.forEach((l,i)=>{
     if (l.coords && l.coords.start && l.coords.end){
       const s = l.coords.start, e = l.coords.end;
+      
+      // Skip invalid coordinates (0,0) or near (0,0) - these show in Africa ocean
+      const isInvalidStart = Math.abs(s.lat) < 0.1 && Math.abs(s.lon) < 0.1;
+      const isInvalidEnd = Math.abs(e.lat) < 0.1 && Math.abs(e.lon) < 0.1;
+      if (isInvalidStart || isInvalidEnd) return;
+      
       const loadNum = i + 1;
       
       // Create numbered markers
@@ -4057,6 +4263,7 @@ function initDispatchMap(){
 function renderDispatchView(){
   let fleetGross=0, fleetNet=0, fleetMiles=0, fleetLoads=0;
   const driverCards = [];
+  const driverCount = Object.keys(state.drivers).length;
   
   for (const id of Object.keys(state.drivers)){
     const d = state.drivers[id];
@@ -4112,20 +4319,26 @@ function renderDispatchView(){
         </div>
         
         <div class="driver-actions">
-          <button class="action-btn" onclick="setCurrentDriverFromFleet('${id}')">View Details</button>
+          <button class="action-btn" onclick="showDriverDetailModal('${id}')">View Details</button>
           <button class="action-btn" onclick="copyDriverSummary('${id}')">Copy Summary</button>
         </div>
       </div>
     `);
   }
   
-  document.getElementById('fleet_count').innerText = Object.keys(state.drivers).length;
+  // Update stat tiles
+  document.getElementById('fleet_count').innerText = driverCount;
   document.getElementById('fleet_loads').innerText = fleetLoads;
-  document.getElementById('fleet_gross').innerText = money(fleetGross);
   
-  const fleetNetEl = document.getElementById('fleet_net');
-  fleetNetEl.innerText = money(fleetNet);
-  fleetNetEl.className = 'stat-value ' + (fleetNet >= 0 ? 'positive' : 'negative');
+  // Calculate averages per driver
+  const avgGrossPerDriver = driverCount > 0 ? fleetGross / driverCount : 0;
+  const avgNetPerDriver = driverCount > 0 ? fleetNet / driverCount : 0;
+  
+  document.getElementById('fleet_avg_gross').innerText = money(avgGrossPerDriver);
+  
+  const avgNetEl = document.getElementById('fleet_avg_net');
+  avgNetEl.innerText = money(avgNetPerDriver);
+  avgNetEl.className = 'stat-value ' + (avgNetPerDriver >= 0 ? 'positive' : 'negative');
   
   document.getElementById('fleet_rpm').innerText = money(fleetMiles > 0 ? fleetGross/fleetMiles : 0);
   
@@ -4852,6 +5065,258 @@ function setCurrentDriverFromFleet(driverId){
   setTimeout(initMap, 150);
 }
 
+function showDriverDetailModal(driverId){
+  console.log('🔵 showDriverDetailModal called with driverId:', driverId);
+  
+  const d = state.drivers[driverId];
+  if (!d) {
+    console.error('❌ Driver not found:', driverId);
+    return;
+  }
+  
+  console.log('✅ Driver found:', d.name);
+  
+  const split = getDriverSplit(d);
+  const wk = d.weeks[d.currentWeekId] || { loads: [] };
+  const t = computeWeekTotals(wk);
+  const s = getSpecs();
+  const targetNet = getDriverTargetNet(d);
+  
+  console.log('📊 Week data:', {loads: wk.loads.length, net: t.net, target: targetNet});
+  
+  // Calculate progress
+  const targetProgress = targetNet > 0 ? Math.min(100, (t.net / targetNet) * 100) : 0;
+  const loadsTarget = s.loadsPerWeek || 5;
+  const loadsProgress = Math.min(100, (wk.loads.length / loadsTarget) * 100);
+  
+  // Status determination
+  let statusEmoji = '🟢';
+  let statusText = 'On Track';
+  let statusColor = 'var(--success)';
+  if (targetProgress < 50) {
+    statusEmoji = '🔴';
+    statusText = 'Behind';
+    statusColor = 'var(--danger)';
+  } else if (targetProgress < 85) {
+    statusEmoji = '🟡';
+    statusText = 'Needs Push';
+    statusColor = 'var(--warning)';
+  }
+  
+  // Build daily breakdown
+  const dayOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday', 'Next Monday'];
+  const loadsByDay = {};
+  dayOrder.forEach(day => loadsByDay[day] = []);
+  
+  wk.loads.forEach((load, idx) => {
+    if (load.pickupDay && dayOrder.includes(load.pickupDay)) {
+      loadsByDay[load.pickupDay].push({...load, idx: idx + 1});
+    }
+  });
+  
+  let dailyBreakdown = '';
+  dayOrder.forEach(day => {
+    const loads = loadsByDay[day];
+    if (loads.length > 0) {
+      loads.forEach(load => {
+        dailyBreakdown += `
+          <div style="padding: 10px 12px; background: var(--bg-primary); border-left: 3px solid var(--accent-cyan); border-radius: 6px; margin-bottom: 8px;">
+            <div style="font-size: 13px; font-weight: 700; color: var(--text-primary); margin-bottom: 4px;">
+              ${day}: ${escapeHtml(load.origin)} → ${escapeHtml(load.dest)}
+            </div>
+            <div style="font-size: 12px; color: var(--text-secondary);">
+              💰 ${money(load.net)} net | 📏 ${load.miles.toLocaleString()} mi | 📊 $${(load.gross/load.miles).toFixed(2)}/mi
+            </div>
+          </div>
+        `;
+      });
+    } else if (['Saturday', 'Sunday'].includes(day)) {
+      dailyBreakdown += `
+        <div style="padding: 10px 12px; background: rgba(0,255,136,0.05); border-left: 3px solid rgba(0,255,136,0.3); border-radius: 6px; margin-bottom: 8px;">
+          <div style="font-size: 13px; color: var(--text-muted);">
+            ${day}: Home Time 🏠
+          </div>
+        </div>
+      `;
+    } else {
+      dailyBreakdown += `
+        <div style="padding: 10px 12px; background: rgba(255,255,255,0.02); border-left: 3px solid var(--border-subtle); border-radius: 6px; margin-bottom: 8px;">
+          <div style="font-size: 13px; color: var(--text-muted);">
+            ${day}: Available
+          </div>
+        </div>
+      `;
+    }
+  });
+  
+  // Calculate recommendations
+  const loadsNeeded = Math.max(0, loadsTarget - wk.loads.length);
+  const netNeeded = Math.max(0, targetNet - t.net);
+  
+  let recommendations = '';
+  if (targetProgress >= 100) {
+    recommendations = '🎉 Target exceeded! Great week!';
+  } else if (loadsNeeded > 0) {
+    recommendations = `• ${loadsNeeded} more load${loadsNeeded > 1 ? 's' : ''} needed to hit target<br>`;
+    recommendations += `• Need ${money(netNeeded)} more net revenue<br>`;
+    const avgNeeded = netNeeded / loadsNeeded;
+    recommendations += `• Target avg ${money(avgNeeded)} net per remaining load`;
+  } else {
+    recommendations = '• On track with load count<br>• Focus on maintaining profitability';
+  }
+  
+  // Get current location
+  let currentLocation = 'Unknown';
+  if (wk.loads.length > 0) {
+    const lastLoad = wk.loads[wk.loads.length - 1];
+    currentLocation = `${escapeHtml(lastLoad.dest)}`;
+  }
+  
+  const modalHtml = `
+    <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); z-index: 10000; display: flex; align-items: center; justify-content: center; padding: 20px;" onclick="this.remove()">
+      <div style="background: var(--bg-elevated); border: 1px solid var(--border-medium); border-radius: 16px; max-width: 700px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.5);" onclick="event.stopPropagation()">
+        
+        <div style="background: linear-gradient(135deg, rgba(0,180,255,0.15), rgba(0,255,136,0.15)); padding: 24px; border-bottom: 1px solid var(--border-medium);">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+            <h2 style="margin: 0; font-size: 24px; font-weight: 800; color: var(--text-primary);">
+              ${escapeHtml(d.name)}
+            </h2>
+            <button onclick="this.closest('div[style*=\\'position: fixed\\']').remove()" style="background: none; border: none; color: var(--text-muted); font-size: 24px; cursor: pointer; padding: 0; width: 32px; height: 32px;">×</button>
+          </div>
+          <div style="font-size: 13px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px;">
+            Week: ${wk.label || 'Current Week'}
+          </div>
+        </div>
+        
+        <div style="padding: 20px;">
+          <div style="font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 16px;">
+            📊 WEEKLY PERFORMANCE
+          </div>
+          
+          <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 16px;">
+            <div style="background: var(--bg-primary); padding: 12px; border-radius: 8px;">
+              <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Loads Completed</div>
+              <div style="font-size: 20px; font-weight: 700; color: var(--text-primary);">
+                ${wk.loads.length} / ${loadsTarget}
+              </div>
+              <div style="margin-top: 8px; height: 6px; background: var(--border-subtle); border-radius: 3px; overflow: hidden;">
+                <div style="height: 100%; background: var(--accent-cyan); width: ${loadsProgress}%;"></div>
+              </div>
+            </div>
+            
+            <div style="background: var(--bg-primary); padding: 12px; border-radius: 8px;">
+              <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Total Gross</div>
+              <div style="font-size: 20px; font-weight: 700; color: var(--success);">
+                ${money(t.gross)}
+              </div>
+            </div>
+            
+            <div style="background: var(--bg-primary); padding: 12px; border-radius: 8px;">
+              <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Total Net</div>
+              <div style="font-size: 20px; font-weight: 700; color: ${t.net >= 0 ? 'var(--success)' : 'var(--danger)'};">
+                ${money(t.net)}
+              </div>
+              <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                ${(split*100).toFixed(0)}% split
+              </div>
+            </div>
+            
+            <div style="background: var(--bg-primary); padding: 12px; border-radius: 8px;">
+              <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Avg RPM</div>
+              <div style="font-size: 20px; font-weight: 700; color: var(--text-primary);">
+                ${money(t.rpm)}
+              </div>
+            </div>
+          </div>
+          
+          <div style="background: ${statusColor}20; border: 1px solid ${statusColor}; border-radius: 8px; padding: 12px; text-align: center;">
+            <div style="font-size: 18px; font-weight: 700; color: ${statusColor};">
+              ${statusEmoji} ${statusText}
+            </div>
+            <div style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">
+              ${targetProgress.toFixed(0)}% of weekly target (${money(targetNet)})
+            </div>
+          </div>
+        </div>
+        
+        <div style="padding: 0 20px 20px;">
+          <div style="font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 12px;">
+            📈 DAILY BREAKDOWN
+          </div>
+          ${dailyBreakdown}
+        </div>
+        
+        <div style="padding: 0 20px 20px;">
+          <div style="font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 12px;">
+            💰 FINANCIAL SNAPSHOT
+          </div>
+          
+          <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
+            <div style="background: var(--bg-primary); padding: 10px 12px; border-radius: 6px;">
+              <div style="font-size: 11px; color: var(--text-muted);">Target Progress</div>
+              <div style="font-size: 16px; font-weight: 700; color: var(--text-primary);">
+                ${targetProgress.toFixed(0)}%
+              </div>
+              <div style="font-size: 11px; color: var(--text-secondary); margin-top: 2px;">
+                ${t.net >= targetNet ? '+' : ''}${money(t.net - targetNet)}
+              </div>
+            </div>
+            
+            <div style="background: var(--bg-primary); padding: 10px 12px; border-radius: 6px;">
+              <div style="font-size: 11px; color: var(--text-muted);">Fuel Costs</div>
+              <div style="font-size: 16px; font-weight: 700; color: var(--text-primary);">
+                ${money(t.fuel)}
+              </div>
+              <div style="font-size: 11px; color: var(--text-secondary); margin-top: 2px;">
+                ${t.gross > 0 ? ((t.fuel/t.gross)*100).toFixed(1) : '0.0'}% of gross
+              </div>
+            </div>
+            
+            <div style="background: var(--bg-primary); padding: 10px 12px; border-radius: 6px;">
+              <div style="font-size: 11px; color: var(--text-muted);">Current Location</div>
+              <div style="font-size: 14px; font-weight: 700; color: var(--accent-cyan);">
+                📍 ${currentLocation}
+              </div>
+            </div>
+            
+            <div style="background: var(--bg-primary); padding: 10px 12px; border-radius: 6px;">
+              <div style="font-size: 11px; color: var(--text-muted);">Projected Weekly</div>
+              <div style="font-size: 16px; font-weight: 700; color: var(--text-primary);">
+                ${money(t.net)}
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div style="padding: 0 20px 20px;">
+          <div style="font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 12px;">
+            🎯 RECOMMENDATIONS
+          </div>
+          
+          <div style="background: rgba(0,180,255,0.1); border: 1px solid var(--accent-cyan); border-radius: 8px; padding: 12px; line-height: 1.6;">
+            <div style="font-size: 13px; color: var(--text-primary);">
+              ${recommendations}
+            </div>
+          </div>
+        </div>
+        
+        <div style="padding: 20px; border-top: 1px solid var(--border-medium); display: flex; gap: 12px;">
+          <button onclick="setCurrentDriverFromFleet('${driverId}'); this.closest('div[style*=\\'position: fixed\\']').remove();" style="flex: 1; padding: 12px; background: var(--accent-cyan); color: #000; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; font-size: 14px;">
+            View Dashboard
+          </button>
+          <button onclick="copyDriverSummary('${driverId}')" style="flex: 1; padding: 12px; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-medium); border-radius: 8px; font-weight: 700; cursor: pointer; font-size: 14px;">
+            Copy Summary
+          </button>
+        </div>
+        
+      </div>
+    </div>
+  `;
+  
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+
 function updateFleetTables(){
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0,0,0,0);
@@ -4859,6 +5324,9 @@ function updateFleetTables(){
   
   const fleetBody = document.getElementById("fleetTable");
   const cutBody = document.getElementById("cutTable");
+  
+  // Exit early if elements don't exist
+  if (!fleetBody && !cutBody) return;
   
   let fleetRows = [];
   let cutRows = [];
@@ -4910,15 +5378,23 @@ function updateFleetTables(){
     fleetGrossYTD += ytd.gross;
   }
   
-  fleetBody.innerHTML = fleetRows.join("") || `<tr><td colspan="12">No drivers found.</td></tr>`;
-  cutBody.innerHTML = cutRows.join("") || `<tr><td colspan="8">No drivers found.</td></tr>`;
+  if (fleetBody) fleetBody.innerHTML = fleetRows.join("") || `<tr><td colspan="12">No drivers found.</td></tr>`;
+  if (cutBody) cutBody.innerHTML = cutRows.join("") || `<tr><td colspan="8">No drivers found.</td></tr>`;
   
-  document.getElementById("cut_cw").innerText = money(fleetCutCW);
-  document.getElementById("cut_mtd").innerText = money(fleetCutMTD);
-  document.getElementById("cut_ytd").innerText = money(fleetCutYTD);
+  const cutCW = document.getElementById("cut_cw");
+  if (cutCW) cutCW.innerText = money(fleetCutCW);
   
-  const weightedTake = fleetGrossYTD > 0 ? (fleetCutYTD / fleetGrossYTD) : 0;
-  document.getElementById("cut_take").innerText = pct(weightedTake);
+  const cutMTD = document.getElementById("cut_mtd");
+  if (cutMTD) cutMTD.innerText = money(fleetCutMTD);
+  
+  const cutYTD = document.getElementById("cut_ytd");
+  if (cutYTD) cutYTD.innerText = money(fleetCutYTD);
+  
+  const cutTake = document.getElementById("cut_take");
+  if (cutTake) {
+    const weightedTake = fleetGrossYTD > 0 ? (fleetCutYTD / fleetGrossYTD) : 0;
+    cutTake.innerText = pct(weightedTake);
+  }
 }
 
 /************************* 
@@ -5044,6 +5520,543 @@ function renderWeeklyChart(){
 }
 
 /************************* 
+ * NEW ANALYTICS FUNCTIONS
+ *************************/
+let trendsChart = null;
+
+// Helper function for week keys
+function getWeekKey(date) {
+  const monday = startOfWeekMonday(date);
+  return isoDate(monday);
+}
+
+function renderAnalytics() {
+  console.log('renderAnalytics called');
+  console.log('State:', state);
+  console.log('Historical loads:', historicalLoads ? historicalLoads.length : 'none');
+  renderAlerts();
+  renderPerformanceTrends();
+  renderLaneProfitability();
+  renderDriverRankings();
+}
+
+// Section 1: Alerts
+function renderAlerts() {
+  const alerts = [];
+  const now = new Date();
+  const thirtyDaysAgo = new Date(now.getTime() - 30*24*60*60*1000);
+  
+  // Check if state and drivers exist
+  if (!state || !state.drivers) {
+    const container = document.getElementById('alertsContainer');
+    if (container) {
+      container.innerHTML = `
+        <div style="text-align: center; color: var(--text-secondary); padding: 20px;">
+          <div style="font-size: 48px; opacity: 0.3;">ℹ️</div>
+          <div style="margin-top: 10px;">No driver data yet. Add drivers to see alerts.</div>
+        </div>
+      `;
+    }
+    return;
+  }
+  
+  // Check each driver for issues
+  Object.entries(state.drivers).forEach(([driverId, driver]) => {
+    const currentWeek = getCurrentWeekForDriver(driver);
+    const weekTotals = computeWeekTotals(currentWeek);
+    const targetNet = getDriverTargetNet(driver);
+    
+    // Alert: Behind target by >20%
+    if (targetNet > 0 && weekTotals.net < targetNet * 0.8) {
+      const gap = targetNet - weekTotals.net;
+      alerts.push({
+        icon: '⚠️',
+        message: `${driver.name}: $${Math.round(gap).toLocaleString()} behind weekly target`,
+        severity: 'warning'
+      });
+    }
+    
+    // Alert: No loads in several days
+    if (currentWeek.loads.length === 0) {
+      alerts.push({
+        icon: '📭',
+        message: `${driver.name}: No loads logged this week`,
+        severity: 'info'
+      });
+    } else {
+      const lastLoad = currentWeek.loads[currentWeek.loads.length - 1];
+      if (lastLoad.timestamp) {
+        const daysSinceLoad = (now - new Date(lastLoad.timestamp)) / (1000*60*60*24);
+        if (daysSinceLoad > 2) {
+          alerts.push({
+            icon: '🕐',
+            message: `${driver.name}: ${Math.floor(daysSinceLoad)} days since last load`,
+            severity: 'info'
+          });
+        }
+      }
+    }
+  });
+  
+  // Alert: RPM trending down
+  const fleetRPM = calculateFleetTrends(30);
+  if (fleetRPM.rpmChange < -5) {
+    alerts.push({
+      icon: '📉',
+      message: `Fleet RPM down ${Math.abs(Math.round(fleetRPM.rpmChange))}% over last 30 days`,
+      severity: 'warning'
+    });
+  }
+  
+  // Render alerts
+  const container = document.getElementById('alertsContainer');
+  if (alerts.length === 0) {
+    container.innerHTML = `
+      <div style="text-align: center; color: var(--text-secondary); padding: 20px;">
+        <div style="font-size: 48px; opacity: 0.3;">✅</div>
+        <div style="margin-top: 10px;">No alerts! Everything looks good.</div>
+      </div>
+    `;
+  } else {
+    container.innerHTML = alerts.map(alert => {
+      const bgColor = alert.severity === 'warning' ? 'rgba(255, 136, 0, 0.1)' : 'rgba(0, 180, 255, 0.1)';
+      const borderColor = alert.severity === 'warning' ? 'var(--warning)' : 'var(--accent-cyan)';
+      return `
+        <div style="padding: 12px; margin-bottom: 12px; background: ${bgColor}; border-left: 3px solid ${borderColor}; border-radius: 6px; display: flex; align-items: center; gap: 12px;">
+          <span style="font-size: 24px;">${alert.icon}</span>
+          <span style="font-size: 14px;">${alert.message}</span>
+        </div>
+      `;
+    }).join('');
+  }
+}
+
+// Section 2: Performance Trends
+function renderPerformanceTrends() {
+  const trends = calculateFleetTrends(30);
+  
+  // Update stat cards
+  const rpmEl = document.getElementById('trend_rpm');
+  const netEl = document.getElementById('trend_net');
+  const loadsEl = document.getElementById('trend_loads');
+  const cpmEl = document.getElementById('trend_cpm');
+  
+  if (rpmEl) rpmEl.innerText = money(trends.avgRPM);
+  if (document.getElementById('trend_rpm_change')) {
+    document.getElementById('trend_rpm_change').innerHTML = formatChange(trends.rpmChange);
+  }
+  
+  if (netEl) netEl.innerText = '$' + Math.round(trends.avgWeeklyNet).toLocaleString();
+  if (document.getElementById('trend_net_change')) {
+    document.getElementById('trend_net_change').innerHTML = formatChange(trends.netChange);
+  }
+  
+  if (loadsEl) loadsEl.innerText = trends.totalLoads;
+  if (document.getElementById('trend_loads_change')) {
+    document.getElementById('trend_loads_change').innerHTML = formatChange(trends.loadsChange);
+  }
+  
+  if (cpmEl) cpmEl.innerText = money(trends.avgCPM);
+  if (document.getElementById('trend_cpm_change')) {
+    document.getElementById('trend_cpm_change').innerHTML = formatChange(trends.cpmChange);
+  }
+  
+  // Render chart
+  const ctx = document.getElementById('trendsChart');
+  if (!ctx) return;
+  
+  if (trendsChart) {
+    trendsChart.destroy();
+  }
+  
+  // Only render chart if we have data
+  if (trends.labels.length === 0) {
+    ctx.parentElement.innerHTML = '<div style="text-align: center; padding: 40px; color: var(--text-secondary);">No data available yet. Start logging loads to see trends!</div>';
+    return;
+  }
+  
+  trendsChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: trends.labels,
+      datasets: [
+        {
+          label: 'Fleet RPM',
+          data: trends.rpmData,
+          borderColor: '#00ff88',
+          backgroundColor: 'rgba(0,255,136,0.1)',
+          borderWidth: 3,
+          tension: 0.3,
+          fill: true
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: true,
+          position: 'top',
+          labels: {
+            color: '#f0f4f8',
+            font: { family: 'Rajdhani', size: 14, weight: 700 }
+          }
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            color: '#a8b5c7',
+            callback: function(value) { return '$' + value.toFixed(2); }
+          },
+          grid: { color: 'rgba(200,210,220,0.08)' }
+        },
+        x: {
+          ticks: { color: '#a8b5c7' },
+          grid: { display: false }
+        }
+      }
+    }
+  });
+}
+
+function calculateFleetTrends(days) {
+  const now = new Date();
+  const cutoff = new Date(now.getTime() - days*24*60*60*1000);
+  
+  const allLoads = [];
+  
+  if (state && state.drivers) {
+    Object.values(state.drivers).forEach(driver => {
+      if (driver.weeks) {
+        Object.values(driver.weeks).forEach(week => {
+          if (week.loads) {
+            week.loads.forEach(load => {
+              if (load.createdAt) {
+                const loadDate = new Date(load.createdAt);
+                if (loadDate >= cutoff) {
+                  allLoads.push({...load, date: loadDate});
+                }
+              }
+            });
+          }
+        });
+      }
+    });
+  }
+  
+  // If no loads, return empty data
+  if (allLoads.length === 0) {
+    return {
+      labels: [],
+      rpmData: [],
+      avgRPM: 0,
+      rpmChange: 0,
+      avgWeeklyNet: 0,
+      netChange: 0,
+      totalLoads: 0,
+      loadsChange: 0,
+      avgCPM: 0,
+      cpmChange: 0
+    };
+  }
+  
+  // Group by week for trends
+  const weeklyData = {};
+  allLoads.forEach(load => {
+    const weekKey = getWeekKey(load.date);
+    if (!weeklyData[weekKey]) {
+      weeklyData[weekKey] = { loads: [], gross: 0, net: 0, miles: 0 };
+    }
+    weeklyData[weekKey].loads.push(load);
+    weeklyData[weekKey].gross += load.gross || 0;
+    weeklyData[weekKey].net += load.net || 0;
+    weeklyData[weekKey].miles += load.miles || 0;
+  });
+  
+  const weeks = Object.keys(weeklyData).sort();
+  const labels = weeks.map(w => w.substring(5)); // Strip year
+  const rpmData = weeks.map(w => {
+    const data = weeklyData[w];
+    return data.miles > 0 ? data.gross / data.miles : 0;
+  });
+  
+  // Calculate changes (first half vs second half)
+  const midpoint = Math.floor(weeks.length / 2);
+  if (midpoint === 0) {
+    // Not enough data for comparison
+    const data = weeklyData[weeks[0]];
+    const rpm = data.miles > 0 ? data.gross / data.miles : 0;
+    return {
+      labels,
+      rpmData,
+      avgRPM: rpm,
+      rpmChange: 0,
+      avgWeeklyNet: data.net,
+      netChange: 0,
+      totalLoads: allLoads.length,
+      loadsChange: 0,
+      avgCPM: 0.50,
+      cpmChange: 0
+    };
+  }
+  
+  const firstHalf = weeks.slice(0, midpoint);
+  const secondHalf = weeks.slice(midpoint);
+  
+  const avgRPMFirst = average(firstHalf.map(w => {
+    const data = weeklyData[w];
+    return data.miles > 0 ? data.gross / data.miles : 0;
+  }));
+  
+  const avgRPMSecond = average(secondHalf.map(w => {
+    const data = weeklyData[w];
+    return data.miles > 0 ? data.gross / data.miles : 0;
+  }));
+  
+  const rpmChange = avgRPMFirst > 0 ? ((avgRPMSecond - avgRPMFirst) / avgRPMFirst) * 100 : 0;
+  
+  const avgWeeklyNetFirst = average(firstHalf.map(w => weeklyData[w].net));
+  const avgWeeklyNetSecond = average(secondHalf.map(w => weeklyData[w].net));
+  const netChange = avgWeeklyNetFirst > 0 ? ((avgWeeklyNetSecond - avgWeeklyNetFirst) / avgWeeklyNetFirst) * 100 : 0;
+  
+  const totalLoadsFirst = firstHalf.reduce((sum, w) => sum + weeklyData[w].loads.length, 0);
+  const totalLoadsSecond = secondHalf.reduce((sum, w) => sum + weeklyData[w].loads.length, 0);
+  const loadsChange = totalLoadsFirst > 0 ? ((totalLoadsSecond - totalLoadsFirst) / totalLoadsFirst) * 100 : 0;
+  
+  // CPM calculation (simplified)
+  const avgCPM = 0.50; // Placeholder
+  const cpmChange = 0;
+  
+  return {
+    labels,
+    rpmData,
+    avgRPM: avgRPMSecond,
+    rpmChange,
+    avgWeeklyNet: avgWeeklyNetSecond,
+    netChange,
+    totalLoads: allLoads.length,
+    loadsChange,
+    avgCPM,
+    cpmChange
+  };
+}
+
+function average(arr) {
+  if (arr.length === 0) return 0;
+  return arr.reduce((sum, val) => sum + val, 0) / arr.length;
+}
+
+function formatChange(percent) {
+  const sign = percent >= 0 ? '+' : '';
+  const color = percent >= 0 ? 'var(--success)' : 'var(--danger)';
+  const arrow = percent >= 0 ? '↑' : '↓';
+  return `<span style="color: ${color}; font-size: 12px; font-weight: 700;">${arrow} ${sign}${percent.toFixed(1)}%</span>`;
+}
+
+// Section 3: Lane Profitability
+function renderLaneProfitability() {
+  const lanes = calculateLaneProfitability();
+  
+  const topTable = document.getElementById('topLanesTable');
+  const worstTable = document.getElementById('worstLanesTable');
+  
+  if (!topTable || !worstTable) return;
+  
+  // Top 10 lanes
+  const topLanes = lanes.slice(0, 10);
+  if (topLanes.length === 0) {
+    topTable.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px; color: var(--text-secondary);">No lane data yet. Enter loads to see profitability.</td></tr>';
+  } else {
+    topTable.innerHTML = topLanes.map(lane => `
+      <tr>
+        <td style="text-align: left;">${escapeHtml(lane.lane)}</td>
+        <td>${money(lane.avgRPM)}</td>
+        <td>${money(lane.avgNet)}</td>
+        <td>${lane.count}</td>
+      </tr>
+    `).join('');
+  }
+  
+  // Bottom 10 lanes
+  const worstLanes = lanes.slice(-10).reverse();
+  if (worstLanes.length === 0) {
+    worstTable.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px; color: var(--text-secondary);">No lane data yet. Enter loads to see profitability.</td></tr>';
+  } else {
+    worstTable.innerHTML = worstLanes.map(lane => `
+      <tr>
+        <td style="text-align: left;">${escapeHtml(lane.lane)}</td>
+        <td>${money(lane.avgRPM)}</td>
+        <td>${money(lane.avgNet)}</td>
+        <td>${lane.count}</td>
+      </tr>
+    `).join('');
+  }
+}
+
+function calculateLaneProfitability() {
+  const allLoads = [];
+  
+  // Add historical loads
+  if (typeof historicalLoads !== 'undefined' && historicalLoads) {
+    historicalLoads.forEach(load => {
+      allLoads.push({
+        origin: `${load.originCity}, ${load.originState}`,
+        dest: `${load.destCity}, ${load.destState}`,
+        rpm: load.rpm || 0,
+        net: load.driverNet || 0,
+        miles: load.totalMiles || 0
+      });
+    });
+  }
+  
+  // Add entered loads from all drivers
+  if (state && state.drivers) {
+    Object.values(state.drivers).forEach(driver => {
+      if (driver.weeks) {
+        Object.values(driver.weeks).forEach(week => {
+          if (week.loads) {
+            week.loads.forEach(load => {
+              allLoads.push({
+                origin: load.origin || '',
+                dest: load.dest || '',
+                rpm: load.miles > 0 ? (load.gross || 0) / load.miles : 0,
+                net: load.net || 0,
+                miles: load.miles || 0
+              });
+            });
+          }
+        });
+      }
+    });
+  }
+  
+  // Group by lane
+  const laneMap = {};
+  allLoads.forEach(load => {
+    if (!load.origin || !load.dest) return;
+    const key = `${load.origin} → ${load.dest}`;
+    if (!laneMap[key]) {
+      laneMap[key] = { rpms: [], nets: [], count: 0 };
+    }
+    laneMap[key].rpms.push(load.rpm);
+    laneMap[key].nets.push(load.net);
+    laneMap[key].count++;
+  });
+  
+  // Calculate averages and sort
+  const lanes = Object.entries(laneMap)
+    .map(([lane, data]) => ({
+      lane,
+      avgRPM: average(data.rpms),
+      avgNet: average(data.nets),
+      count: data.count
+    }))
+    .filter(lane => lane.count >= 3) // Only lanes with 3+ loads
+    .sort((a, b) => b.avgRPM - a.avgRPM);
+  
+  return lanes;
+}
+
+// Section 4: Driver Rankings
+function renderDriverRankings() {
+  const rankings = calculateDriverRankings();
+  
+  const medals = ['🥇', '🥈', '🥉'];
+  
+  const table = document.getElementById('driverRankingsTable');
+  if (!table) return;
+  
+  if (rankings.length === 0) {
+    table.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 20px; color: var(--text-secondary);">No driver data for current week. Drivers will appear here when they enter loads.</td></tr>';
+    return;
+  }
+  
+  table.innerHTML = rankings.map((ranking, idx) => {
+    const medal = idx < 3 ? medals[idx] : '';
+    const efficiencyColor = ranking.efficiency >= 90 ? 'var(--success)' : 
+                           ranking.efficiency >= 75 ? 'var(--warning)' : 'var(--danger)';
+    
+    return `
+      <tr>
+        <td style="font-size: 20px;">${medal} ${idx + 1}</td>
+        <td style="text-align: left; font-weight: 700;">${escapeHtml(ranking.name)}</td>
+        <td>${ranking.loads}</td>
+        <td>${ranking.miles.toLocaleString()}</td>
+        <td>${money(ranking.gross)}</td>
+        <td class="${ranking.net >= 0 ? 'positive' : 'negative'}">${money(ranking.net)}</td>
+        <td>${money(ranking.rpm)}</td>
+        <td>${ranking.deadhead.toFixed(1)}%</td>
+        <td style="color: ${efficiencyColor}; font-weight: 700;">${ranking.efficiency}%</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function calculateDriverRankings() {
+  const rankings = [];
+  
+  if (!state || !state.drivers) {
+    return rankings;
+  }
+  
+  Object.entries(state.drivers).forEach(([driverId, driver]) => {
+    const currentWeek = getCurrentWeekForDriver(driver);
+    const totals = computeWeekTotals(currentWeek);
+    
+    // Calculate deadhead %
+    const totalMiles = totals.miles;
+    const loadedMiles = currentWeek.loads.reduce((sum, load) => sum + (load.miles || 0), 0);
+    const deadheadMiles = totalMiles - loadedMiles;
+    const deadheadPercent = totalMiles > 0 ? (deadheadMiles / totalMiles) * 100 : 0;
+    
+    // Calculate efficiency score
+    const targetNet = getDriverTargetNet(driver);
+    const targetAchievement = targetNet > 0 ? Math.min((totals.net / targetNet) * 100, 100) : 50;
+    const rpmScore = Math.min((totals.rpm / 3.0) * 100, 100); // 3.0 RPM = 100%
+    const deadheadScore = Math.max(100 - deadheadPercent * 2, 0); // Lower is better
+    
+    const efficiency = Math.round((targetAchievement * 0.4) + (rpmScore * 0.4) + (deadheadScore * 0.2));
+    
+    rankings.push({
+      name: driver.name,
+      loads: currentWeek.loads.length,
+      miles: totalMiles,
+      gross: totals.gross,
+      net: totals.net,
+      rpm: totals.rpm,
+      deadhead: deadheadPercent,
+      efficiency
+    });
+  });
+  
+  // Sort by net profit descending
+  rankings.sort((a, b) => b.net - a.net);
+  
+  return rankings;
+}
+
+function getCurrentWeekForDriver(driver) {
+  const now = new Date();
+  const monday = startOfWeekMonday(now);
+  const wk = getWeekKey(monday);
+  
+  if (!driver.weeks[wk]) {
+    driver.weeks[wk] = {
+      startDate: monday.toISOString().split('T')[0],
+      label: fmtWeekLabel(monday),
+      loads: [],
+      notes: ""
+    };
+  }
+  
+  return driver.weeks[wk];
+}
+
+
+/************************* 
  * UI RENDER 
  *************************/
 function updateUI(){
@@ -5124,47 +6137,65 @@ function updateUI(){
     `;
   }).join("");
   
-  // YTD stats
+  // YTD stats (only update if elements exist - for backwards compatibility)
   const now = new Date();
   const yearStart = new Date(now.getFullYear(), 0, 1, 0,0,0,0);
   const ytd = totalsForDriverInRange(d, yearStart, now);
   
-  document.getElementById('ytd_gross').innerText = money(ytd.gross);
-  document.getElementById('ytd_profit').innerText = money(ytd.net);
-  document.getElementById('ytd_tax').innerText = money(ytd.net * s.taxRate);
-  document.getElementById('oer_val').innerText = ytd.gross>0 
+  const ytdGross = document.getElementById('ytd_gross');
+  if (ytdGross) ytdGross.innerText = money(ytd.gross);
+  
+  const ytdProfit = document.getElementById('ytd_profit');
+  if (ytdProfit) ytdProfit.innerText = money(ytd.net);
+  
+  const ytdTax = document.getElementById('ytd_tax');
+  if (ytdTax) ytdTax.innerText = money(ytd.net * s.taxRate);
+  
+  const oerVal = document.getElementById('oer_val');
+  if (oerVal) oerVal.innerText = ytd.gross>0 
     ? Math.round(((ytd.gross - ytd.net)/ytd.gross)*100)+'%' 
     : '0%';
-  document.getElementById('ytd_fuel').innerText = money(ytd.fuel);
-  document.getElementById('ytd_maint').innerText = money(ytd.maint);
   
-  // Best/worst
-  let best=null,worst=null;
-  for (const wkId of Object.keys(d.weeks||{})){
-    const t = computeWeekTotals(d.weeks[wkId]);
-    if (!best || t.net > best.net) best = { net: t.net };
-    if (!worst || t.net < worst.net) worst = { net: t.net };
+  const ytdFuel = document.getElementById('ytd_fuel');
+  if (ytdFuel) ytdFuel.innerText = money(ytd.fuel);
+  
+  const ytdMaint = document.getElementById('ytd_maint');
+  if (ytdMaint) ytdMaint.innerText = money(ytd.maint);
+  
+  // Best/worst (only if elements exist)
+  const bestWeekEl = document.getElementById('best_week');
+  const worstWeekEl = document.getElementById('worst_week');
+  if (bestWeekEl || worstWeekEl) {
+    let best=null,worst=null;
+    for (const wkId of Object.keys(d.weeks||{})){
+      const t = computeWeekTotals(d.weeks[wkId]);
+      if (!best || t.net > best.net) best = { net: t.net };
+      if (!worst || t.net < worst.net) worst = { net: t.net };
+    }
+    if (bestWeekEl) bestWeekEl.innerText = money(best?.net || 0);
+    if (worstWeekEl) worstWeekEl.innerText = money(worst?.net || 0);
   }
-  document.getElementById('best_week').innerText = money(best?.net || 0);
-  document.getElementById('worst_week').innerText = money(worst?.net || 0);
   
-  // Week history
-  const weekIds = Object.keys(d.weeks).sort().reverse();
-  document.getElementById('weekHistory').innerHTML = weekIds.map(id=>{
-    const w = d.weeks[id];
-    const t = computeWeekTotals(w);
-    const rpm = t.miles>0 ? (t.gross/t.miles) : 0;
-    return `
-      <tr>
-        <td style="font-weight:800;">${escapeHtml(w.label || id)}</td>
-        <td>${(w.loads||[]).length}</td>
-        <td>${t.miles.toLocaleString()}</td>
-        <td class="positive">${money(t.gross)}</td>
-        <td class="${t.net>=0?'positive':'negative'}">${money(t.net)}</td>
-        <td>${money(rpm)}</td>
-      </tr>
-    `;
-  }).join("");
+  // Week history (only if element exists)
+  const weekHistoryEl = document.getElementById('weekHistory');
+  if (weekHistoryEl) {
+    const weekIds = Object.keys(d.weeks).sort().reverse();
+    weekHistoryEl.innerHTML = weekIds.map(id=>{
+      const w = d.weeks[id];
+      const t = computeWeekTotals(w);
+      const rpm = t.miles>0 ? (t.gross/t.miles) : 0;
+      return `
+        <tr>
+          <td style="font-weight:800;">${escapeHtml(w.label || id)}</td>
+          <td>${(w.loads||[]).length}</td>
+          <td>${t.miles.toLocaleString()}</td>
+          <td class="positive">${money(t.gross)}</td>
+          <td class="${t.net>=0?'positive':'negative'}">${money(t.net)}</td>
+          <td>${money(rpm)}</td>
+        </tr>
+      `;
+    }).join("");
+  }
   
   updateWarnBanner();
   preview();
@@ -5222,12 +6253,17 @@ function wireEntryKeyNav(){
 
 ensureCurrentDriverHasThisWeek();
 bindSettingsToInputs();
+initSettingsListeners(); // Add event listeners once
 wireEntryKeyNav();
 renderDriverSelect();
 renderWeekSelect();
 bindDriverOverridesToInputs();
 updateUI();
 setTimeout(initMap, 500);
+
+// Confirm enhanced features are loaded
+console.log('✅ Dispatch V2-FIXED loaded successfully (getTargetNet bug fixed)');
+console.log('✅ showDriverDetailModal function:', typeof showDriverDetailModal);
 
 /***********************************************
  * FIREBASE AUTH + CLOUD SYNC (SEPARATE ACCOUNTS)
