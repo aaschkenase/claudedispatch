@@ -1492,6 +1492,14 @@ td {
                 <label>Gross Pay ($)</label>
                 <input id="pay_gross" type="number" inputmode="decimal" min="0" step="0.01" oninput="preview()">
               </div>
+              <div class="input-group">
+                <label>Detention ($)</label>
+                <input id="cost_detention" type="number" inputmode="decimal" min="0" step="0.01" value="0" oninput="preview()" placeholder="0.00">
+              </div>
+              <div class="input-group">
+                <label>Accessorials ($)</label>
+                <input id="cost_accessorials" type="number" inputmode="decimal" min="0" step="0.01" value="0" oninput="preview()" placeholder="0.00">
+              </div>
             </div>
 
             <div class="preview-box">
@@ -1526,6 +1534,7 @@ td {
             <button class="btn-icon" onclick="copySummary()">📋 Copy Summary</button>
             <button class="btn-icon" onclick="exportCSV('week')">⬇️ Export CSV</button>
             <button class="btn-icon" onclick="printWeeklySummary()">🖨️ Print</button>
+            <button class="btn-icon" onclick="generateSettlement()" style="border-color: rgba(0,255,136,0.3); color: var(--success);">📄 Settlement</button>
           </div>
         </div>
       </div>
@@ -3762,8 +3771,10 @@ function computeWeekTotals(week){
   const maint = currentWeekLoads.reduce((s,l)=> s + (toNum(l.details?.maint)), 0);
   const tolls = currentWeekLoads.reduce((s,l)=> s + (toNum(l.details?.tolls)), 0);
   const fixed = currentWeekLoads.reduce((s,l)=> s + (toNum(l.details?.fixed)), 0);
+  const detention = currentWeekLoads.reduce((s,l)=> s + (toNum(l.details?.detention)), 0);
+  const accessorials = currentWeekLoads.reduce((s,l)=> s + (toNum(l.details?.accessorials)), 0);
   const rpm = miles>0 ? gross/miles : 0;
-  return { gross,miles,net,fuel,maint,tolls,fixed,rpm };
+  return { gross,miles,net,fuel,maint,tolls,fixed,detention,accessorials,rpm };
 }
 
 function loadDateFallback(load, week){
@@ -4102,6 +4113,8 @@ function preview(){
   const miles = (parseFloat(document.getElementById('mi_load').value)||0) 
     + (parseFloat(document.getElementById('mi_dh').value)||0);
   const tolls = parseFloat(document.getElementById('cost_tolls').value) || 0;
+  const detention = parseFloat(document.getElementById('cost_detention').value) || 0;
+  const accessorials = parseFloat(document.getElementById('cost_accessorials').value) || 0;
   
   // USE DRIVER-SPECIFIC COSTS
   const driverFixedWeekly = getDriverFixedWeekly(driver);
@@ -4110,7 +4123,7 @@ function preview(){
   const fuel = (miles / s.mpg) * s.fuel;
   const maint = miles * s.maint;
   const fixed = fixedPerLoad;
-  const net = (gross * split) - fuel - maint - fixed - tolls;
+  const net = ((gross + detention + accessorials) * split) - fuel - maint - fixed - tolls;
   
   const el = document.getElementById('preview_net');
   el.innerText = money(net);
@@ -4276,6 +4289,8 @@ function addLoad(){
   const dhMiles = parseFloat(document.getElementById('mi_dh').value) || 0;
   const miles = loadedMiles + dhMiles;
   const tolls = parseFloat(document.getElementById('cost_tolls').value) || 0;
+  const detention = parseFloat(document.getElementById('cost_detention').value) || 0;
+  const accessorials = parseFloat(document.getElementById('cost_accessorials').value) || 0;
   
   // Get days
   const pickupDay = document.getElementById('pickup_day').value;
@@ -4306,7 +4321,7 @@ function addLoad(){
   const fuel = (miles / s.mpg) * s.fuel;
   const maint = miles * s.maint;
   const fixed = fixedPerLoad;
-  const cut = gross * split;
+  const cut = (gross + detention + accessorials) * split;
   const net = cut - fuel - maint - fixed - tolls;
   
   let routeGeo = null;
@@ -4332,6 +4347,8 @@ function addLoad(){
       maint,
       fixed,
       tolls,
+      detention,
+      accessorials,
       cut,
       split,
       mpg: s.mpg,
@@ -4357,7 +4374,7 @@ function addLoad(){
   updateUI();
   initMap();
   
-  ['origin','dest','mi_load','mi_dh','cost_tolls','pay_gross','pickup_day','delivery_day'].forEach(i => 
+  ['origin','dest','mi_load','mi_dh','cost_tolls','cost_detention','cost_accessorials','pay_gross','pickup_day','delivery_day'].forEach(i => 
     document.getElementById(i).value=""
   );
   originEl.dataset.lat="";
@@ -4409,6 +4426,14 @@ function viewDetail(i){
       <span>Gross:</span>
       <span class="positive">${money(l.gross)}</span>
     </div>
+    ${toNum(l.details?.detention) > 0 ? `<div class="breakdown-row">
+      <span>Detention:</span>
+      <span class="positive">+${money(l.details.detention)}</span>
+    </div>` : ''}
+    ${toNum(l.details?.accessorials) > 0 ? `<div class="breakdown-row">
+      <span>Accessorials:</span>
+      <span class="positive">+${money(l.details.accessorials)}</span>
+    </div>` : ''}
     <div class="breakdown-row">
       <span>Split Used:</span>
       <span>${(splitUsed*100).toFixed(0)}%</span>
@@ -4471,6 +4496,17 @@ function editLoad(i){
       
       <div class="input-row" style="margin-bottom: 12px;">
         <div class="input-group">
+          <label>Detention ($)</label>
+          <input type="number" id="edit_detention" value="${l.details?.detention || 0}" step="0.01" min="0" />
+        </div>
+        <div class="input-group">
+          <label>Accessorials ($)</label>
+          <input type="number" id="edit_accessorials" value="${l.details?.accessorials || 0}" step="0.01" min="0" />
+        </div>
+      </div>
+      
+      <div class="input-row" style="margin-bottom: 12px;">
+        <div class="input-group">
           <label>Pickup Day</label>
           <select id="edit_pickup_day">
             ${dayOptions.map(d => `<option value="${d}" ${l.pickupDay === d ? 'selected' : ''}>${d || 'Not set'}</option>`).join('')}
@@ -4502,6 +4538,8 @@ function saveLoadEdit(i){
   if (!l) return;
   
   const newGross = parseFloat(document.getElementById('edit_gross').value);
+  const newDetention = parseFloat(document.getElementById('edit_detention').value) || 0;
+  const newAccessorials = parseFloat(document.getElementById('edit_accessorials').value) || 0;
   const newPickupDay = document.getElementById('edit_pickup_day').value;
   const newDeliveryDay = document.getElementById('edit_delivery_day').value;
   
@@ -4509,10 +4547,15 @@ function saveLoadEdit(i){
     return alert("Enter a valid gross amount");
   }
   
-  // Recalculate net if gross changed
-  if (newGross !== l.gross) {
-    const oldGross = l.gross;
+  // Recalculate net if gross/detention/accessorials changed
+  const oldDetention = toNum(l.details?.detention);
+  const oldAccessorials = toNum(l.details?.accessorials);
+  if (newGross !== l.gross || newDetention !== oldDetention || newAccessorials !== oldAccessorials) {
     l.gross = newGross;
+    if (l.details) {
+      l.details.detention = newDetention;
+      l.details.accessorials = newAccessorials;
+    }
     
     // Recalculate using stored split
     const driver = getDriver();
@@ -4528,7 +4571,7 @@ function saveLoadEdit(i){
     const fuel = (miles / s.mpg) * s.fuel;
     const maint = miles * s.maint;
     const fixed = fixedPerLoad;
-    const cut = newGross * split;
+    const cut = (newGross + newDetention + newAccessorials) * split;
     l.net = cut - fuel - maint - fixed - tolls;
     
     // Update details
@@ -5526,6 +5569,298 @@ function printWeeklySummary(){
   printWindow.document.close();
   printWindow.focus();
   setTimeout(() => printWindow.print(), 250);
+}
+
+/************************* 
+ * DRIVER SETTLEMENT SHEET
+ *************************/
+function generateSettlement(){
+  const d = getDriver();
+  const wk = getCurrentWeek();
+  const s = getSpecs();
+  const split = getDriverSplit(d);
+  const targetNet = getDriverTargetNet(d);
+  const t = computeWeekTotals(wk);
+  const loads = (wk.loads || []).filter(l => !l.deliversNextWeek);
+  
+  if (loads.length === 0) return alert("No loads to settle for this week.");
+  
+  // Fixed costs for this driver
+  const fc = d.fixedCosts || {};
+  const truckPmt = fc.truck || 0;
+  const trailerPmt = fc.trailer || 0;
+  const insurance = fc.ins || 0;
+  const advances = fc.adv || 0;
+  const foodPersonal = fc.food || 0;
+  const repairs = fc.rep || 0;
+  const totalFixedCosts = truckPmt + trailerPmt + insurance + advances + foodPersonal + repairs;
+  
+  // Calculate totals
+  const totalGrossLineHaul = loads.reduce((s,l) => s + toNum(l.gross), 0);
+  const totalDetention = loads.reduce((s,l) => s + toNum(l.details?.detention), 0);
+  const totalAccessorials = loads.reduce((s,l) => s + toNum(l.details?.accessorials), 0);
+  const totalAllInGross = totalGrossLineHaul + totalDetention + totalAccessorials;
+  const driverPay = totalAllInGross * split;
+  const companyCut = totalAllInGross * (1 - split);
+  const totalFuel = loads.reduce((s,l) => s + toNum(l.details?.fuel), 0);
+  const totalMaint = loads.reduce((s,l) => s + toNum(l.details?.maint), 0);
+  const totalTolls = loads.reduce((s,l) => s + toNum(l.details?.tolls), 0);
+  const totalDeductions = totalFixedCosts + totalFuel + totalMaint + totalTolls;
+  const netToDriver = driverPay - totalDeductions;
+  
+  const settDate = new Date().toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' });
+  
+  const printContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Settlement - ${escapeHtml(d.name)} - ${escapeHtml(wk.label)}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; padding: 30px 40px; color: #1a1a1a; font-size: 13px; }
+    
+    .settlement-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #0a0e17; padding-bottom: 20px; margin-bottom: 24px; }
+    .company-block h1 { font-size: 22px; font-weight: 800; color: #0a0e17; letter-spacing: 1px; }
+    .company-block .subtitle { font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 2px; margin-top: 2px; }
+    .settlement-title { text-align: right; }
+    .settlement-title h2 { font-size: 20px; color: #0a0e17; font-weight: 700; }
+    .settlement-title .date { font-size: 12px; color: #666; margin-top: 4px; }
+    
+    .driver-info { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 40px; background: #f7f8fa; border: 1px solid #e0e3e8; border-radius: 6px; padding: 16px 20px; margin-bottom: 24px; }
+    .info-item { display: flex; justify-content: space-between; padding: 4px 0; }
+    .info-label { font-weight: 600; color: #555; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .info-value { font-weight: 700; color: #1a1a1a; }
+    
+    .section-title { font-size: 13px; font-weight: 800; color: #0a0e17; text-transform: uppercase; letter-spacing: 1.5px; padding: 10px 0 8px; border-bottom: 2px solid #0a0e17; margin-bottom: 0; margin-top: 20px; }
+    
+    table { width: 100%; border-collapse: collapse; }
+    th { background: #f0f1f4; color: #333; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; padding: 10px 12px; text-align: left; border-bottom: 1px solid #d0d3d8; }
+    td { padding: 9px 12px; border-bottom: 1px solid #eaedf1; font-size: 13px; }
+    tr:hover { background: #fafbfc; }
+    .text-right { text-align: right; }
+    .text-center { text-align: center; }
+    .bold { font-weight: 700; }
+    .positive { color: #0a8754; }
+    .negative { color: #d63031; }
+    .muted { color: #888; font-size: 12px; }
+    
+    .subtotal-row td { border-top: 2px solid #d0d3d8; font-weight: 700; background: #f7f8fa; }
+    .grand-total-row td { border-top: 3px double #0a0e17; font-weight: 800; font-size: 16px; padding: 14px 12px; }
+    .grand-total-row .positive { color: #0a8754; }
+    .grand-total-row .negative { color: #d63031; }
+    
+    .deductions-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 40px; }
+    .deduction-table { width: 100%; }
+    .deduction-table td { padding: 7px 12px; }
+    .deduction-table .cat-header td { font-weight: 700; color: #333; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #d0d3d8; padding-top: 14px; }
+    
+    .summary-box { margin-top: 24px; border: 2px solid #0a0e17; border-radius: 6px; overflow: hidden; }
+    .summary-row { display: flex; justify-content: space-between; padding: 10px 20px; border-bottom: 1px solid #eaedf1; }
+    .summary-row:last-child { border-bottom: none; }
+    .summary-row.total { background: #0a0e17; color: #fff; padding: 14px 20px; }
+    .summary-row.total .summary-value { font-size: 20px; font-weight: 800; }
+    .summary-label { font-weight: 600; }
+    .summary-value { font-weight: 700; }
+    
+    .footer { margin-top: 30px; padding-top: 16px; border-top: 1px solid #e0e3e8; display: flex; justify-content: space-between; }
+    .footer-left { font-size: 11px; color: #999; }
+    .signature-line { border-top: 1px solid #333; width: 250px; margin-top: 40px; padding-top: 6px; font-size: 11px; color: #666; text-align: center; }
+    
+    @media print {
+      body { padding: 20px; }
+      .no-print { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="settlement-header">
+    <div class="company-block">
+      <h1>DISPATCH COMMAND CENTER</h1>
+      <div class="subtitle">Driver Settlement Statement</div>
+    </div>
+    <div class="settlement-title">
+      <h2>SETTLEMENT</h2>
+      <div class="date">${settDate}</div>
+    </div>
+  </div>
+
+  <div class="driver-info">
+    <div class="info-item">
+      <span class="info-label">Driver</span>
+      <span class="info-value">${escapeHtml(d.name)}</span>
+    </div>
+    <div class="info-item">
+      <span class="info-label">Settlement Period</span>
+      <span class="info-value">${escapeHtml(wk.label)}</span>
+    </div>
+    <div class="info-item">
+      <span class="info-label">Truck #</span>
+      <span class="info-value">${escapeHtml(d.truckNumber || '—')}</span>
+    </div>
+    <div class="info-item">
+      <span class="info-label">Trailer #</span>
+      <span class="info-value">${escapeHtml(d.trailerNumber || '—')}</span>
+    </div>
+    <div class="info-item">
+      <span class="info-label">Driver Split</span>
+      <span class="info-value">${(split * 100).toFixed(0)}%</span>
+    </div>
+    <div class="info-item">
+      <span class="info-label">Total Loads</span>
+      <span class="info-value">${loads.length}</span>
+    </div>
+  </div>
+
+  <!-- REVENUE SECTION -->
+  <div class="section-title">Revenue — Load Detail</div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:30px">#</th>
+        <th>Route</th>
+        <th>Days</th>
+        <th class="text-right">Miles</th>
+        <th class="text-right">Line Haul</th>
+        <th class="text-right">Detention</th>
+        <th class="text-right">Accessorials</th>
+        <th class="text-right">Total Gross</th>
+        <th class="text-right">Driver Pay<br><span class="muted">(${(split*100).toFixed(0)}%)</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      ${loads.map((l, i) => {
+        const det = toNum(l.details?.detention);
+        const acc = toNum(l.details?.accessorials);
+        const loadTotal = toNum(l.gross) + det + acc;
+        const loadDriverPay = loadTotal * (Number(l.details?.split) || split);
+        const dayStr = (l.pickupDay && l.deliveryDay) ? l.pickupDay.substring(0,3) + '–' + l.deliveryDay.substring(0,3) : '—';
+        return '<tr>'
+          + '<td class="text-center muted">' + (i+1) + '</td>'
+          + '<td class="bold">' + escapeHtml(l.origin) + ' → ' + escapeHtml(l.dest) + (l.stops && l.stops.length > 0 ? ' <span class="muted">(' + (l.stops.length + 2) + ' stops)</span>' : '') + '</td>'
+          + '<td class="muted">' + dayStr + '</td>'
+          + '<td class="text-right">' + Number(l.miles||0).toLocaleString() + '</td>'
+          + '<td class="text-right">' + money(l.gross) + '</td>'
+          + '<td class="text-right">' + (det > 0 ? money(det) : '—') + '</td>'
+          + '<td class="text-right">' + (acc > 0 ? money(acc) : '—') + '</td>'
+          + '<td class="text-right bold">' + money(loadTotal) + '</td>'
+          + '<td class="text-right bold positive">' + money(loadDriverPay) + '</td>'
+          + '</tr>';
+      }).join('')}
+      <tr class="subtotal-row">
+        <td colspan="3" class="bold">TOTALS</td>
+        <td class="text-right bold">${t.miles.toLocaleString()}</td>
+        <td class="text-right bold">${money(totalGrossLineHaul)}</td>
+        <td class="text-right bold">${totalDetention > 0 ? money(totalDetention) : '—'}</td>
+        <td class="text-right bold">${totalAccessorials > 0 ? money(totalAccessorials) : '—'}</td>
+        <td class="text-right bold">${money(totalAllInGross)}</td>
+        <td class="text-right bold positive">${money(driverPay)}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- DEDUCTIONS SECTION -->
+  <div class="section-title">Deductions</div>
+  <div class="deductions-grid">
+    <table class="deduction-table">
+      <tr class="cat-header"><td colspan="2">Fixed Weekly Costs</td></tr>
+      <tr>
+        <td>Truck Payment</td>
+        <td class="text-right negative">${truckPmt > 0 ? '-' + money(truckPmt) : '—'}</td>
+      </tr>
+      <tr>
+        <td>Trailer Payment</td>
+        <td class="text-right negative">${trailerPmt > 0 ? '-' + money(trailerPmt) : '—'}</td>
+      </tr>
+      <tr>
+        <td>Insurance</td>
+        <td class="text-right negative">${insurance > 0 ? '-' + money(insurance) : '—'}</td>
+      </tr>
+      <tr>
+        <td>Advances</td>
+        <td class="text-right negative">${advances > 0 ? '-' + money(advances) : '—'}</td>
+      </tr>
+      <tr>
+        <td>Food / Personal</td>
+        <td class="text-right negative">${foodPersonal > 0 ? '-' + money(foodPersonal) : '—'}</td>
+      </tr>
+      <tr>
+        <td>Repairs</td>
+        <td class="text-right negative">${repairs > 0 ? '-' + money(repairs) : '—'}</td>
+      </tr>
+      <tr class="subtotal-row">
+        <td class="bold">Subtotal Fixed</td>
+        <td class="text-right bold negative">-${money(totalFixedCosts)}</td>
+      </tr>
+    </table>
+    
+    <table class="deduction-table">
+      <tr class="cat-header"><td colspan="2">Variable / Per-Load Costs</td></tr>
+      <tr>
+        <td>Fuel (est. ${s.fuel ? money(s.fuel)+'/gal' : ''})</td>
+        <td class="text-right negative">${totalFuel > 0 ? '-' + money(totalFuel) : '—'}</td>
+      </tr>
+      <tr>
+        <td>Maintenance (est. ${s.maint ? money(s.maint)+'/mi' : ''})</td>
+        <td class="text-right negative">${totalMaint > 0 ? '-' + money(totalMaint) : '—'}</td>
+      </tr>
+      <tr>
+        <td>Tolls</td>
+        <td class="text-right negative">${totalTolls > 0 ? '-' + money(totalTolls) : '—'}</td>
+      </tr>
+      <tr class="subtotal-row">
+        <td class="bold">Subtotal Variable</td>
+        <td class="text-right bold negative">-${money(totalFuel + totalMaint + totalTolls)}</td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- SETTLEMENT SUMMARY -->
+  <div class="summary-box">
+    <div class="summary-row">
+      <span class="summary-label">Total Gross Revenue (All Loads)</span>
+      <span class="summary-value">${money(totalAllInGross)}</span>
+    </div>
+    <div class="summary-row">
+      <span class="summary-label">Company Cut (${((1-split)*100).toFixed(0)}%)</span>
+      <span class="summary-value negative">-${money(companyCut)}</span>
+    </div>
+    <div class="summary-row">
+      <span class="summary-label">Driver Gross Pay (${(split*100).toFixed(0)}%)</span>
+      <span class="summary-value positive">${money(driverPay)}</span>
+    </div>
+    <div class="summary-row">
+      <span class="summary-label">Total Deductions</span>
+      <span class="summary-value negative">-${money(totalDeductions)}</span>
+    </div>
+    <div class="summary-row total">
+      <span class="summary-label" style="font-size:16px;">NET PAY TO DRIVER</span>
+      <span class="summary-value ${netToDriver >= 0 ? '' : 'negative'}">${money(netToDriver)}</span>
+    </div>
+  </div>
+
+  <div class="footer">
+    <div class="footer-left">
+      Generated: ${new Date().toLocaleString()} • Dispatch Command Center<br/>
+      <span style="font-style:italic;">Fuel & maintenance are estimates based on configured rates. Actual costs may vary.</span>
+    </div>
+    <div class="signature-line">
+      Driver Signature / Date
+    </div>
+  </div>
+
+  <div class="no-print" style="margin-top: 20px; text-align: center;">
+    <button onclick="window.print()" style="padding: 12px 32px; font-size: 15px; font-weight: 700; background: #0a0e17; color: #fff; border: none; border-radius: 6px; cursor: pointer;">🖨️ Print / Save as PDF</button>
+  </div>
+
+</body>
+</html>
+  `;
+  
+  const settWindow = window.open('', '_blank');
+  settWindow.document.write(printContent);
+  settWindow.document.close();
+  settWindow.focus();
 }
 
 function printDriverYTD(){
