@@ -390,6 +390,291 @@ select:focus {
   }
 }
 
+/* ========== FLEET OVERVIEW MODAL ========== */
+.fleet-btn {
+  margin-left: auto;
+  background: linear-gradient(135deg, rgba(0,255,136,0.1), rgba(0,180,255,0.1)) !important;
+  border: 1px solid rgba(0,255,136,0.3) !important;
+  color: var(--success) !important;
+}
+.fleet-btn:hover {
+  background: linear-gradient(135deg, rgba(0,255,136,0.2), rgba(0,180,255,0.2)) !important;
+  box-shadow: 0 4px 16px rgba(0,255,136,0.3) !important;
+}
+
+.fleet-modal-overlay {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.7);
+  backdrop-filter: blur(4px);
+  z-index: 9998;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.fleet-modal {
+  display: none;
+  position: fixed;
+  top: 2vh; left: 3vw; right: 3vw; bottom: 2vh;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-medium);
+  border-radius: 16px;
+  z-index: 9999;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+  animation: slideDown 0.3s ease-out;
+  flex-direction: column;
+}
+
+.fleet-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 28px;
+  background: linear-gradient(135deg, var(--bg-elevated) 0%, var(--bg-secondary) 100%);
+  border-bottom: 1px solid var(--border-medium);
+  flex-shrink: 0;
+}
+
+.fleet-modal-header h2 {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--chrome-light) 0%, var(--accent-cyan) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.fleet-modal-header .fleet-summary {
+  display: flex;
+  gap: 24px;
+}
+
+.fleet-modal-header .fleet-summary .fs-item {
+  text-align: center;
+}
+.fleet-modal-header .fleet-summary .fs-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+.fleet-modal-header .fleet-summary .fs-value {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.fleet-modal-close {
+  background: transparent;
+  border: 1px solid var(--border-medium);
+  color: var(--text-secondary);
+  font-size: 18px;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+.fleet-modal-close:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: rgba(255,51,102,0.1);
+}
+
+.fleet-modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 28px;
+}
+
+.fleet-filter-bar {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.fleet-filter-bar input {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-medium);
+  color: var(--text-primary);
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  flex: 1;
+  min-width: 200px;
+}
+.fleet-filter-bar input:focus {
+  outline: none;
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 12px var(--glow-cyan);
+}
+.fleet-sort-btn {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-medium);
+  color: var(--text-secondary);
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  transition: all 0.2s;
+}
+.fleet-sort-btn:hover, .fleet-sort-btn.active {
+  border-color: var(--accent-blue);
+  color: var(--text-primary);
+  background: rgba(0,180,255,0.1);
+}
+
+.fleet-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
+}
+
+.fleet-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-medium);
+  border-radius: 12px;
+  padding: 16px 18px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  position: relative;
+  overflow: hidden;
+}
+.fleet-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent-blue), var(--accent-cyan));
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+.fleet-card:hover {
+  border-color: var(--accent-blue);
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(0,180,255,0.2);
+}
+.fleet-card:hover::before {
+  opacity: 1;
+}
+
+.fleet-card.status-paused {
+  opacity: 0.6;
+  border-left: 3px solid var(--warning);
+}
+.fleet-card.status-paused::before { display: none; }
+
+.fc-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 10px;
+}
+.fc-name {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+.fc-truck {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.fc-location {
+  font-size: 12px;
+  color: var(--accent-cyan);
+  font-weight: 700;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fc-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.fc-stat {
+  text-align: center;
+  padding: 6px 4px;
+  background: var(--bg-primary);
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+}
+.fc-stat-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-muted);
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+.fc-stat-value {
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.fc-progress {
+  height: 4px;
+  background: var(--bg-primary);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+.fc-progress-bar {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.5s ease;
+}
+
+.fc-target-text {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 600;
+  display: flex;
+  justify-content: space-between;
+}
+
+.fc-rpm-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 800;
+}
+.fc-rpm-badge.green { background: rgba(0,255,136,0.15); color: var(--success); }
+.fc-rpm-badge.yellow { background: rgba(255,184,0,0.15); color: var(--warning); }
+.fc-rpm-badge.red { background: rgba(255,51,102,0.15); color: var(--danger); }
+
+.fc-paused-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  background: rgba(255,184,0,0.15);
+  color: var(--warning);
+}
+
 /* ========== STATS BAR ========== */
 .stats-grid {
   display: grid;
@@ -1202,6 +1487,27 @@ td {
 
 <div id="printArea"></div>
 
+<!-- FLEET OVERVIEW MODAL -->
+<div id="fleetOverlay" class="fleet-modal-overlay" onclick="closeFleetModal()"></div>
+<div id="fleetModal" class="fleet-modal">
+  <div class="fleet-modal-header">
+    <h2>🚛 FLEET OVERVIEW</h2>
+    <div class="fleet-summary" id="fleetSummaryStats"></div>
+    <button class="fleet-modal-close" onclick="closeFleetModal()">✕</button>
+  </div>
+  <div class="fleet-modal-body">
+    <div class="fleet-filter-bar">
+      <input type="text" id="fleetSearchInput" placeholder="Search drivers..." oninput="renderFleetCards()">
+      <button class="fleet-sort-btn active" onclick="setFleetSort('name', this)">Name</button>
+      <button class="fleet-sort-btn" onclick="setFleetSort('gross', this)">Gross ↓</button>
+      <button class="fleet-sort-btn" onclick="setFleetSort('net', this)">Net ↓</button>
+      <button class="fleet-sort-btn" onclick="setFleetSort('rpm', this)">RPM ↓</button>
+      <button class="fleet-sort-btn" onclick="setFleetSort('loads', this)">Loads ↓</button>
+    </div>
+    <div class="fleet-cards-grid" id="fleetCardsGrid"></div>
+  </div>
+</div>
+
 <div class="container">
   <!-- HEADER -->
   <header class="main-header">
@@ -1275,6 +1581,7 @@ td {
     <button class="nav-tab" onclick="showTab('calendar', this)">📅 Calendar</button>
     <button class="nav-tab" onclick="showTab('companycut', this)">Company Cut</button>
     <button class="nav-tab" onclick="showTab('settings', this)">Settings</button>
+    <button class="nav-tab fleet-btn" onclick="openFleetModal()">🚛 Fleet Overview</button>
   </nav>
 
   <!-- DISPATCH VIEW TAB (NEW) -->
@@ -7380,6 +7687,237 @@ setTimeout(initMap, 500);
 // Confirm enhanced features are loaded
 console.log('✅ Dispatch V2-FIXED loaded successfully (getTargetNet bug fixed)');
 console.log('✅ showDriverDetailModal function:', typeof showDriverDetailModal);
+
+/***********************************************
+ * FLEET OVERVIEW MODAL
+ ***********************************************/
+let fleetSortBy = 'name';
+
+function openFleetModal(){
+  document.getElementById('fleetOverlay').style.display = 'block';
+  const modal = document.getElementById('fleetModal');
+  modal.style.display = 'flex';
+  document.getElementById('fleetSearchInput').value = '';
+  renderFleetCards();
+}
+
+function closeFleetModal(){
+  document.getElementById('fleetOverlay').style.display = 'none';
+  document.getElementById('fleetModal').style.display = 'none';
+}
+
+function setFleetSort(sortBy, btn){
+  fleetSortBy = sortBy;
+  document.querySelectorAll('.fleet-sort-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  renderFleetCards();
+}
+
+function renderFleetCards(){
+  const search = (document.getElementById('fleetSearchInput').value || '').toLowerCase();
+  const grid = document.getElementById('fleetCardsGrid');
+  const summaryEl = document.getElementById('fleetSummaryStats');
+  const s = getSpecs();
+  
+  // Build driver data array
+  const driverIds = Object.keys(state.drivers);
+  let driverData = driverIds.map(id => {
+    const d = state.drivers[id];
+    const split = getDriverSplit(d);
+    const targetNet = getDriverTargetNet(d);
+    
+    // Get current week for this driver
+    const wkId = d.currentWeekId;
+    const wk = d.weeks?.[wkId] || { loads: [] };
+    const loads = (wk.loads || []).filter(l => !l.deliversNextWeek);
+    
+    const gross = loads.reduce((sum, l) => sum + toNum(l.gross), 0);
+    const miles = loads.reduce((sum, l) => sum + toNum(l.miles), 0);
+    const net = loads.reduce((sum, l) => sum + toNum(l.net), 0);
+    const rpm = miles > 0 ? gross / miles : 0;
+    
+    // Last drop location
+    let lastLocation = 'No loads yet';
+    if (loads.length > 0) {
+      const lastLoad = loads[loads.length - 1];
+      lastLocation = lastLoad.dest || 'Unknown';
+    }
+    
+    // Next load (cross-week load going forward)
+    const nextWeekLoads = (wk.loads || []).filter(l => l.deliversNextWeek);
+    let nextLoadInfo = null;
+    if (nextWeekLoads.length > 0) {
+      const nl = nextWeekLoads[nextWeekLoads.length - 1];
+      nextLoadInfo = nl.origin + ' → ' + nl.dest;
+    }
+    
+    // RPM tier
+    let rpmTier = 'red';
+    if (rpm >= 2.50) rpmTier = 'green';
+    else if (rpm >= 2.00) rpmTier = 'yellow';
+    
+    // Status
+    const isPaused = d.driverStatus === 'paused';
+    const pauseReason = d.pauseReason || '';
+    const pauseNote = d.pauseNote || '';
+    
+    return {
+      id,
+      name: d.name || 'Unnamed',
+      truckNumber: d.truckNumber || '',
+      trailerNumber: d.trailerNumber || '',
+      split,
+      targetNet,
+      gross,
+      miles,
+      net,
+      rpm,
+      rpmTier,
+      loadCount: loads.length,
+      lastLocation,
+      nextLoadInfo,
+      isPaused,
+      pauseReason,
+      pauseNote,
+      progressPct: targetNet > 0 ? Math.min(100, (net / targetNet) * 100) : 0
+    };
+  });
+  
+  // Filter
+  if (search) {
+    driverData = driverData.filter(d => 
+      d.name.toLowerCase().includes(search) ||
+      d.truckNumber.toLowerCase().includes(search) ||
+      d.lastLocation.toLowerCase().includes(search)
+    );
+  }
+  
+  // Sort
+  switch (fleetSortBy) {
+    case 'gross': driverData.sort((a,b) => b.gross - a.gross); break;
+    case 'net': driverData.sort((a,b) => b.net - a.net); break;
+    case 'rpm': driverData.sort((a,b) => b.rpm - a.rpm); break;
+    case 'loads': driverData.sort((a,b) => b.loadCount - a.loadCount); break;
+    default: driverData.sort((a,b) => a.name.localeCompare(b.name)); break;
+  }
+  
+  // Fleet summary stats
+  const totalDrivers = driverIds.length;
+  const activeDrivers = driverData.filter(d => !d.isPaused).length;
+  const fleetGross = driverData.reduce((s,d) => s + d.gross, 0);
+  const fleetNet = driverData.reduce((s,d) => s + d.net, 0);
+  const driversOnTarget = driverData.filter(d => d.net >= d.targetNet && d.loadCount > 0).length;
+  
+  summaryEl.innerHTML = `
+    <div class="fs-item">
+      <div class="fs-label">Active</div>
+      <div class="fs-value">${activeDrivers}/${totalDrivers}</div>
+    </div>
+    <div class="fs-item">
+      <div class="fs-label">Fleet Gross</div>
+      <div class="fs-value" style="color:var(--success)">${money(fleetGross)}</div>
+    </div>
+    <div class="fs-item">
+      <div class="fs-label">Fleet Net</div>
+      <div class="fs-value" style="color:${fleetNet >= 0 ? 'var(--success)' : 'var(--danger)'}">${money(fleetNet)}</div>
+    </div>
+    <div class="fs-item">
+      <div class="fs-label">On Target</div>
+      <div class="fs-value">${driversOnTarget}/${activeDrivers}</div>
+    </div>
+  `;
+  
+  // Render cards
+  if (driverData.length === 0) {
+    grid.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:40px;grid-column:1/-1;">No drivers match your search.</div>';
+    return;
+  }
+  
+  grid.innerHTML = driverData.map(d => {
+    const progressColor = d.progressPct >= 100 
+      ? 'var(--success)' 
+      : d.progressPct >= 60 
+        ? 'var(--warning)' 
+        : 'var(--danger)';
+    
+    const targetStatus = d.loadCount === 0 
+      ? 'No loads' 
+      : d.net >= d.targetNet 
+        ? '✅ On target' 
+        : money(d.targetNet - d.net) + ' short';
+    
+    return `
+      <div class="fleet-card ${d.isPaused ? 'status-paused' : ''}" onclick="selectDriverFromFleet('${d.id}')">
+        <div class="fc-top">
+          <div>
+            <div class="fc-name">${escapeHtml(d.name)}</div>
+            <div class="fc-truck">${d.truckNumber ? 'Truck #' + escapeHtml(d.truckNumber) : ''}${d.truckNumber && d.trailerNumber ? ' • ' : ''}${d.trailerNumber ? 'Trailer #' + escapeHtml(d.trailerNumber) : ''}${!d.truckNumber && !d.trailerNumber ? 'No truck/trailer assigned' : ''}</div>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;">
+            ${d.isPaused 
+              ? '<span class="fc-paused-badge">⏸️ ' + escapeHtml(d.pauseReason || 'Paused') + '</span>' 
+              : '<span class="fc-rpm-badge ' + d.rpmTier + '">' + money(d.rpm) + ' RPM</span>'}
+          </div>
+        </div>
+        
+        <div class="fc-location">📍 ${escapeHtml(d.lastLocation)}</div>
+        
+        <div class="fc-stats">
+          <div class="fc-stat">
+            <div class="fc-stat-label">Loads</div>
+            <div class="fc-stat-value" style="color:var(--text-primary)">${d.loadCount}</div>
+          </div>
+          <div class="fc-stat">
+            <div class="fc-stat-label">Gross</div>
+            <div class="fc-stat-value positive">${money(d.gross)}</div>
+          </div>
+          <div class="fc-stat">
+            <div class="fc-stat-label">Net</div>
+            <div class="fc-stat-value" style="color:${d.net >= 0 ? 'var(--success)' : 'var(--danger)'}">${money(d.net)}</div>
+          </div>
+        </div>
+        
+        <div class="fc-progress">
+          <div class="fc-progress-bar" style="width:${Math.max(0, d.progressPct)}%;background:${progressColor};"></div>
+        </div>
+        <div class="fc-target-text">
+          <span>${targetStatus}</span>
+          <span>Target: ${money(d.targetNet)}</span>
+        </div>
+        
+        ${d.nextLoadInfo ? '<div style="margin-top:8px;font-size:11px;color:var(--accent-cyan);font-weight:700;">📦 Next: ' + escapeHtml(d.nextLoadInfo) + '</div>' : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+function selectDriverFromFleet(driverId){
+  if (!state.drivers[driverId]) return;
+  state.currentDriverId = driverId;
+  saveState();
+  
+  // Refresh everything
+  renderDriverSelect();
+  renderWeekSelect();
+  bindSettingsToInputs();
+  bindDriverOverridesToInputs();
+  updateUI();
+  
+  // Close fleet modal and switch to dispatch view
+  closeFleetModal();
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  showTab('dashboard', document.querySelectorAll('.nav-tab')[1]);
+  document.querySelectorAll('.nav-tab')[1].classList.add('active');
+}
+
+// Keyboard shortcut: Escape closes fleet modal
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape' && document.getElementById('fleetModal').style.display === 'flex') {
+    closeFleetModal();
+  }
+});
+
+console.log('✅ Fleet Overview modal loaded');
 
 /***********************************************
  * FIREBASE AUTH + CLOUD SYNC (SEPARATE ACCOUNTS)
