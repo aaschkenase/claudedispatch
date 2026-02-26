@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
 <meta http-equiv="Pragma" content="no-cache" />
 <meta http-equiv="Expires" content="0" />
-<!-- VERSION: V2-FIXED - Feb 20, 2026 - Enhanced Driver Modal (getTargetNet bug fixed) -->
+<!-- VERSION: V5-IMPROVEMENTS2 - Feb 26, 2026 - Week lifecycle, efficiency formula, map labels, Firebase dirty-tracking -->
 <title>Dispatch Command Center</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -1448,6 +1448,31 @@ td {
 .aw-err.on{display:block;}
 .aw-note{background:rgba(0,180,255,0.08);border:1px solid rgba(0,180,255,0.25);border-radius:10px;padding: 12px;margin-top:18px;font-size:12px;color:var(--text-secondary);line-height:1.6;}
 
+/* ── Sync Status Banner ── */
+#syncBanner {
+  display: none;
+  padding: 6px 16px;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  letter-spacing: 0.5px;
+  z-index: 900;
+}
+#syncBanner.offline {
+  display: block;
+  background: linear-gradient(90deg, rgba(255,51,102,0.15), rgba(255,184,0,0.15));
+  color: var(--warning);
+  border-bottom: 1px solid rgba(255,184,0,0.3);
+}
+#syncBanner.syncing {
+  display: block;
+  background: rgba(0,180,255,0.08);
+  color: var(--accent-cyan);
+  border-bottom: 1px solid rgba(0,180,255,0.2);
+  animation: pulse-sync 1.5s ease-in-out infinite;
+}
+@keyframes pulse-sync { 0%,100%{opacity:1} 50%{opacity:0.6} }
+
 </style>
 </head>
 <body>
@@ -1556,7 +1581,12 @@ td {
       
       <div class="week-selector">
         <div class="selector-label">Active Week</div>
-        <select id="weekSelect" onchange="onWeekChange()"></select>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <button class="btn-icon" onclick="navWeekPrev()" style="padding:12px 10px;min-width:auto;" title="Previous Week">◀</button>
+          <select id="weekSelect" onchange="onWeekChange()" style="flex:1;"></select>
+          <button class="btn-icon" onclick="navWeekNext()" style="padding:12px 10px;min-width:auto;" title="Next Week">▶</button>
+          <button class="btn-icon" onclick="navWeekCurrent()" style="padding:12px 10px;font-size:11px;" title="Jump to This Week">Today</button>
+        </div>
       </div>
       
       <button class="btn-icon danger" onclick="resetCurrentWeek()">
@@ -1583,6 +1613,9 @@ td {
     <button class="nav-tab" onclick="showTab('settings', this)">Settings</button>
     <button class="nav-tab fleet-btn" onclick="openFleetModal()">🚛 Fleet Overview</button>
   </nav>
+
+  <!-- Sync status banner (hidden by default, shown when offline or syncing) -->
+  <div id="syncBanner"></div>
 
   <!-- DISPATCH VIEW TAB (NEW) -->
   <div id="dispatch" class="tab-content">
@@ -1675,6 +1708,12 @@ td {
       </div>
     </div>
 
+    <div id="futureWeekBanner" style="display:none;margin-bottom:16px;padding:12px 20px;background:linear-gradient(135deg, rgba(255,184,0,0.1), rgba(0,180,255,0.1));border:1px solid rgba(255,184,0,0.3);border-left:4px solid var(--warning);border-radius:12px;font-weight:600;color:var(--text-primary);animation:slideDown 0.4s ease-out;">
+      <span style="font-size:16px;margin-right:8px;">📅</span>
+      <span id="futureWeekBannerText">Planning Mode — You're viewing a future week</span>
+      <button onclick="navWeekCurrent()" style="margin-left:16px;background:var(--bg-primary);border:1px solid var(--border-medium);color:var(--accent-cyan);padding:6px 14px;border-radius:8px;font-family:'Rajdhani',sans-serif;font-size:12px;font-weight:700;cursor:pointer;text-transform:uppercase;">↩ Back to This Week</button>
+    </div>
+
     <div class="stats-grid">
       <div class="stat-card">
         <div class="stat-label">Weekly Gross</div>
@@ -1756,6 +1795,16 @@ td {
             
             <div class="hint-text" style="font-size: 12px; margin-top: 8px; color: var(--text-muted);">
               💡 Select "Next Monday" for loads that pick up this week but deliver next week. Revenue will count toward next week.
+            </div>
+
+            <div class="input-row" style="margin-top: 10px;">
+              <div class="input-group">
+                <label>Load Status</label>
+                <select id="load_status" style="font-weight:700;">
+                  <option value="confirmed" style="color: #00ff88;">✅ Confirmed</option>
+                  <option value="planned" style="color: #ffb800;">📋 Planned</option>
+                </select>
+              </div>
             </div>
 
             <!-- MULTI-STOP SECTION -->
@@ -1842,6 +1891,16 @@ td {
             <button class="btn-icon" onclick="exportCSV('week')">⬇️ Export CSV</button>
             <button class="btn-icon" onclick="printWeeklySummary()">🖨️ Print</button>
             <button class="btn-icon" onclick="generateSettlement()" style="border-color: rgba(0,255,136,0.3); color: var(--success);">📄 Settlement</button>
+          </div>
+        </div>
+
+        <!-- UPCOMING LOADS PREVIEW -->
+        <div class="card no-print" id="upcomingLoadsCard" style="display:none;">
+          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+            <span>📅 Upcoming Loads</span>
+            <span id="upcomingCount" style="font-size:12px;color:var(--accent-cyan);font-weight:700;"></span>
+          </div>
+          <div class="card-body" id="upcomingLoadsBody" style="padding:12px 16px;max-height:300px;overflow-y:auto;">
           </div>
         </div>
       </div>
@@ -2347,6 +2406,70 @@ const defaultSettings = {
   s_tax: 0.25
 };
 
+/*******************************************************
+ * CONFIG — Central place for tunable constants/thresholds
+ * Change values here instead of hunting through code.
+ *******************************************************/
+const CONFIG = {
+  AVG_MILES_PER_DAY: 600,          // Default if driver has no override
+  TARGET_GROSS_PER_DAY: 1200,      // Used by load analyzer
+  RPM_TIER_GREEN: 2.50,            // Fleet card badge thresholds
+  RPM_TIER_YELLOW: 2.00,
+  MAP_REFRESH_DELAY: 150,          // ms delay before map re-init
+  RELOAD_MIN_LOADS: 3,             // Minimum loads for lane analysis
+  EFFICIENCY_WEIGHTS: { rpm: 0.4, deadhead: 0.4, utilization: 0.2 },
+  GEO_CACHE_MAX: 800,              // Max geocode cache entries
+  CLOUD_SAVE_DEBOUNCE: 1500,       // ms debounce for Firestore writes
+  DEBUG: false                     // Set true to keep console.log output
+};
+
+/*******************************************************
+ * SHARED UTILITIES
+ * Common math/geo functions used by multiple modules.
+ *******************************************************/
+function haversineMiles(a, b) {
+  const R = 3958.8; // Earth radius in miles
+  const toRad = d => (d * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLon = toRad(b.lon - a.lon);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const h = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+/** Debug logger — only outputs when CONFIG.DEBUG is true */
+function dbg(...args) { if (CONFIG.DEBUG) console.log(...args); }
+
+/** ── Sync Status Banner ── */
+let _syncBannerTimer = null;
+function updateSyncBanner(status, detail) {
+  const el = document.getElementById('syncBanner');
+  if (!el) return;
+  clearTimeout(_syncBannerTimer);
+
+  if (status === 'offline') {
+    el.className = 'offline';
+    el.textContent = '⚠️ OFFLINE — Changes saved locally, will sync when connection returns';
+  } else if (status === 'error') {
+    el.className = 'offline';
+    el.textContent = '⚠️ Sync failed — Data saved locally. ' + (detail || '');
+    _syncBannerTimer = setTimeout(() => { el.className = ''; el.style.display = 'none'; }, 8000);
+  } else if (status === 'saved') {
+    el.className = '';
+    el.style.display = 'none';
+  } else if (status === 'online') {
+    // Came back online — briefly show then hide
+    el.className = 'syncing';
+    el.textContent = '🔄 Back online — syncing…';
+    _syncBannerTimer = setTimeout(() => { el.className = ''; el.style.display = 'none'; }, 3000);
+  }
+}
+
+// Listen for browser online/offline events
+window.addEventListener('offline', () => updateSyncBanner('offline'));
+window.addEventListener('online', () => updateSyncBanner('online'));
+
 function startOfWeekMonday(date = new Date()){
   const d = new Date(date);
   const day = d.getDay();
@@ -2475,16 +2598,8 @@ function saveGeoCacheReload(cache) {
 function placeKeyReload(city, state) {
   return `${(city || '').toUpperCase().trim()}|${(state || '').toUpperCase().trim()}`;
 }
-function haversineMilesReload(a, b) {
-  const R = 3958.8;
-  const toRad = d => (d * Math.PI) / 180;
-  const dLat = toRad(b.lat - a.lat);
-  const dLon = toRad(b.lon - a.lon);
-  const lat1 = toRad(a.lat);
-  const lat2 = toRad(b.lat);
-  const h = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
-  return 2 * R * Math.asin(Math.sqrt(h));
-}
+// Alias for backward compatibility — uses shared haversineMiles()
+const haversineMilesReload = haversineMiles;
 
 async function geocodeCityStateReload(city, state) {
   if (!city || !state) return null;
@@ -2505,9 +2620,9 @@ async function geocodeCityStateReload(city, state) {
 
     // Keep cache from growing forever (cap ~800 entries)
     const keys = Object.keys(cache);
-    if (keys.length > 800) {
+    if (keys.length > CONFIG.GEO_CACHE_MAX) {
       keys.sort((a,b) => (cache[a].ts || 0) - (cache[b].ts || 0));
-      keys.slice(0, keys.length - 800).forEach(k => delete cache[k]);
+      keys.slice(0, keys.length - CONFIG.GEO_CACHE_MAX).forEach(k => delete cache[k]);
     }
     saveGeoCacheReload(cache);
     return item;
@@ -3261,12 +3376,7 @@ function addDriver(){
   };
 
   state.currentDriverId = id;
-  saveState();
-  renderDriverSelect();
-  renderWeekSelect();
-  bindDriverOverridesToInputs();
-  updateUI();
-  setTimeout(initMap, 150);
+  refreshAll();
 }
 
 function removeDriver(){
@@ -3280,74 +3390,114 @@ function removeDriver(){
   const remaining = Object.keys(state.drivers);
   state.currentDriverId = remaining[0];
   
-  saveState();
-  renderDriverSelect();
-  renderWeekSelect();
-  bindDriverOverridesToInputs();
-  updateUI();
-  setTimeout(initMap, 150);
+  refreshAll();
 }
 
 /************************* 
  * WEEK MENU 
  *************************/
-function cleanupWeeksForAllDrivers(){
-  try {
-    Object.values(state.drivers||{}).forEach(d=>{
-      if (!d.weeks) d.weeks = {};
-      // Group week IDs by their underlying start date
-      const byStart = {};
-      Object.entries(d.weeks).forEach(([wid,w])=>{
-        const start = (w && w.start) ? w.start : (wid.split("_v")[0] || wid);
-        if (!byStart[start]) byStart[start] = [];
-        byStart[start].push(wid);
-      });
+/**
+ * ─── UNIFIED WEEK LIFECYCLE ───
+ * resolveWeekState(driver) handles ALL week-related edge cases in a single pass:
+ *   1. Remove blank duplicate weeks (_v variants with 0 loads)
+ *   2. If currentWeekId is missing/closed, find the best open week
+ *   3. Ensure current + 2 future weeks exist
+ * 
+ * This replaces the old scattered approach of calling cleanupWeeksForAllDrivers(),
+ * fixAllDriversClosedWeeks(), ensureCurrentDriverHasThisWeek(), etc. in sequence.
+ */
+function resolveWeekState(driver) {
+  if (!driver) return;
+  if (!driver.weeks) driver.weeks = {};
 
-      Object.entries(byStart).forEach(([start, ids])=>{
-        if (ids.length <= 1) return;
+  const thisWeekId = isoDate(startOfWeekMonday(new Date()));
 
-        // Pick the best week to keep: most loads, then prefer non-versioned, then smallest id
-        const sorted = ids.slice().sort((a,b)=>{
-          const wa = d.weeks[a] || {};
-          const wb = d.weeks[b] || {};
-          const la = (wa.loads||[]).length;
-          const lb = (wb.loads||[]).length;
-          if (lb !== la) return lb - la;
-          const av = /_v\d+$/.test(a) ? 1 : 0;
-          const bv = /_v\d+$/.test(b) ? 1 : 0;
-          if (av !== bv) return av - bv;
-          return a.localeCompare(b);
-        });
-        const keep = sorted[0];
+  // ── Pass 1: Deduplicate weeks (merge _v variants) ──
+  const byStart = {};
+  Object.entries(driver.weeks).forEach(([wid, w]) => {
+    const start = (w && w.start) ? w.start : (wid.split("_v")[0] || wid);
+    if (!byStart[start]) byStart[start] = [];
+    byStart[start].push(wid);
+  });
 
-        sorted.slice(1).forEach(wid=>{
-          const w = d.weeks[wid] || {};
-          const loads = (w.loads||[]).length;
-          const label = (w.label || "");
-          const isDupLabel = /\(\d+\)\s*$/.test(label) || /_v\d+$/.test(wid);
-          // Remove only truly blank duplicates so we never delete real history
-          if (loads === 0 && isDupLabel) {
-            delete d.weeks[wid];
-          }
-        });
-      });
-
-      // If currentWeekId points to a removed week, recover gracefully
-      if (d.currentWeekId && !d.weeks[d.currentWeekId]) {
-        const all = Object.keys(d.weeks).sort().reverse();
-        d.currentWeekId = all[0] || isoDate(startOfWeekMonday(new Date()));
-      }
+  Object.entries(byStart).forEach(([start, ids]) => {
+    if (ids.length <= 1) return;
+    // Keep the week with the most loads; prefer non-versioned ID
+    const sorted = ids.slice().sort((a, b) => {
+      const la = (driver.weeks[a]?.loads || []).length;
+      const lb = (driver.weeks[b]?.loads || []).length;
+      if (lb !== la) return lb - la;
+      const av = /_v\d+$/.test(a) ? 1 : 0;
+      const bv = /_v\d+$/.test(b) ? 1 : 0;
+      return av - bv;
     });
-  } catch(e) {
-    console.warn("cleanupWeeksForAllDrivers failed:", e);
+    // Remove blank duplicates only
+    sorted.slice(1).forEach(wid => {
+      const w = driver.weeks[wid] || {};
+      const isEmpty = (w.loads || []).length === 0;
+      const isDup = /\(\d+\)\s*$/.test(w.label || '') || /_v\d+$/.test(wid);
+      if (isEmpty && isDup) delete driver.weeks[wid];
+    });
+  });
+
+  // ── Pass 2: Resolve currentWeekId ──
+  const curId = driver.currentWeekId;
+  const curWeek = curId ? driver.weeks[curId] : null;
+  const needsResolve = !curWeek || curWeek.closed;
+
+  if (needsResolve) {
+    // Find best open week: prefer this week, then most recent open, then newest
+    if (driver.weeks[thisWeekId] && !driver.weeks[thisWeekId].closed) {
+      driver.currentWeekId = thisWeekId;
+    } else {
+      const ids = Object.keys(driver.weeks).sort().reverse();
+      const openId = ids.find(id => !driver.weeks[id].closed);
+      if (openId) {
+        driver.currentWeekId = openId;
+      } else {
+        // All weeks closed — create this week
+        driver.currentWeekId = thisWeekId;
+      }
+    }
+  } else {
+    // Snap-back: if driver is on a future empty week but has loads this week,
+    // bring them back to this week (fixes stale state from prior bugs)
+    const isFuture = curId > thisWeekId;
+    const curLoads = (curWeek?.loads || []).length;
+    const thisWeek = driver.weeks[thisWeekId];
+    const thisLoads = (thisWeek?.loads || []).length;
+    if (isFuture && curLoads === 0 && thisLoads > 0) {
+      driver.currentWeekId = thisWeekId;
+    }
+  }
+
+  // ── Pass 3: Ensure current + 2 future weeks exist ──
+  for (let offset = 0; offset <= 2; offset++) {
+    const dt = new Date();
+    dt.setDate(dt.getDate() + (offset * 7));
+    const monday = startOfWeekMonday(dt);
+    const weekId = isoDate(monday);
+    if (!driver.weeks[weekId]) {
+      driver.weeks[weekId] = {
+        start: weekId,
+        label: fmtWeekLabel(monday),
+        loads: [],
+        lastDropCoords: null
+      };
+    }
   }
 }
 
-// Returns the most recent non-closed week ID for a driver.
-// Falls back to most recent week (closed or not) if all are closed.
+/** Run resolveWeekState for every driver in the fleet */
+function resolveAllDriverWeeks() {
+  Object.values(state.drivers || {}).forEach(d => resolveWeekState(d));
+}
+
+// ── Legacy wrappers (keep for any external callers) ──
+function cleanupWeeksForAllDrivers(){ resolveAllDriverWeeks(); }
 function getMostRecentOpenWeekId(d) {
   if (!d || !d.weeks) return null;
-  const ids = Object.keys(d.weeks).sort().reverse(); // newest first
+  const ids = Object.keys(d.weeks).sort().reverse();
   const open = ids.find(id => !d.weeks[id].closed);
   return open || ids[0] || null;
 }
@@ -3355,11 +3505,33 @@ function getMostRecentOpenWeekId(d) {
 function renderWeekSelect(){
   const sel = document.getElementById("weekSelect");
   const d = getDriver();
+  
+  // Ensure future weeks exist
+  ensureFutureWeeksExist();
+  
+  const thisWeekId = isoDate(startOfWeekMonday(new Date()));
   const ids = Object.keys(d.weeks).sort().reverse();
   sel.innerHTML = ids.map(id=>{
     const w = d.weeks[id];
     const selected = (id === d.currentWeekId) ? "selected" : "";
-    return `<option value="${id}" ${selected}>${escapeHtml(w.label || id)}</option>`;
+    const loadCount = (w.loads || []).filter(l => !l.deliversNextWeek).length;
+    const plannedCount = (w.loads || []).filter(l => l.status === 'planned').length;
+    
+    let label = escapeHtml(w.label || id);
+    // Mark current real week
+    if (id === thisWeekId) {
+      label += ' ← This Week';
+    } else if (id > thisWeekId) {
+      label += ' (Future)';
+    }
+    // Show load count
+    if (loadCount > 0) {
+      label += ` [${loadCount} load${loadCount !== 1 ? 's' : ''}`;
+      if (plannedCount > 0) label += `, ${plannedCount} planned`;
+      label += ']';
+    }
+    
+    return `<option value="${id}" ${selected}>${label}</option>`;
   }).join("");
 }
 
@@ -3371,40 +3543,26 @@ function ensureDriversOnActiveWeek(){
   const monday = new Date(globalWeekId + "T00:00:00");
   if (isNaN(monday.getTime())) return;
 
+  // Only auto-move truly NEW drivers (no loads in any week) to the global week.
+  // Never touch drivers who already have data — their currentWeekId is their own.
   Object.values(state.drivers || {}).forEach(d => {
     if (!d || !d.weeks) return;
+    resolveWeekState(d);
 
-    // If driver already has this week, just align currentWeekId.
-    if (d.weeks[globalWeekId]) {
-      d.currentWeekId = globalWeekId;
-      return;
-    }
+    // Count total loads across ALL weeks
+    const totalLoads = Object.values(d.weeks).reduce((sum, w) => sum + (w.loads || []).length, 0);
+    if (totalLoads > 0) return; // Has data — leave them alone
 
-    const curId = d.currentWeekId;
-    const curWeek = curId ? d.weeks[curId] : null;
-    const curLoads = (curWeek?.loads || []);
-    const hasCurLoads = curLoads.length > 0;
-
-    // Only auto-move drivers who are effectively "new/empty" (no loads yet) and
-    // have a single week or an empty current week.
-    const weekKeys = Object.keys(d.weeks || {});
-    const looksNew = (!hasCurLoads) && (weekKeys.length <= 1);
-
-    if (looksNew) {
+    // Brand new driver with no loads anywhere — align to the global week
+    if (!d.weeks[globalWeekId]) {
       d.weeks[globalWeekId] = {
         start: globalWeekId,
         label: fmtWeekLabel(startOfWeekMonday(monday)),
         loads: [],
         lastDropCoords: null
       };
-      d.currentWeekId = globalWeekId;
-
-      // If the old week is empty and different, remove it to avoid blank duplicates.
-      if (curId && curId !== globalWeekId) {
-        const old = d.weeks[curId];
-        if (old && (!old.loads || old.loads.length === 0)) delete d.weeks[curId];
-      }
     }
+    d.currentWeekId = globalWeekId;
   });
 
   saveState();
@@ -3419,9 +3577,7 @@ function onWeekChange(){
   
   d.currentWeekId = id;
   calendarWeekStart = null; // Reset calendar to show selected week
-  saveState();
-  updateUI();
-  setTimeout(initMap, 150);
+  refreshAll();
 }
 
 function startNewWeek(){
@@ -3461,6 +3617,164 @@ function resetCurrentWeek(){
   saveState();
   updateUI();
   initMap();
+}
+
+/************************* 
+ * WEEK NAVIGATION & PLANNING 
+ *************************/
+function getWeekIdForOffset(offsetWeeks){
+  const d = new Date();
+  d.setDate(d.getDate() + (offsetWeeks * 7));
+  return isoDate(startOfWeekMonday(d));
+}
+
+function ensureFutureWeeksExist(){
+  resolveWeekState(getDriver());
+}
+
+function navWeekPrev(){
+  const d = getDriver();
+  const ids = Object.keys(d.weeks).sort();
+  const curIdx = ids.indexOf(d.currentWeekId);
+  if (curIdx > 0) {
+    d.currentWeekId = ids[curIdx - 1];
+    refreshAll();
+  }
+}
+
+function navWeekNext(){
+  const d = getDriver();
+  ensureFutureWeeksExist();
+  const ids = Object.keys(d.weeks).sort();
+  const curIdx = ids.indexOf(d.currentWeekId);
+  if (curIdx < ids.length - 1) {
+    d.currentWeekId = ids[curIdx + 1];
+  } else {
+    // Create a new future week beyond what exists
+    const lastId = ids[ids.length - 1];
+    const lastDate = new Date(lastId + "T00:00:00");
+    lastDate.setDate(lastDate.getDate() + 7);
+    const newId = isoDate(lastDate);
+    d.weeks[newId] = {
+      start: newId,
+      label: fmtWeekLabel(lastDate),
+      loads: [],
+      lastDropCoords: null
+    };
+    d.currentWeekId = newId;
+  }
+  refreshAll();
+}
+
+function navWeekCurrent(){
+  const d = getDriver();
+  const thisWeekId = isoDate(startOfWeekMonday(new Date()));
+  ensureFutureWeeksExist();
+  if (!d.weeks[thisWeekId]) {
+    const dt = startOfWeekMonday(new Date());
+    d.weeks[thisWeekId] = {
+      start: thisWeekId,
+      label: fmtWeekLabel(dt),
+      loads: [],
+      lastDropCoords: null
+    };
+  }
+  d.currentWeekId = thisWeekId;
+  refreshAll();
+}
+
+function toggleLoadStatus(loadIndex){
+  const wk = getCurrentWeek();
+  const l = wk.loads[loadIndex];
+  if (!l) return;
+  l.status = (l.status === 'planned') ? 'confirmed' : 'planned';
+  saveState();
+  updateUI();
+}
+
+function renderUpcomingLoads(){
+  const card = document.getElementById('upcomingLoadsCard');
+  const body = document.getElementById('upcomingLoadsBody');
+  const countEl = document.getElementById('upcomingCount');
+  if (!card || !body) return;
+  
+  const d = getDriver();
+  const thisWeekId = isoDate(startOfWeekMonday(new Date()));
+  
+  // Collect loads from future weeks (after the current real week)
+  const futureWeekIds = Object.keys(d.weeks).sort().filter(id => {
+    // Only include weeks strictly after the current calendar week
+    return id > thisWeekId;
+  });
+  
+  let upcomingLoads = [];
+  futureWeekIds.forEach(wkId => {
+    const wk = d.weeks[wkId];
+    (wk.loads || []).forEach(l => {
+      upcomingLoads.push({
+        weekLabel: wk.label,
+        weekId: wkId,
+        origin: l.origin,
+        dest: l.dest,
+        gross: l.gross,
+        miles: l.miles,
+        status: l.status || 'confirmed',
+        pickupDay: l.pickupDay,
+        deliveryDay: l.deliveryDay
+      });
+    });
+  });
+  
+  // Also include cross-week loads from the current week
+  const currentWeek = d.weeks[thisWeekId];
+  if (currentWeek) {
+    (currentWeek.loads || []).filter(l => l.deliversNextWeek).forEach(l => {
+      upcomingLoads.push({
+        weekLabel: 'Next week delivery',
+        weekId: thisWeekId,
+        origin: l.origin,
+        dest: l.dest,
+        gross: l.gross,
+        miles: l.miles,
+        status: l.status || 'confirmed',
+        pickupDay: l.pickupDay,
+        deliveryDay: 'Monday'
+      });
+    });
+  }
+  
+  if (upcomingLoads.length === 0) {
+    card.style.display = 'none';
+    return;
+  }
+  
+  card.style.display = 'block';
+  const planned = upcomingLoads.filter(l => l.status === 'planned').length;
+  const confirmed = upcomingLoads.filter(l => l.status === 'confirmed').length;
+  countEl.textContent = `${upcomingLoads.length} load${upcomingLoads.length !== 1 ? 's' : ''} ahead` + 
+    (planned > 0 ? ` (${planned} planned)` : '');
+  
+  body.innerHTML = upcomingLoads.map(l => {
+    const statusColor = l.status === 'planned' ? 'var(--warning)' : 'var(--success)';
+    const statusIcon = l.status === 'planned' ? '📋' : '✅';
+    return `
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border-subtle);">
+        <span style="font-size:14px;">${statusIcon}</span>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;font-weight:700;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+            ${escapeHtml(l.origin)} → ${escapeHtml(l.dest)}
+          </div>
+          <div style="font-size:11px;color:var(--text-muted);">
+            ${escapeHtml(l.weekLabel)}${l.pickupDay ? ' • Pick ' + l.pickupDay : ''}
+          </div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;">
+          <div style="font-size:13px;font-weight:800;color:var(--success);">${money(l.gross)}</div>
+          <div style="font-size:11px;color:var(--text-muted);">${Number(l.miles||0).toLocaleString()} mi</div>
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 
 /************************* 
@@ -3597,7 +3911,7 @@ function saveDriverFixedCosts(){
   
   saveState();
   alert(`Fixed costs saved for ${d.name}.`);
-  console.log('✅ Saved fixed costs for', d.name, ':', d.fixedCosts);
+  dbg('✅ Saved fixed costs for', d.name, ':', d.fixedCosts);
 }
 
 function saveDriverVariableCosts(){
@@ -3616,25 +3930,25 @@ function saveDriverVariableCosts(){
   
   saveState();
   alert(`Variable deductions saved for ${d.name}.`);
-  console.log('✅ Saved variable costs for', d.name, ':', d.fixedCosts);
+  dbg('✅ Saved variable costs for', d.name, ':', d.fixedCosts);
 }
 
 function bindDriverOverridesToInputs(){
   const d = getDriver();
   const s = getSpecs();
   
-  console.log('📋 Binding driver overrides for:', d.name);
-  console.log('  - splitOverride:', d.splitOverride);
-  console.log('  - targetNetOverride:', d.targetNetOverride);
+  dbg('📋 Binding driver overrides for:', d.name);
+  dbg('  - splitOverride:', d.splitOverride);
+  dbg('  - targetNetOverride:', d.targetNetOverride);
   
   const splitEl = document.getElementById("d_split");
   const splitVal = Number(d.splitOverride);
   // Don't overwrite if currently editing OR if field has been modified
   if (splitEl && splitEl.dataset.editing !== 'true' && splitEl.dataset.dirty !== 'true') {
     splitEl.value = (Number.isFinite(splitVal) ? splitVal : s.split);
-    console.log('  - Split input set to:', splitEl.value);
+    dbg('  - Split input set to:', splitEl.value);
   } else if (splitEl) {
-    console.log('  - Split input being edited/modified, not overwriting');
+    dbg('  - Split input being edited/modified, not overwriting');
   } else {
     console.error('❌ Split input element not found!');
   }
@@ -3645,9 +3959,9 @@ function bindDriverOverridesToInputs(){
   if (targetEl && targetEl.dataset.editing !== 'true' && targetEl.dataset.dirty !== 'true') {
     targetEl.value = (Number.isFinite(targetVal) ? targetVal : "");
     targetEl.placeholder = `Default: ${s.targetNet}`;
-    console.log('  - Target input set to:', targetEl.value || '(empty, using default)');
+    dbg('  - Target input set to:', targetEl.value || '(empty, using default)');
   } else if (targetEl) {
-    console.log('  - Target input being edited/modified, not overwriting');
+    dbg('  - Target input being edited/modified, not overwriting');
   } else {
     console.error('❌ Target net input element not found!');
   }
@@ -3658,9 +3972,9 @@ function bindDriverOverridesToInputs(){
   if (milesPerDayEl && milesPerDayEl.dataset.editing !== 'true' && milesPerDayEl.dataset.dirty !== 'true') {
     milesPerDayEl.value = (Number.isFinite(milesPerDayVal) ? milesPerDayVal : "");
     milesPerDayEl.placeholder = "600";
-    console.log('  - Miles/day input set to:', milesPerDayEl.value || '(empty, using default 600)');
+    dbg('  - Miles/day input set to:', milesPerDayEl.value || '(empty, using default 600)');
   } else if (milesPerDayEl) {
-    console.log('  - Miles/day input being edited/modified, not overwriting');
+    dbg('  - Miles/day input being edited/modified, not overwriting');
   }
   
   // Bind truck/trailer info
@@ -3729,20 +4043,20 @@ function saveTruckTrailerInfo(){
   
   saveState();
   alert("Truck/Trailer info saved.");
-  console.log('✅ Saved truck/trailer:', {truck: d.truckNumber, trailer: d.trailerNumber});
+  dbg('✅ Saved truck/trailer:', {truck: d.truckNumber, trailer: d.trailerNumber});
 }
 
 function saveDriverOverrides(){
   const d = getDriver();
   
-  console.log('💾 Saving driver overrides for:', d.name);
+  dbg('💾 Saving driver overrides for:', d.name);
   
   const splitEl = document.getElementById("d_split");
   const targetEl = document.getElementById("d_target_net");
   const milesPerDayEl = document.getElementById("d_miles_per_day");
   
   const splitVal = parseFloat(splitEl.value);
-  console.log('  - Split input value:', splitVal);
+  dbg('  - Split input value:', splitVal);
   
   if (!(Number.isFinite(splitVal) && splitVal > 0 && splitVal < 1.00001)) {
     console.error('❌ Invalid split value:', splitVal);
@@ -3750,19 +4064,19 @@ function saveDriverOverrides(){
   }
   
   const targetVal = parseFloat(targetEl.value);
-  console.log('  - Target input value:', targetVal);
+  dbg('  - Target input value:', targetVal);
   
   const milesPerDayVal = parseFloat(milesPerDayEl.value);
-  console.log('  - Miles/day input value:', milesPerDayVal);
+  dbg('  - Miles/day input value:', milesPerDayVal);
   
   d.splitOverride = splitVal;
   d.targetNetOverride = (Number.isFinite(targetVal) && targetVal >= 0) ? targetVal : null;
   d.milesPerDayOverride = (Number.isFinite(milesPerDayVal) && milesPerDayVal >= 400) ? milesPerDayVal : null;
   
-  console.log('✅ Saved overrides:');
-  console.log('  - splitOverride:', d.splitOverride);
-  console.log('  - targetNetOverride:', d.targetNetOverride);
-  console.log('  - milesPerDayOverride:', d.milesPerDayOverride);
+  dbg('✅ Saved overrides:');
+  dbg('  - splitOverride:', d.splitOverride);
+  dbg('  - targetNetOverride:', d.targetNetOverride);
+  dbg('  - milesPerDayOverride:', d.milesPerDayOverride);
   
   // Clear dirty flags after successful save
   splitEl.dataset.dirty = 'false';
@@ -4140,6 +4454,7 @@ function toggleLoadAnalyzer(){
 }
 
 function analyzeLoad(){
+  try {
   const s = getSpecs();
   const driver = getDriver();
   const split = getDriverSplit(driver);
@@ -4173,8 +4488,8 @@ function analyzeLoad(){
   const beRpm = miles > 0 ? (beGross / miles) : 0;
   
   // Multi-day calculation - use driver's setting or default to 600
-  const AVG_MILES_PER_DAY = driver.milesPerDayOverride || 600;
-  const TARGET_GROSS_PER_DAY = 1200;
+  const AVG_MILES_PER_DAY = driver.milesPerDayOverride || CONFIG.AVG_MILES_PER_DAY;
+  const TARGET_GROSS_PER_DAY = CONFIG.TARGET_GROSS_PER_DAY;
   const daysOnLoad = Math.ceil(miles / AVG_MILES_PER_DAY);
   const expectedGross = daysOnLoad * TARGET_GROSS_PER_DAY;
   const grossPerDay = daysOnLoad > 0 ? gross / daysOnLoad : 0;
@@ -4214,31 +4529,84 @@ function analyzeLoad(){
   else if (rpm >= beRpm * 0.8) stars = 2;
   else stars = 1;
   
-  // Final recommendation
+  // ─── MULTI-FACTOR WEIGHTED SCORING ENGINE ───
+  // Each factor scores 0–100, then gets a configurable weight.
+  // This replaces the old linear if/else chain so that a $3.50 RPM
+  // 100-mile run and a $2.80 RPM 900-mile run are evaluated differently.
+
+  // Factor 1: RPM quality (how far above break-even?)
+  const rpmRatio = beRpm > 0 ? rpm / beRpm : (rpm > 0 ? 2 : 0);
+  // 1.0 = break-even → 50pts, 1.5+ = excellent → 100pts, <0.8 = bad → 0pts
+  const rpmScore = Math.max(0, Math.min(100, (rpmRatio - 0.8) * (100 / 0.7)));
+
+  // Factor 2: Daily net revenue (opportunity cost for multi-day loads)
+  // A 2-day load ties the driver up — the daily return must justify it.
+  const dailyNetTarget = targetNet > 0 ? targetNet / 5 : 400; // ~5 dispatch days/week
+  const dailyNetRatio = dailyNetTarget > 0 ? netPerDay / dailyNetTarget : 0;
+  const dailyNetScore = Math.max(0, Math.min(100, dailyNetRatio * 100));
+
+  // Factor 3: Target impact (% of remaining gap this load closes)
+  let targetScore = 50; // neutral if no gap or no target
+  if (targetNet > 0 && gapBefore > 0) {
+    const pctGapClosed = (gapClosed / gapBefore) * 100;
+    targetScore = Math.max(0, Math.min(100, pctGapClosed * 2)); // 50% gap closed = 100pts
+  } else if (targetNet > 0 && gapBefore <= 0) {
+    targetScore = 80; // already at target, bonus load
+  }
+
+  // Factor 4: Deadhead penalty (empty miles eat profit)
+  const dhRatio = miles > 0 ? dhMiles / miles : 0;
+  // 0% dh = 100pts, 20%+ dh = 0pts
+  const dhScore = Math.max(0, Math.min(100, (1 - dhRatio / 0.20) * 100));
+
+  // Factor 5: Week context — urgency increases as week progresses
+  const dayOfWeek = new Date().getDay(); // 0=Sun, 1=Mon...
+  const dispatchDayIndex = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // 0=Mon, 4=Fri
+  const weekUrgency = dispatchDayIndex >= 3 ? 1.15 : 1.0; // Late-week boost
+
+  // Weighted composite (weights from CONFIG.EFFICIENCY_WEIGHTS pattern)
+  const W = { rpm: 0.30, dailyNet: 0.25, target: 0.20, deadhead: 0.15, context: 0.10 };
+  const contextScore = Math.min(100, dailyNetScore * weekUrgency);
+  const compositeScore = (
+    rpmScore * W.rpm +
+    dailyNetScore * W.dailyNet +
+    targetScore * W.target +
+    dhScore * W.deadhead +
+    contextScore * W.context
+  );
+
+  // Map composite → recommendation
   let recommendation = '';
   let recColor = '';
   let recIcon = '';
-  
+  let recReason = '';
+
   if (net <= 0) {
     recommendation = 'SKIP IT';
     recColor = 'var(--danger)';
     recIcon = '🔴';
-  } else if (grossPerDay < TARGET_GROSS_PER_DAY * 0.85) {
-    recommendation = 'MARGINAL';
-    recColor = 'var(--warning)';
-    recIcon = '🟡';
-  } else if (rpm < beRpm * 1.1) {
-    recommendation = 'MARGINAL';
-    recColor = 'var(--warning)';
-    recIcon = '🟡';
-  } else if (grossPerDay >= TARGET_GROSS_PER_DAY && rpm >= currentAvgRpm) {
+    recReason = 'Negative net profit — costs exceed revenue at this rate and distance';
+  } else if (compositeScore >= 72) {
     recommendation = 'TAKE IT';
     recColor = 'var(--success)';
     recIcon = '🟢';
-  } else {
+    const topFactor = rpmScore >= dailyNetScore && rpmScore >= targetScore ? 'strong RPM'
+      : dailyNetScore >= targetScore ? 'solid daily earnings' : 'high target impact';
+    recReason = `Score ${compositeScore.toFixed(0)}/100 — ${topFactor}, good use of driver time`;
+  } else if (compositeScore >= 45) {
     recommendation = 'MARGINAL';
     recColor = 'var(--warning)';
     recIcon = '🟡';
+    const weakFactor = rpmScore < 40 ? 'RPM is thin'
+      : dailyNetScore < 40 ? 'daily net is below target'
+      : dhRatio > 0.15 ? 'high deadhead eats into profit'
+      : 'acceptable but not ideal';
+    recReason = `Score ${compositeScore.toFixed(0)}/100 — ${weakFactor}. Consider if positioning or timing justifies it`;
+  } else {
+    recommendation = 'SKIP IT';
+    recColor = 'var(--danger)';
+    recIcon = '🔴';
+    recReason = `Score ${compositeScore.toFixed(0)}/100 — poor return for the time and miles invested`;
   }
   
   // Build output HTML
@@ -4368,12 +4736,13 @@ function analyzeLoad(){
           ${recIcon} ${recommendation}
         </div>
         <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.5;">
-          ${recommendation === 'TAKE IT' 
-            ? `Strong load: Meets daily target, good RPM, helps reach weekly goal`
-            : recommendation === 'MARGINAL'
-            ? `Acceptable but not ideal: Consider if it helps positioning or fills a gap`
-            : `Below standards: Negative impact on week - consider passing unless necessary`
-          }
+          ${recReason}
+        </div>
+        <div style="margin-top: 10px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; font-size: 11px;">
+          <span style="padding: 3px 8px; border-radius: 6px; background: rgba(0,180,255,0.1); color: var(--accent-cyan);">RPM: ${rpmScore.toFixed(0)}</span>
+          <span style="padding: 3px 8px; border-radius: 6px; background: rgba(0,255,136,0.1); color: var(--success);">Daily$: ${dailyNetScore.toFixed(0)}</span>
+          <span style="padding: 3px 8px; border-radius: 6px; background: rgba(255,184,0,0.1); color: var(--warning);">Target: ${targetScore.toFixed(0)}</span>
+          <span style="padding: 3px 8px; border-radius: 6px; background: rgba(200,200,200,0.1); color: var(--text-secondary);">DH: ${dhScore.toFixed(0)}</span>
         </div>
       </div>
       
@@ -4409,6 +4778,11 @@ function analyzeLoad(){
   }
   
   document.getElementById('analyzerOutput').innerHTML = output;
+  } catch(err) {
+    console.error('❌ Load analyzer error:', err);
+    document.getElementById('analyzerOutput').innerHTML = 
+      `<div style="color:var(--danger);padding:12px;">⚠️ Analyzer error: ${err.message}</div>`;
+  }
 }
 
 function preview(){
@@ -4587,6 +4961,7 @@ function fillFromRecentLoad(){
  * LOAD CRUD 
  *************************/
 function addLoad(){
+  try {
   const originEl = document.getElementById('origin');
   const destEl = document.getElementById('dest');
   const origin = originEl.value.trim();
@@ -4637,6 +5012,7 @@ function addLoad(){
   } catch(e){ routeGeo=null; }
   
   const wk = getCurrentWeek();
+  const loadStatus = document.getElementById('load_status').value || 'confirmed';
   const loadData = {
     origin,
     dest,
@@ -4644,6 +5020,7 @@ function addLoad(){
     miles,
     loadedMiles,
     net,
+    status: loadStatus,
     createdAt: new Date().toISOString(),
     pickupDay,
     deliveryDay: deliversNextWeek ? "Monday" : deliveryDay, // Store as Monday for next week
@@ -4684,6 +5061,7 @@ function addLoad(){
   ['origin','dest','mi_load','mi_dh','cost_tolls','cost_detention','cost_accessorials','pay_gross','pickup_day','delivery_day'].forEach(i => 
     document.getElementById(i).value=""
   );
+  document.getElementById('load_status').value = 'confirmed';
   originEl.dataset.lat="";
   originEl.dataset.lon="";
   originEl.dataset.routeGeo="";
@@ -4696,6 +5074,10 @@ function addLoad(){
   // Clear multi-stops
   if (multiStops.length > 0) {
     closeMultiStop();
+  }
+  } catch(err) {
+    console.error('❌ addLoad error:', err);
+    alert('Error adding load: ' + err.message + '. Your data has been preserved.');
   }
 }
 
@@ -4831,6 +5213,14 @@ function editLoad(i){
         Changing gross will recalculate net profit. Miles cannot be changed (would affect route).
       </div>
       
+      <div class="input-group" style="margin-bottom: 16px;">
+        <label>Load Status</label>
+        <select id="edit_load_status" style="font-weight:700;">
+          <option value="confirmed" ${(l.status || 'confirmed') === 'confirmed' ? 'selected' : ''}>✅ Confirmed</option>
+          <option value="planned" ${l.status === 'planned' ? 'selected' : ''}>📋 Planned</option>
+        </select>
+      </div>
+      
       <div style="display: flex; gap: 8px;">
         <button class="btn-primary" onclick="saveLoadEdit(${i})">💾 Save Changes</button>
         <button class="btn-primary" onclick="viewDetail(${i})" style="background: var(--bg-secondary);">↩️ Back</button>
@@ -4894,6 +5284,9 @@ function saveLoadEdit(i){
   l.pickupDay = newPickupDay || undefined;
   l.deliveryDay = newDeliveryDay || undefined;
   
+  // Update status
+  l.status = document.getElementById('edit_load_status').value || 'confirmed';
+  
   saveState();
   alert("✅ Load updated");
   updateUI();
@@ -4939,7 +5332,7 @@ function calNextWeek(){
 }
 
 function renderCalendar(){
-  console.log('📅 Rendering calendar...');
+  dbg('📅 Rendering calendar...');
   
   try {
     // Use the currently selected driver's current week if calendar week not set
@@ -4947,8 +5340,8 @@ function renderCalendar(){
     const weekStart = calendarWeekStart || d.currentWeekId.split('_')[0];
     const startDate = new Date(weekStart + 'T00:00:00'); // Add time to ensure proper parsing
     
-    console.log('Week:', weekStart);
-    console.log('Driver current week:', d.currentWeekId);
+    dbg('Week:', weekStart);
+    dbg('Driver current week:', d.currentWeekId);
     
     // Use the EXACT same label format as the dashboard
     const currentWeekObj = d.weeks[d.currentWeekId];
@@ -4964,7 +5357,7 @@ function renderCalendar(){
     const allDrivers = Object.values(state.drivers);
     const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
     
-    console.log('Drivers:', allDrivers.length);
+    dbg('Drivers:', allDrivers.length);
     
     if (allDrivers.length === 0) {
       document.getElementById('calendar_content').innerHTML = '<div style="text-align: center; padding: 40px; color: var(--text-muted);">No drivers yet. Add a driver to get started.</div>';
@@ -4978,7 +5371,7 @@ function renderCalendar(){
       const week = driver.weeks[weekStart];
       const loads = week ? (week.loads || []) : [];
       
-      console.log(`  ${driver.name}: ${loads.length} loads (viewing week ${weekStart})`);
+      dbg(`  ${driver.name}: ${loads.length} loads (viewing week ${weekStart})`);
       
       // Status badge
       const statusEmoji = {
@@ -5026,7 +5419,7 @@ function renderCalendar(){
       // Draw load bars
       loads.forEach((load, loadIndex) => {
         if (!load.pickupDay || !load.deliveryDay) {
-          console.log(`    Skipping load ${loadIndex}: no days`);
+          dbg(`    Skipping load ${loadIndex}: no days`);
           return;
         }
         
@@ -5045,7 +5438,7 @@ function renderCalendar(){
         }
         
         if (pickupIndex === -1 || deliveryIndex === -1) {
-          console.log(`    Skipping load ${loadIndex}: invalid days`);
+          dbg(`    Skipping load ${loadIndex}: invalid days`);
           return;
         }
         
@@ -5094,7 +5487,7 @@ function renderCalendar(){
     html += '</div>';
     
     document.getElementById('calendar_content').innerHTML = html;
-    console.log('✅ Calendar rendered');
+    dbg('✅ Calendar rendered');
   } catch (error) {
     console.error('❌ Calendar error:', error);
     document.getElementById('calendar_content').innerHTML = `
@@ -5209,10 +5602,30 @@ function initDispatchMap(){
       if (l.coords && l.coords.start && l.coords.end){
         const s = l.coords.start, e = l.coords.end;
         
-        L.marker([s.lat,s.lon]).addTo(dispatchMap)
-          .bindPopup(`<b>${escapeHtml(d.name)} - Load ${i+1}</b><br>${escapeHtml(l.origin)}`);
-        L.marker([e.lat,e.lon]).addTo(dispatchMap)
-          .bindPopup(`<b>${escapeHtml(d.name)} - Load ${i+1}</b><br>${escapeHtml(l.dest)}`);
+        // Skip invalid coordinates
+        const isInvalidStart = Math.abs(s.lat) < 0.1 && Math.abs(s.lon) < 0.1;
+        const isInvalidEnd = Math.abs(e.lat) < 0.1 && Math.abs(e.lon) < 0.1;
+        if (isInvalidStart || isInvalidEnd) return;
+
+        // Driver-labeled markers (visible at a glance without clicking)
+        const initials = (d.name || '?').split(/\s+/).map(w => w[0]).join('').substring(0, 2).toUpperCase();
+        const pickupIcon = L.divIcon({
+          className: 'custom-marker',
+          html: `<div style="background:${color};color:#fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:10px;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.4);">${initials}</div>`,
+          iconSize: [28, 28],
+          iconAnchor: [14, 14]
+        });
+        const dropIcon = L.divIcon({
+          className: 'custom-marker',
+          html: `<div style="background:${color};color:#fff;border-radius:6px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:10px;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.4);opacity:0.8;">${initials}</div>`,
+          iconSize: [28, 28],
+          iconAnchor: [14, 14]
+        });
+        
+        L.marker([s.lat,s.lon], {icon: pickupIcon}).addTo(dispatchMap)
+          .bindPopup(`<b>${escapeHtml(d.name)} - Load ${i+1}</b><br>📍 ${escapeHtml(l.origin)}`);
+        L.marker([e.lat,e.lon], {icon: dropIcon}).addTo(dispatchMap)
+          .bindPopup(`<b>${escapeHtml(d.name)} - Load ${i+1}</b><br>🏁 ${escapeHtml(l.dest)}`);
         
         pts.push([s.lat,s.lon],[e.lat,e.lon]);
         
@@ -5246,11 +5659,14 @@ function renderDispatchView(){
   let fleetGross=0, fleetNet=0, fleetMiles=0, fleetLoads=0;
   const driverCards = [];
   const driverCount = Object.keys(state.drivers).length;
+  const thisWeekId = isoDate(startOfWeekMonday(new Date()));
   
   for (const id of Object.keys(state.drivers)){
     const d = state.drivers[id];
     const split = getDriverSplit(d);
-    const wk = d.weeks[d.currentWeekId] || { loads: [] };
+    // Always show this week for fleet overview
+    const fleetWkId = d.weeks?.[thisWeekId] ? thisWeekId : d.currentWeekId;
+    const wk = d.weeks[fleetWkId] || { loads: [] };
     const t = computeWeekTotals(wk);
     
     fleetGross += t.gross;
@@ -5414,15 +5830,20 @@ async function getLoc(city){
   
   if (hit?.ts && (now-hit.ts)<TTL) return hit.data;
   
-  const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=0&limit=1&q=${encodeURIComponent(city + ", USA")}`;
-  const res = await fetchRetry(url, 2, 700);
-  const data = await res.json();
-  
-  if (!data?.[0]) return null;
-  
-  cache[q] = { ts: now, data: data[0] };
-  saveGeoCache(cache);
-  return data[0];
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=0&limit=1&q=${encodeURIComponent(city + ", USA")}`;
+    const res = await fetchRetry(url, 2, 700);
+    const data = await res.json();
+    
+    if (!data?.[0]) return null;
+    
+    cache[q] = { ts: now, data: data[0] };
+    saveGeoCache(cache);
+    return data[0];
+  } catch(e) {
+    console.warn('Geocode lookup failed for', city, e.message);
+    return null; // Graceful fallback — load can still be added without coords
+  }
 }
 
 async function osrmRouteMilesGeo(lon1, lat1, lon2, lat2){
@@ -5882,6 +6303,7 @@ function printWeeklySummary(){
  * DRIVER SETTLEMENT SHEET
  *************************/
 function generateSettlement(){
+  try {
   const d = getDriver();
   const wk = getCurrentWeek();
   const s = getSpecs();
@@ -6168,6 +6590,10 @@ function generateSettlement(){
   settWindow.document.write(printContent);
   settWindow.document.close();
   settWindow.focus();
+  } catch(err) {
+    console.error('❌ Settlement generation error:', err);
+    alert('Error generating settlement: ' + err.message);
+  }
 }
 
 function printDriverYTD(){
@@ -6326,21 +6752,15 @@ function pct(v){
 
 function setCurrentDriverFromFleet(driverId){
   state.currentDriverId = driverId;
-  saveState();
-  renderDriverSelect();
-  renderWeekSelect();
-  bindDriverOverridesToInputs();
-  updateUI();
+  refreshAll();
   
   // Switch to dashboard tab
   const dashTab = document.querySelector('.nav-tab[onclick*="dashboard"]');
   if (dashTab) showTab('dashboard', dashTab);
-  
-  setTimeout(initMap, 150);
 }
 
 function showDriverDetailModal(driverId){
-  console.log('🔵 showDriverDetailModal called with driverId:', driverId);
+  dbg('🔵 showDriverDetailModal called with driverId:', driverId);
   
   const d = state.drivers[driverId];
   if (!d) {
@@ -6348,7 +6768,7 @@ function showDriverDetailModal(driverId){
     return;
   }
   
-  console.log('✅ Driver found:', d.name);
+  dbg('✅ Driver found:', d.name);
   
   const split = getDriverSplit(d);
   const wk = d.weeks[d.currentWeekId] || { loads: [] };
@@ -6356,7 +6776,7 @@ function showDriverDetailModal(driverId){
   const s = getSpecs();
   const targetNet = getDriverTargetNet(d);
   
-  console.log('📊 Week data:', {loads: wk.loads.length, net: t.net, target: targetNet});
+  dbg('📊 Week data:', {loads: wk.loads.length, net: t.net, target: targetNet});
   
   // Calculate progress
   const targetProgress = targetNet > 0 ? Math.min(100, (t.net / targetNet) * 100) : 0;
@@ -6816,9 +7236,9 @@ function getBestWeekForAnalytics(driver){
 
 
 function renderAnalytics() {
-  console.log('renderAnalytics called');
-  console.log('State:', state);
-  console.log('Historical loads:', historicalLoads ? historicalLoads.length : 'none');
+  dbg('renderAnalytics called');
+  dbg('State:', state);
+  dbg('Historical loads:', historicalLoads ? historicalLoads.length : 'none');
   renderAlerts();
   renderPerformanceTrends();
   renderLaneProfitability();
@@ -7098,7 +7518,7 @@ function calculateFleetTrends(days) {
       netChange: 0,
       totalLoads: allLoads.length,
       loadsChange: 0,
-      avgCPM: 0.50,
+      avgCPM: data.miles > 0 ? (data.gross - data.net) / data.miles : 0,
       cpmChange: 0
     };
   }
@@ -7126,9 +7546,21 @@ function calculateFleetTrends(days) {
   const totalLoadsSecond = secondHalf.reduce((sum, w) => sum + weeklyData[w].loads.length, 0);
   const loadsChange = totalLoadsFirst > 0 ? ((totalLoadsSecond - totalLoadsFirst) / totalLoadsFirst) * 100 : 0;
   
-  // CPM calculation (simplified)
-  const avgCPM = 0.50; // Placeholder
-  const cpmChange = 0;
+  // CPM calculation (actual cost-per-mile from load data)
+  const totalCosts = weeks.reduce((sum, w) => {
+    const data = weeklyData[w];
+    return sum + (data.gross - data.net); // gross - net = total costs
+  }, 0);
+  const totalMilesAll = weeks.reduce((sum, w) => sum + weeklyData[w].miles, 0);
+  const avgCPM = totalMilesAll > 0 ? totalCosts / totalMilesAll : 0;
+
+  const firstHalfCosts = firstHalf.reduce((s, w) => s + (weeklyData[w].gross - weeklyData[w].net), 0);
+  const firstHalfMiles = firstHalf.reduce((s, w) => s + weeklyData[w].miles, 0);
+  const secondHalfCosts = secondHalf.reduce((s, w) => s + (weeklyData[w].gross - weeklyData[w].net), 0);
+  const secondHalfMiles = secondHalf.reduce((s, w) => s + weeklyData[w].miles, 0);
+  const cpmFirst = firstHalfMiles > 0 ? firstHalfCosts / firstHalfMiles : 0;
+  const cpmSecond = secondHalfMiles > 0 ? secondHalfCosts / secondHalfMiles : 0;
+  const cpmChange = cpmFirst > 0 ? ((cpmSecond - cpmFirst) / cpmFirst) * 100 : 0;
   
   return {
     labels,
@@ -7320,13 +7752,21 @@ function calculateDriverRankings() {
     const deadheadMiles = totalMiles - loadedMiles;
     const deadheadPercent = totalMiles > 0 ? (deadheadMiles / totalMiles) * 100 : 0;
     
-    // Calculate efficiency score
+    // Calculate efficiency score (improved: log curve for RPM, no hard cap at $3.00)
     const targetNet = getDriverTargetNet(driver);
     const targetAchievement = targetNet > 0 ? Math.min((totals.net / targetNet) * 100, 100) : 50;
-    const rpmScore = Math.min((totals.rpm / 3.0) * 100, 100); // 3.0 RPM = 100%
-    const deadheadScore = Math.max(100 - deadheadPercent * 2, 0); // Lower is better
+    // Log curve: $2.00→60, $2.50→75, $3.00→85, $3.50→92, $4.00→96 (no hard cap)
+    const rpmScore = totals.rpm > 0
+      ? Math.min(100, 40 * Math.log2(totals.rpm / 1.0 + 1))
+      : 0;
+    // Deadhead: 0%→100, 10%→80, 20%→60, 30%→40 (linear but gentler slope)
+    const deadheadScore = Math.max(0, Math.min(100, 100 - deadheadPercent * 2));
     
-    const efficiency = Math.round((targetAchievement * 0.4) + (rpmScore * 0.4) + (deadheadScore * 0.2));
+    const efficiency = Math.round(
+      (targetAchievement * CONFIG.EFFICIENCY_WEIGHTS.rpm) + 
+      (rpmScore * CONFIG.EFFICIENCY_WEIGHTS.deadhead) + 
+      (deadheadScore * CONFIG.EFFICIENCY_WEIGHTS.utilization)
+    );
     
     rankings.push({
       name: driver.name,
@@ -7423,6 +7863,26 @@ function updateUI(){
   // Refresh sticky notes for selected driver
   loadDriverStickyNotesToUI();
   
+  // Show/hide future week planning banner
+  const fwBanner = document.getElementById('futureWeekBanner');
+  if (fwBanner) {
+    const thisWeekId = isoDate(startOfWeekMonday(new Date()));
+    const isFuture = d.currentWeekId > thisWeekId;
+    const isPast = d.currentWeekId < thisWeekId;
+    fwBanner.style.display = (isFuture || isPast) ? 'block' : 'none';
+    const bannerText = document.getElementById('futureWeekBannerText');
+    if (bannerText) {
+      if (isFuture) {
+        const plannedCount = loads.filter(l => l.status === 'planned').length;
+        const confirmedCount = loads.filter(l => l.status !== 'planned').length;
+        bannerText.textContent = `📅 Planning Mode — ${wk.label}` + 
+          (loads.length > 0 ? ` • ${confirmedCount} confirmed, ${plannedCount} planned` : ' • No loads yet');
+      } else if (isPast) {
+        bannerText.textContent = `📆 Viewing Past Week — ${wk.label}`;
+      }
+    }
+  }
+  
   document.getElementById('wk_gross').innerText = money(totals.gross);
   document.getElementById('wk_miles').innerText = totals.miles.toLocaleString();
   
@@ -7466,8 +7926,12 @@ function updateUI(){
       ? `<span style="display:inline-block;background:rgba(0,180,255,0.15);color:var(--accent-cyan);padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;margin-left:8px;">From Prev Week</span>`
       : '';
     
+    const statusBadge = l.status === 'planned'
+      ? `<span style="display:inline-block;background:rgba(255,184,0,0.2);color:var(--warning);padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;margin-left:8px;cursor:pointer;" onclick="event.stopPropagation();toggleLoadStatus(${i})" title="Click to confirm">📋 Planned</span>`
+      : '';
+    
     return `
-      <tr style="${l.deliversNextWeek ? 'opacity: 0.7;' : ''}">
+      <tr style="${l.deliversNextWeek ? 'opacity: 0.7;' : ''}${l.status === 'planned' ? 'border-left: 3px solid var(--warning);' : ''}">
         <td style="font-weight:700;font-size:13px;">
           ${escapeHtml(l.origin)} 
           <span style="color:var(--accent-cyan)">➜</span> 
@@ -7475,6 +7939,7 @@ function updateUI(){
           ${multiStopBadge}
           ${crossWeekBadge}
           ${prevWeekBadge}
+          ${statusBadge}
           ${dayInfo}
         </td>
         <td>${Number(l.miles||0).toLocaleString()}</td>
@@ -7555,6 +8020,25 @@ function updateUI(){
   renderWeekSelect();
   bindDriverOverridesToInputs();
   updateFleetTables();
+  renderUpcomingLoads();
+}
+
+/*******************************************************
+ * refreshAll() — Single entry-point for full UI refresh.
+ * Replaces the duplicated saveState→render→update→initMap
+ * pattern that was copy-pasted in 7+ places.
+ *
+ * Options:
+ *   save     — call saveState() first        (default true)
+ *   map      — re-init the Leaflet map       (default true)
+ *   settings — also rebind settings inputs    (default false)
+ *   mapDelay — ms before map init             (default CONFIG.MAP_REFRESH_DELAY)
+ *******************************************************/
+function refreshAll(opts = {}) {
+  if (opts.save !== false) saveState();
+  if (opts.settings) bindSettingsToInputs();
+  updateUI();                                         // handles renderDriverSelect, renderWeekSelect, etc.
+  if (opts.map !== false) setTimeout(initMap, opts.mapDelay || CONFIG.MAP_REFRESH_DELAY);
 }
 
 /************************* 
@@ -7573,89 +8057,15 @@ function factoryReset(){
  * INIT 
  *************************/
 function ensureCurrentDriverHasThisWeek(){
-  // NOTE: Do not call this before fixAllDriversClosedWeeks() - that function
-  // handles the case where startOfWeekMonday(new Date()) is itself a closed week.
-  const d = getDriver();
-  // Also fix currentWeekId if it points to a closed week
-  if (d.weeks[d.currentWeekId] && d.weeks[d.currentWeekId].closed) {
-    const openId = getMostRecentOpenWeekId(d);
-    if (openId && !d.weeks[openId].closed) {
-      d.currentWeekId = openId;
-    }
-  }
+  resolveAllDriverWeeks();
   saveState();
 }
 
-// Fix ALL drivers: if their currentWeekId is closed, point them at the most
-// recent open week (creating it if necessary).
-// Key insight: we can't use startOfWeekMonday(new Date()) as the "current" week
-// because that Monday might itself be closed (e.g. today is Thu Feb 20 but
-// the Feb 16 week was already closed and Feb 23 is the active week).
-// Instead, we find the active week by looking at what other drivers are on.
+// Legacy: fixAllDriversClosedWeeks is now handled inside resolveWeekState.
+// Kept as a thin wrapper for the auth handler call site.
 function fixAllDriversClosedWeeks(){
-  // Step 1: find the globally-active open week by scanning all drivers
-  // for the most recent week that is NOT closed.
-  let globalActiveId = null;
-  Object.values(state.drivers || {}).forEach(d => {
-    if (!d || !d.weeks) return;
-    Object.keys(d.weeks).forEach(id => {
-      if (!d.weeks[id].closed) {
-        if (!globalActiveId || id > globalActiveId) globalActiveId = id;
-      }
-    });
-  });
-
-  // Step 2: if no open week found anywhere, create next Monday's week
-  if (!globalActiveId) {
-    const nowMonday = startOfWeekMonday(new Date());
-    // Walk forward until we find a Monday that isn't closed in any driver
-    let candidate = new Date(nowMonday);
-    let candidateId = isoDate(candidate);
-    // Check if that week is closed in any driver; if so, go +7 days
-    const isClosedAnywhere = (id) => Object.values(state.drivers || {}).some(d => d?.weeks?.[id]?.closed);
-    while (isClosedAnywhere(candidateId)) {
-      candidate.setDate(candidate.getDate() + 7);
-      candidateId = isoDate(candidate);
-    }
-    globalActiveId = candidateId;
-  }
-
-  // Step 3: for each driver stuck on a closed week, move them to globalActiveId.
-  // If the closed week has loads, migrate them into the active week.
-  let changed = false;
-  const activeMondayDate = new Date(globalActiveId + 'T00:00:00');
-  Object.values(state.drivers || {}).forEach(d => {
-    if (!d || !d.weeks) return;
-    const stuckId = d.currentWeekId;
-    const stuckWk = d.weeks[stuckId];
-    if (!stuckWk || stuckWk.closed) {
-      // Ensure the active week exists
-      if (!d.weeks[globalActiveId]) {
-        d.weeks[globalActiveId] = {
-          start: globalActiveId,
-          label: fmtWeekLabel(activeMondayDate),
-          loads: [],
-          lastDropCoords: null
-        };
-      }
-      // Migrate any loads from the closed/stuck week into the active week
-      if (stuckWk && stuckWk.loads && stuckWk.loads.length > 0) {
-        d.weeks[globalActiveId].loads = [
-          ...(d.weeks[globalActiveId].loads || []),
-          ...stuckWk.loads
-        ];
-        // Carry over lastDropCoords if active week doesn't have one
-        if (!d.weeks[globalActiveId].lastDropCoords && stuckWk.lastDropCoords) {
-          d.weeks[globalActiveId].lastDropCoords = stuckWk.lastDropCoords;
-        }
-        // Remove the old closed week so it doesn't show in the dropdown
-        delete d.weeks[stuckId];
-      }
-      d.currentWeekId = globalActiveId;
-      changed = true;
-    }
-  });
-  if (changed) saveState();
+  resolveAllDriverWeeks();
+  saveState();
 }
 
 function wireEntryKeyNav(){
@@ -7673,20 +8083,17 @@ function wireEntryKeyNav(){
   });
 }
 
-cleanupWeeksForAllDrivers();
-ensureCurrentDriverHasThisWeek();
+resolveAllDriverWeeks();
 bindSettingsToInputs();
 initSettingsListeners(); // Add event listeners once
 wireEntryKeyNav();
-renderDriverSelect();
-renderWeekSelect();
-bindDriverOverridesToInputs();
-updateUI();
-setTimeout(initMap, 500);
+refreshAll({ save: false, mapDelay: 500 });
 
 // Confirm enhanced features are loaded
-console.log('✅ Dispatch V2-FIXED loaded successfully (getTargetNet bug fixed)');
-console.log('✅ showDriverDetailModal function:', typeof showDriverDetailModal);
+if (CONFIG.DEBUG) {
+  dbg('✅ Dispatch V2-FIXED loaded successfully (getTargetNet bug fixed)');
+  dbg('✅ showDriverDetailModal function:', typeof showDriverDetailModal);
+}
 
 /***********************************************
  * FLEET OVERVIEW MODAL
@@ -7720,15 +8127,17 @@ function renderFleetCards(){
   const s = getSpecs();
   
   // Build driver data array
+  // Fleet overview ALWAYS shows this week's numbers — currentWeekId is just a navigation cursor
+  const thisWeekId = isoDate(startOfWeekMonday(new Date()));
   const driverIds = Object.keys(state.drivers);
   let driverData = driverIds.map(id => {
     const d = state.drivers[id];
     const split = getDriverSplit(d);
     const targetNet = getDriverTargetNet(d);
     
-    // Get current week for this driver
-    const wkId = d.currentWeekId;
-    const wk = d.weeks?.[wkId] || { loads: [] };
+    // Always show this week for fleet overview (fall back to currentWeekId if this week doesn't exist)
+    const fleetWkId = d.weeks?.[thisWeekId] ? thisWeekId : d.currentWeekId;
+    const wk = d.weeks?.[fleetWkId] || { loads: [] };
     const loads = (wk.loads || []).filter(l => !l.deliversNextWeek);
     
     const gross = loads.reduce((sum, l) => sum + toNum(l.gross), 0);
@@ -7753,8 +8162,8 @@ function renderFleetCards(){
     
     // RPM tier
     let rpmTier = 'red';
-    if (rpm >= 2.50) rpmTier = 'green';
-    else if (rpm >= 2.00) rpmTier = 'yellow';
+    if (rpm >= CONFIG.RPM_TIER_GREEN) rpmTier = 'green';
+    else if (rpm >= CONFIG.RPM_TIER_YELLOW) rpmTier = 'yellow';
     
     // Status
     const isPaused = d.driverStatus === 'paused';
@@ -7894,14 +8303,7 @@ function renderFleetCards(){
 function selectDriverFromFleet(driverId){
   if (!state.drivers[driverId]) return;
   state.currentDriverId = driverId;
-  saveState();
-  
-  // Refresh everything
-  renderDriverSelect();
-  renderWeekSelect();
-  bindSettingsToInputs();
-  bindDriverOverridesToInputs();
-  updateUI();
+  refreshAll({ settings: true });
   
   // Close fleet modal and switch to dispatch view
   closeFleetModal();
@@ -7917,7 +8319,7 @@ document.addEventListener('keydown', function(e) {
   }
 });
 
-console.log('✅ Fleet Overview modal loaded');
+dbg('✅ Fleet Overview modal loaded');
 
 /***********************************************
  * FIREBASE AUTH + CLOUD SYNC (SEPARATE ACCOUNTS)
@@ -7998,12 +8400,28 @@ console.log('✅ Fleet Overview modal loaded');
 
   // Cloud save function - saves to user's own document (separate accounts)
   var _cloudSaveTimer = null;
+  var _lastSavedHash = '';  // Fingerprint of last successful write
+
   function cloudSave() {
     if (!fbUser || !fbDb) return;
-    // Debounce: wait 1.5s after the last call before actually writing to Firestore
-    // This prevents write stream exhaustion when saveState() fires rapidly.
     clearTimeout(_cloudSaveTimer);
     _cloudSaveTimer = setTimeout(function() {
+      // Dirty check: skip write if state hasn't changed since last save
+      var stateSnapshot = JSON.stringify({
+        currentDriverId: state.currentDriverId,
+        drivers: state.drivers,
+        settings: settings
+      });
+      var hash = 0;
+      for (var i = 0; i < stateSnapshot.length; i++) {
+        hash = ((hash << 5) - hash + stateSnapshot.charCodeAt(i)) | 0;
+      }
+      var hashStr = String(hash);
+      if (hashStr === _lastSavedHash) {
+        dbg('☁️ Skip cloud save — no changes');
+        return;
+      }
+
       const sanitizedDrivers = sanitizeForFirebase(state.drivers);
       fbDb.collection('users').doc(fbUser.uid).set({
         currentDriverId: state.currentDriverId,
@@ -8012,11 +8430,14 @@ console.log('✅ Fleet Overview modal loaded');
         savedAt: new Date().toISOString()
       }).then(function() {
         console.log("☁️ Cloud saved");
+        _lastSavedHash = hashStr;
+        updateSyncBanner('saved');
       }).catch(function(e) {
         console.warn("Cloud save error:", e);
         console.error("Full error:", e);
+        updateSyncBanner('error', e.message);
       });
-    }, 1500);
+    }, CONFIG.CLOUD_SAVE_DEBOUNCE);
   }
 
   // Patch saveState to also cloud-save (non-breaking)
@@ -8128,21 +8549,16 @@ console.log('✅ Fleet Overview modal loaded');
         console.warn("Could not load cloud data:", e);
       }
       // Refresh the whole UI
-      cleanupWeeksForAllDrivers();
-      fixAllDriversClosedWeeks();   // Fix any driver stuck on a closed week
-      ensureCurrentDriverHasThisWeek();
-      renderDriverSelect();
-      renderWeekSelect();
-      bindDriverOverridesToInputs();
+      // Resolve week state for all drivers (handles cleanup, closed weeks, future weeks)
+      resolveAllDriverWeeks();
       updateUI();
       ensureDriversOnActiveWeek();
-      updateUI();
+      refreshAll({ save: false, mapDelay: 400 });
       // If Analytics tab is active, refresh alerts/analytics after cloud load
       try {
         const aTab = document.getElementById('analytics');
         if (aTab && aTab.classList.contains('active')) setTimeout(renderAnalytics, 250);
       } catch(e) {}
-      setTimeout(initMap, 400);
       // Hide the auth wall
       wall.classList.add('gone');
     } else {
