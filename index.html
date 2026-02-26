@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
 <meta http-equiv="Pragma" content="no-cache" />
 <meta http-equiv="Expires" content="0" />
-<!-- VERSION: V5-IMPROVEMENTS2 - Feb 26, 2026 - Week lifecycle, efficiency formula, map labels, Firebase dirty-tracking -->
+<!-- VERSION: V6-FEATURES - Feb 26, 2026 - DH cost calc, what-if projection, analyzer modal with collapsible sections -->
 <title>Dispatch Command Center</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -1473,9 +1473,113 @@ td {
 }
 @keyframes pulse-sync { 0%,100%{opacity:1} 50%{opacity:0.6} }
 
+/* ── Load Analyzer Modal ── */
+#analyzerModal {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 10000;
+  background: rgba(0,0,0,0.7);
+  backdrop-filter: blur(4px);
+  animation: analyzerFadeIn 0.2s ease;
+}
+#analyzerModal.open { display: flex; align-items: center; justify-content: center; }
+@keyframes analyzerFadeIn { from{opacity:0} to{opacity:1} }
+.analyzer-modal-box {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-medium);
+  border-radius: 16px;
+  width: 95%;
+  max-width: 580px;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  animation: analyzerSlideUp 0.25s ease;
+}
+@keyframes analyzerSlideUp { from{transform:translateY(30px);opacity:0} to{transform:translateY(0);opacity:1} }
+.analyzer-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+.analyzer-modal-header h3 {
+  margin: 0;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--accent-cyan);
+}
+.analyzer-modal-close {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 18px;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.2s;
+}
+.analyzer-modal-close:hover { background: rgba(255,51,102,0.15); color: var(--danger); }
+.analyzer-modal-body {
+  overflow-y: auto;
+  padding: 20px;
+  flex: 1;
+  -webkit-overflow-scrolling: touch;
+}
+/* Collapsible sections inside modal */
+.az-section { margin-bottom: 12px; border-radius: 10px; overflow: hidden; border: 1px solid var(--border-subtle); }
+.az-section-head {
+  width: 100%; border: none; padding: 12px 16px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 13px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.8px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: space-between;
+  transition: background 0.2s;
+}
+.az-section-head:hover { background: rgba(0,180,255,0.08); }
+.az-section-body { padding: 14px 16px; display: none; }
+.az-section.open .az-section-body { display: block; }
+.az-section.open .az-section-head { border-bottom: 1px solid var(--border-subtle); }
+.az-chevron { transition: transform 0.2s; font-size: 11px; }
+.az-section.open .az-chevron { transform: rotate(180deg); }
+/* Compact summary bar in form */
+#analyzerSummaryBar {
+  display: none;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid var(--border-medium);
+}
+#analyzerSummaryBar:hover { border-color: var(--accent-cyan); }
+
 </style>
 </head>
 <body>
+<!-- Load Analyzer Modal -->
+<div id="analyzerModal">
+  <div class="analyzer-modal-box">
+    <div class="analyzer-modal-header">
+      <h3>📊 Load Analysis</h3>
+      <button class="analyzer-modal-close" onclick="closeAnalyzerModal()">✕</button>
+    </div>
+    <div class="analyzer-modal-body" id="analyzerModalBody">
+      <div id="analyzerOutput"></div>
+    </div>
+  </div>
+</div>
+
 <div id="authWall">
   <div class="aw-box">
     <div class="aw-shield"></div>
@@ -1862,16 +1966,14 @@ td {
               <div class="preview-label">Trip Net Preview</div>
               <div class="preview-value" id="preview_net">$0.00</div>
               <div class="preview-hint" id="preview_hint"></div>
+              <div id="dh_cost_display" style="display:none; margin-top:8px; padding:8px 12px; background:rgba(255,51,102,0.06); border:1px solid rgba(255,51,102,0.15); border-radius:8px; font-size:12px; color:var(--text-secondary);"></div>
             </div>
 
-            <!-- LOAD ANALYZER -->
-            <div id="loadAnalyzer" style="display: none; margin-bottom: 16px; background: var(--bg-elevated); border: 1px solid var(--border-medium); border-radius: 12px; overflow: hidden;">
-              <button onclick="toggleLoadAnalyzer()" style="width: 100%; background: rgba(0,180,255,0.1); border: none; padding: 14px 20px; color: var(--text-primary); font-family: 'Rajdhani', sans-serif; font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; transition: all 0.3s;">
-                <span>📊 Load Analysis</span>
-                <span id="analyzerToggle">▼</span>
-              </button>
-              <div id="analyzerContent" style="display: none; padding: 20px; border-top: 1px solid var(--border-subtle);">
-                <div id="analyzerOutput"></div>
+            <!-- LOAD ANALYZER — compact summary bar, opens modal -->
+            <div id="analyzerSummaryBar" onclick="openAnalyzerModal()" style="display:none;">
+              <div style="display:flex; align-items:center; justify-content:space-between;">
+                <div id="analyzerSummaryText" style="font-size:13px; font-weight:700;"></div>
+                <div style="font-size:11px; color:var(--accent-cyan); font-weight:600;">TAP FOR DETAILS ▸</div>
               </div>
             </div>
 
@@ -4444,13 +4546,24 @@ function totalsForDriverInRange(driver, startDate, endDate){
 /************************* 
  * PREVIEW + WARN 
  *************************/
-function toggleLoadAnalyzer(){
-  const content = document.getElementById('analyzerContent');
-  const toggle = document.getElementById('analyzerToggle');
-  const isOpen = content.style.display === 'block';
-  
-  content.style.display = isOpen ? 'none' : 'block';
-  toggle.innerText = isOpen ? '▼' : '▲';
+function openAnalyzerModal(){
+  document.getElementById('analyzerModal').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+function closeAnalyzerModal(){
+  document.getElementById('analyzerModal').classList.remove('open');
+  document.body.style.overflow = '';
+}
+// Close modal on backdrop click
+document.addEventListener('click', function(e){
+  if (e.target.id === 'analyzerModal') closeAnalyzerModal();
+});
+// Close on Escape
+document.addEventListener('keydown', function(e){
+  if (e.key === 'Escape' && document.getElementById('analyzerModal').classList.contains('open')) closeAnalyzerModal();
+});
+function toggleAzSection(btn){
+  btn.closest('.az-section').classList.toggle('open');
 }
 
 function analyzeLoad(){
@@ -4468,12 +4581,12 @@ function analyzeLoad(){
   
   // If no data entered yet, hide analyzer
   if (gross === 0 || miles === 0) {
-    document.getElementById('loadAnalyzer').style.display = 'none';
+    document.getElementById('analyzerSummaryBar').style.display = 'none';
     return;
   }
   
-  // Show analyzer
-  document.getElementById('loadAnalyzer').style.display = 'block';
+  // Show analyzer summary bar
+  document.getElementById('analyzerSummaryBar').style.display = 'block';
   
   // Calculate this load's metrics - USE DRIVER-SPECIFIC COSTS
   const driverFixedWeekly = getDriverFixedWeekly(driver);
@@ -4609,17 +4722,126 @@ function analyzeLoad(){
     recReason = `Score ${compositeScore.toFixed(0)}/100 — poor return for the time and miles invested`;
   }
   
-  // Build output HTML
+  // ─── WHAT-IF WEEK PROJECTION ───
+  const projGross = wkTotals.gross + gross;
+  const projMiles = wkTotals.miles + miles;
+  const projNet = currentNet + net;
+  const projRpm = projMiles > 0 ? projGross / projMiles : 0;
+  const projLoads = wk.loads.length + 1;
+  const projDhMiles = (wkTotals.miles - wk.loads.reduce((s,l) => s + (l.loadedMiles || l.miles || 0), 0)) + dhMiles;
+  const projDhPct = projMiles > 0 ? (projDhMiles / projMiles * 100) : 0;
+  const curDhMilesTotal = wkTotals.miles - wk.loads.reduce((s,l) => s + (l.loadedMiles || l.miles || 0), 0);
+  const curDhPct = wkTotals.miles > 0 ? (curDhMilesTotal / wkTotals.miles * 100) : 0;
+  const projTargetPct = targetNet > 0 ? (projNet / targetNet * 100) : 0;
+  const curTargetPct = targetNet > 0 ? (currentNet / targetNet * 100) : 0;
+  
+  // Remaining gap and loads needed estimate
+  const remainingGap = Math.max(0, targetNet - projNet);
+  const avgNetPerLoad = projLoads > 0 ? projNet / projLoads : 0;
+  const loadsStillNeeded = avgNetPerLoad > 0 ? Math.ceil(remainingGap / avgNetPerLoad) : '?';
+  
+  // ─── Populate summary bar ───
+  const summaryBar = document.getElementById('analyzerSummaryBar');
+  summaryBar.style.background = `linear-gradient(135deg, ${recColor}12, ${recColor}06)`;
+  summaryBar.style.borderColor = `${recColor}40`;
+  document.getElementById('analyzerSummaryText').innerHTML = 
+    `${recIcon} <span style="color:${recColor};font-weight:900;">${recommendation}</span>` +
+    ` <span style="color:var(--text-muted);font-weight:400;">•</span> ` +
+    `<span style="color:var(--text-secondary);">${money(rpm)} RPM</span>` +
+    ` <span style="color:var(--text-muted);">•</span> ` +
+    `<span style="color:${net >= 0 ? 'var(--success)' : 'var(--danger)'};">${money(net)} net</span>` +
+    ` <span style="color:var(--text-muted);">•</span> ` +
+    `<span style="color:var(--text-secondary);">${compositeScore.toFixed(0)}/100</span>`;
+
+  // ─── Build modal output HTML with collapsible sections ───
   let output = `
-    <div style="display: grid; gap: 16px;">
-      
-      <!-- Days & Daily Metrics -->
-      <div style="background: rgba(0,180,255,0.05); padding: 14px; border-radius: 10px; border-left: 4px solid var(--accent-blue);">
-        <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); font-weight: 700; margin-bottom: 8px;">
-          📅 LOAD DURATION
-        </div>
-        <div style="font-size: 15px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">
-          <strong>${daysOnLoad} Day${daysOnLoad > 1 ? 's' : ''}</strong> (${miles.toLocaleString()} miles ÷ ${AVG_MILES_PER_DAY} mi/day)
+    <!-- Recommendation — always visible -->
+    <div style="background: linear-gradient(135deg, ${recColor}15, ${recColor}05); padding: 20px; border-radius: 12px; border: 2px solid ${recColor}; text-align: center; margin-bottom: 16px;">
+      <div style="font-size: 28px; font-weight: 900; color: ${recColor}; font-family: 'Orbitron', sans-serif; margin-bottom: 6px;">
+        ${recIcon} ${recommendation}
+      </div>
+      <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 10px;">
+        ${recReason}
+      </div>
+      <div style="display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; font-size: 11px;">
+        <span style="padding: 3px 8px; border-radius: 6px; background: rgba(0,180,255,0.1); color: var(--accent-cyan);">RPM: ${rpmScore.toFixed(0)}</span>
+        <span style="padding: 3px 8px; border-radius: 6px; background: rgba(0,255,136,0.1); color: var(--success);">Daily$: ${dailyNetScore.toFixed(0)}</span>
+        <span style="padding: 3px 8px; border-radius: 6px; background: rgba(255,184,0,0.1); color: var(--warning);">Target: ${targetScore.toFixed(0)}</span>
+        <span style="padding: 3px 8px; border-radius: 6px; background: rgba(200,200,200,0.1); color: var(--text-secondary);">DH: ${dhScore.toFixed(0)}</span>
+      </div>
+    </div>
+
+    <!-- What-If Week Projection — open by default -->
+    <div class="az-section open">
+      <button class="az-section-head" onclick="toggleAzSection(this)">
+        <span>🔮 What-If: Week After This Load</span>
+        <span class="az-chevron">▼</span>
+      </button>
+      <div class="az-section-body">
+        <table style="width:100%; font-size:12px; border-collapse:collapse;">
+          <tr style="color:var(--text-muted); font-size:10px; text-transform:uppercase; letter-spacing:0.5px;">
+            <td style="padding:4px 6px;"></td>
+            <td style="padding:4px 6px; text-align:right;">Now</td>
+            <td style="padding:4px 6px; text-align:right;">After</td>
+            <td style="padding:4px 6px; text-align:right;">Δ</td>
+          </tr>
+          <tr style="border-top:1px solid var(--border-subtle);">
+            <td style="padding:5px 6px; color:var(--text-secondary);">Loads</td>
+            <td style="padding:5px 6px; text-align:right; font-weight:600;">${wk.loads.length}</td>
+            <td style="padding:5px 6px; text-align:right; font-weight:700; color:var(--text-primary);">${projLoads}</td>
+            <td style="padding:5px 6px; text-align:right; color:var(--success);">+1</td>
+          </tr>
+          <tr style="border-top:1px solid var(--border-subtle);">
+            <td style="padding:5px 6px; color:var(--text-secondary);">Gross</td>
+            <td style="padding:5px 6px; text-align:right; font-weight:600;">${money(wkTotals.gross)}</td>
+            <td style="padding:5px 6px; text-align:right; font-weight:700; color:var(--text-primary);">${money(projGross)}</td>
+            <td style="padding:5px 6px; text-align:right; color:var(--success);">+${money(gross)}</td>
+          </tr>
+          <tr style="border-top:1px solid var(--border-subtle);">
+            <td style="padding:5px 6px; color:var(--text-secondary);">Net</td>
+            <td style="padding:5px 6px; text-align:right; font-weight:600;">${money(currentNet)}</td>
+            <td style="padding:5px 6px; text-align:right; font-weight:700; color:${projNet >= targetNet ? 'var(--success)' : 'var(--text-primary)'};">${money(projNet)}</td>
+            <td style="padding:5px 6px; text-align:right; color:${net >= 0 ? 'var(--success)' : 'var(--danger)'};">${net >= 0 ? '+' : ''}${money(net)}</td>
+          </tr>
+          <tr style="border-top:1px solid var(--border-subtle);">
+            <td style="padding:5px 6px; color:var(--text-secondary);">RPM</td>
+            <td style="padding:5px 6px; text-align:right; font-weight:600;">${money(currentAvgRpm)}</td>
+            <td style="padding:5px 6px; text-align:right; font-weight:700; color:${projRpm >= currentAvgRpm ? 'var(--success)' : 'var(--danger)'};">${money(projRpm)}</td>
+            <td style="padding:5px 6px; text-align:right; color:${projRpm >= currentAvgRpm ? 'var(--success)' : 'var(--danger)'};">${projRpm >= currentAvgRpm ? '+' : ''}${money(projRpm - currentAvgRpm)}</td>
+          </tr>
+          <tr style="border-top:1px solid var(--border-subtle);">
+            <td style="padding:5px 6px; color:var(--text-secondary);">DH %</td>
+            <td style="padding:5px 6px; text-align:right; font-weight:600;">${curDhPct.toFixed(1)}%</td>
+            <td style="padding:5px 6px; text-align:right; font-weight:700; color:${projDhPct <= curDhPct ? 'var(--success)' : 'var(--danger)'};">${projDhPct.toFixed(1)}%</td>
+            <td style="padding:5px 6px; text-align:right; color:${projDhPct <= curDhPct ? 'var(--success)' : 'var(--danger)'};">${(projDhPct - curDhPct) >= 0 ? '+' : ''}${(projDhPct - curDhPct).toFixed(1)}%</td>
+          </tr>
+          <tr style="border-top:1px solid var(--border-subtle);">
+            <td style="padding:5px 6px; color:var(--text-secondary);">Target</td>
+            <td style="padding:5px 6px; text-align:right; font-weight:600;">${curTargetPct.toFixed(0)}%</td>
+            <td style="padding:5px 6px; text-align:right; font-weight:700; color:${projTargetPct >= 100 ? 'var(--success)' : 'var(--text-primary)'};">${projTargetPct.toFixed(0)}%</td>
+            <td style="padding:5px 6px; text-align:right; color:var(--success);">+${(projTargetPct - curTargetPct).toFixed(0)}%</td>
+          </tr>
+        </table>
+        ${remainingGap > 0 ? `
+        <div style="margin-top:10px; padding:8px 12px; background:var(--bg-elevated); border-radius:8px; font-size:12px; text-align:center; color:var(--text-secondary);">
+          Gap remaining: <span style="font-weight:700;color:var(--warning);">${money(remainingGap)}</span>
+          ${loadsStillNeeded !== '?' ? ` • ~${loadsStillNeeded} more load${loadsStillNeeded > 1 ? 's' : ''} at this avg` : ''}
+        </div>` : `
+        <div style="margin-top:10px; padding:8px 12px; background:rgba(0,255,136,0.08); border-radius:8px; font-size:12px; text-align:center; color:var(--success); font-weight:700;">
+          ✅ Target met after this load!
+        </div>`}
+      </div>
+    </div>
+
+    <!-- Load Duration -->
+    <div class="az-section">
+      <button class="az-section-head" onclick="toggleAzSection(this)">
+        <span>📅 Load Duration — ${daysOnLoad} Day${daysOnLoad > 1 ? 's' : ''}</span>
+        <span class="az-chevron">▼</span>
+      </button>
+      <div class="az-section-body">
+        <div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 10px;">
+          ${miles.toLocaleString()} miles ÷ ${AVG_MILES_PER_DAY} mi/day = <strong>${daysOnLoad} day${daysOnLoad > 1 ? 's' : ''}</strong>
         </div>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 13px;">
           <div>
@@ -4632,148 +4854,127 @@ function analyzeLoad(){
           <div>
             <div style="color: var(--text-muted); font-size: 11px;">Net/Day</div>
             <div style="font-weight: 700; color: var(--text-primary);">${money(netPerDay)}</div>
-            <div style="font-size: 10px; color: var(--text-muted);">${daysOnLoad > 1 ? `${daysOnLoad} days @ ${money(netPerDay)}/day` : 'Single day run'}</div>
+            <div style="font-size: 10px; color: var(--text-muted);">${daysOnLoad > 1 ? daysOnLoad + ' days tied up' : 'Single day run'}</div>
           </div>
         </div>
       </div>
-      
-      <!-- Target Impact -->
-      <div style="background: rgba(0,255,136,0.05); padding: 14px; border-radius: 10px; border-left: 4px solid var(--success);">
-        <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); font-weight: 700; margin-bottom: 8px;">
-          🎯 TARGET IMPACT
-        </div>
+    </div>
+
+    <!-- Target Impact -->
+    <div class="az-section">
+      <button class="az-section-head" onclick="toggleAzSection(this)">
+        <span>🎯 Target Impact — ${progressBefore.toFixed(0)}% → ${progressAfter.toFixed(0)}%</span>
+        <span class="az-chevron">▼</span>
+      </button>
+      <div class="az-section-body">
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 13px; margin-bottom: 10px;">
           <div>
             <div style="color: var(--text-muted); font-size: 11px;">Current Progress</div>
-            <div style="font-weight: 700; color: var(--text-primary);">${money(currentNet)} / ${money(targetNet)}</div>
-            <div style="font-size: 11px; color: var(--text-muted);">${progressBefore.toFixed(1)}% of target</div>
+            <div style="font-weight: 700;">${money(currentNet)} / ${money(targetNet)}</div>
           </div>
           <div>
             <div style="color: var(--text-muted); font-size: 11px;">After This Load</div>
             <div style="font-weight: 700; color: ${newNet >= targetNet ? 'var(--success)' : 'var(--text-primary)'};">
               ${money(newNet)} / ${money(targetNet)}
             </div>
-            <div style="font-size: 11px; color: var(--text-muted);">${progressAfter.toFixed(1)}% of target</div>
           </div>
         </div>
-        <div style="font-size: 14px; font-weight: 700; padding: 10px; background: var(--bg-primary); border-radius: 8px; text-align: center;">
+        <div style="font-size: 14px; font-weight: 700; padding: 10px; background: var(--bg-elevated); border-radius: 8px; text-align: center;">
           ${net > 0 
-            ? `Closes gap by <span style="color: var(--success);">${money(gapClosed)}</span> ${newGap <= 0 ? '✅ Target met!' : ''}`
-            : `<span style="color: var(--danger);">Widens gap by ${money(Math.abs(net))}</span>`
+            ? 'Closes gap by <span style="color: var(--success);">' + money(gapClosed) + '</span>' + (newGap <= 0 ? ' ✅ Target met!' : '')
+            : '<span style="color: var(--danger);">Widens gap by ' + money(Math.abs(net)) + '</span>'
           }
         </div>
       </div>
-      
-      <!-- RPM Quality -->
-      <div style="background: rgba(0,180,255,0.05); padding: 14px; border-radius: 10px; border-left: 4px solid var(--accent-cyan);">
-        <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); font-weight: 700; margin-bottom: 8px;">
-          💰 RPM QUALITY
-        </div>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 13px;">
+    </div>
+
+    <!-- RPM & Profitability -->
+    <div class="az-section">
+      <button class="az-section-head" onclick="toggleAzSection(this)">
+        <span>💰 RPM & Profitability — ${money(rpm)} RPM (BE: ${money(beRpm)})</span>
+        <span class="az-chevron">▼</span>
+      </button>
+      <div class="az-section-body">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 13px; margin-bottom: 12px;">
           <div>
             <div style="color: var(--text-muted); font-size: 11px;">This Load RPM</div>
             <div style="font-weight: 700; color: var(--accent-cyan); font-size: 18px;">${money(rpm)}</div>
           </div>
           <div>
             <div style="color: var(--text-muted); font-size: 11px;">Week Avg RPM</div>
-            <div style="font-weight: 700; color: var(--text-primary);">${money(currentAvgRpm)}</div>
+            <div style="font-weight: 700;">${money(currentAvgRpm)}</div>
             <div style="font-size: 11px; color: ${rpm > currentAvgRpm ? 'var(--success)' : 'var(--danger)'};">
-              ${rpm > currentAvgRpm 
-                ? `⬆️ Above avg (+${money(rpm - currentAvgRpm)})`
-                : `⬇️ Below avg (${money(rpm - currentAvgRpm)})`
-              }
+              ${rpm > currentAvgRpm ? '⬆️ +' + money(rpm - currentAvgRpm) : '⬇️ ' + money(rpm - currentAvgRpm)}
             </div>
           </div>
-        </div>
-      </div>
-      
-      <!-- Profitability -->
-      <div style="background: rgba(255,184,0,0.05); padding: 14px; border-radius: 10px; border-left: 4px solid var(--warning);">
-        <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); font-weight: 700; margin-bottom: 8px;">
-          📊 PROFITABILITY CHECK
         </div>
         <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; font-size: 13px;">
           <div>
             <div style="color: var(--text-muted); font-size: 11px;">Net Profit</div>
-            <div style="font-weight: 700; color: ${net >= 0 ? 'var(--success)' : 'var(--danger)'};">
-              ${money(net)} ${net >= 0 ? '✅' : '❌'}
-            </div>
+            <div style="font-weight: 700; color: ${net >= 0 ? 'var(--success)' : 'var(--danger)'};">${money(net)}</div>
           </div>
           <div>
-            <div style="color: var(--text-muted); font-size: 11px;">Break-even RPM</div>
-            <div style="font-weight: 700; color: var(--text-primary);">${money(beRpm)}</div>
+            <div style="color: var(--text-muted); font-size: 11px;">Break-even</div>
+            <div style="font-weight: 700;">${money(beRpm)}</div>
           </div>
           <div>
             <div style="color: var(--text-muted); font-size: 11px;">Margin</div>
-            <div style="font-weight: 700; color: ${rpm >= beRpm ? 'var(--success)' : 'var(--danger)'};">
-              ${money(rpm - beRpm)}
-            </div>
+            <div style="font-weight: 700; color: ${rpm >= beRpm ? 'var(--success)' : 'var(--danger)'};">${money(rpm - beRpm)}</div>
           </div>
         </div>
       </div>
-      
-      <!-- Efficiency Rating -->
-      <div style="background: rgba(200,200,200,0.05); padding: 14px; border-radius: 10px; border-left: 4px solid var(--chrome-accent);">
-        <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); font-weight: 700; margin-bottom: 8px;">
-          ⭐ EFFICIENCY VS WEEK
-        </div>
-        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+    </div>
+
+    <!-- Efficiency -->
+    <div class="az-section">
+      <button class="az-section-head" onclick="toggleAzSection(this)">
+        <span>⭐ Efficiency — ${'⭐'.repeat(stars)}${'☆'.repeat(5-stars)}</span>
+        <span class="az-chevron">▼</span>
+      </button>
+      <div class="az-section-body">
+        <div style="display: flex; align-items: center; gap: 12px;">
           <div style="font-size: 24px;">${'⭐'.repeat(stars)}${'☆'.repeat(5-stars)}</div>
-          <div style="flex: 1;">
-            <div style="font-size: 13px; color: var(--text-secondary);">
-              Best: ${money(bestRpm)} RPM • Worst: ${money(worstRpm)} RPM
-            </div>
+          <div style="font-size: 13px; color: var(--text-secondary);">
+            Week best: ${money(bestRpm)} RPM • Week worst: ${money(worstRpm)} RPM
           </div>
         </div>
       </div>
-      
-      <!-- Final Recommendation -->
-      <div style="background: linear-gradient(135deg, ${recColor}15, ${recColor}05); padding: 20px; border-radius: 12px; border: 2px solid ${recColor}; text-align: center;">
-        <div style="font-size: 13px; text-transform: uppercase; letter-spacing: 2px; color: var(--text-muted); font-weight: 700; margin-bottom: 10px;">
-          RECOMMENDATION
-        </div>
-        <div style="font-size: 28px; font-weight: 900; color: ${recColor}; font-family: 'Orbitron', sans-serif; margin-bottom: 8px;">
-          ${recIcon} ${recommendation}
-        </div>
-        <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.5;">
-          ${recReason}
-        </div>
-        <div style="margin-top: 10px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; font-size: 11px;">
-          <span style="padding: 3px 8px; border-radius: 6px; background: rgba(0,180,255,0.1); color: var(--accent-cyan);">RPM: ${rpmScore.toFixed(0)}</span>
-          <span style="padding: 3px 8px; border-radius: 6px; background: rgba(0,255,136,0.1); color: var(--success);">Daily$: ${dailyNetScore.toFixed(0)}</span>
-          <span style="padding: 3px 8px; border-radius: 6px; background: rgba(255,184,0,0.1); color: var(--warning);">Target: ${targetScore.toFixed(0)}</span>
-          <span style="padding: 3px 8px; border-radius: 6px; background: rgba(200,200,200,0.1); color: var(--text-secondary);">DH: ${dhScore.toFixed(0)}</span>
-        </div>
-      </div>
-      
     </div>
   `;
   
   // Add reload intelligence if destination is entered
   const destInput = document.getElementById('dest').value.trim();
   if (destInput) {
-    // Parse city and state from destination - flexible format
     let destCity = '';
     let destState = '';
     
-    // Try comma-separated format first: "Chicago, IL"
     if (destInput.includes(',')) {
       const parts = destInput.split(',');
       destCity = parts[0].trim();
       destState = parts[1].trim();
     } else {
-      // No comma - try space-separated: "Chicago IL"
-      // Split by one or more spaces, assume last part is state
       const parts = destInput.trim().split(/\s+/);
       if (parts.length >= 2) {
-        destState = parts[parts.length - 1]; // Last part is state
-        destCity = parts.slice(0, -1).join(' '); // Everything before is city
+        destState = parts[parts.length - 1];
+        destCity = parts.slice(0, -1).join(' ');
       }
     }
     
-    // If we successfully parsed both city and state, show reload intelligence
     if (destCity && destState) {
-      output += renderReloadIntelligence(destCity, destState);
+      const reloadHtml = renderReloadIntelligence(destCity, destState);
+      if (reloadHtml) {
+        output += `
+          <div class="az-section open">
+            <button class="az-section-head" onclick="toggleAzSection(this)">
+              <span>🔄 Reload Intelligence</span>
+              <span class="az-chevron">▼</span>
+            </button>
+            <div class="az-section-body" style="padding:0;">
+              ${reloadHtml}
+            </div>
+          </div>
+        `;
+      }
     }
   }
   
@@ -4817,6 +5018,26 @@ function preview(){
   document.getElementById('preview_hint').innerText = miles>0 
     ? `Split: ${(split*100).toFixed(0)}% • Gross RPM: ${money(grossRpm)} • Break-even RPM: ${money(beRpm)}`
     : "";
+  
+  // Deadhead cost calculator
+  const dhEl = document.getElementById('dh_cost_display');
+  const dhMiles = parseFloat(document.getElementById('mi_dh').value) || 0;
+  if (dhMiles > 0 && miles > 0) {
+    const dhFuel = (dhMiles / s.mpg) * s.fuel;
+    const dhMaint = dhMiles * s.maint;
+    const dhTotal = dhFuel + dhMaint;
+    const dhPctGross = gross > 0 ? (dhTotal / gross * 100) : 0;
+    const loadedMilesVal = parseFloat(document.getElementById('mi_load').value) || 0;
+    const dhPctMiles = miles > 0 ? (dhMiles / miles * 100) : 0;
+    const netWithoutDh = net + dhTotal; // what net would be with 0 DH
+    dhEl.style.display = 'block';
+    dhEl.innerHTML = `<span style="font-weight:700;color:var(--danger);">⛽ Deadhead Cost: ${money(dhTotal)}</span>` +
+      ` <span style="color:var(--text-muted);">• Fuel: ${money(dhFuel)} • Wear: ${money(dhMaint)}</span>` +
+      `<br><span style="color:var(--text-muted);">${dhMiles} empty mi (${dhPctMiles.toFixed(0)}% of total) eats ${dhPctGross.toFixed(1)}% of gross` +
+      ` • Net without DH: <span style="color:var(--success);font-weight:600;">${money(netWithoutDh)}</span></span>`;
+  } else {
+    dhEl.style.display = 'none';
+  }
   
   const stickyEl = document.getElementById('sticky_preview');
   stickyEl.innerText = money(net);
@@ -5070,6 +5291,8 @@ function addLoad(){
   document.getElementById('preview_net').innerText="$0.00";
   document.getElementById('preview_hint').innerText="";
   document.getElementById('sticky_preview').innerText="$0.00";
+  document.getElementById('dh_cost_display').style.display='none';
+  document.getElementById('analyzerSummaryBar').style.display='none';
   
   // Clear multi-stops
   if (multiStops.length > 0) {
