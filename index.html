@@ -1564,7 +1564,21 @@ td {
 }
 #analyzerSummaryBar:hover { border-color: var(--accent-cyan); }
 
+/* Flatpickr dark theme overrides */
+.flatpickr-calendar { background: #1a1f2e !important; border: 1px solid #2a3044 !important; box-shadow: 0 8px 30px rgba(0,0,0,0.5) !important; font-family: inherit !important; }
+.flatpickr-day { color: #c8d4e8 !important; }
+.flatpickr-day:hover, .flatpickr-day.inRange { background: #1e3a5f !important; border-color: transparent !important; color: #fff !important; }
+.flatpickr-day.selected, .flatpickr-day.startRange, .flatpickr-day.endRange { background: #00c8ff !important; border-color: #00c8ff !important; color: #000 !important; }
+.flatpickr-day.today { border-color: #00c8ff !important; }
+.flatpickr-months .flatpickr-month, .flatpickr-weekdays, .flatpickr-weekday { background: #131927 !important; color: #8899aa !important; fill: #8899aa !important; }
+.flatpickr-current-month input.cur-year, .flatpickr-current-month .flatpickr-monthDropdown-months { color: #c8d4e8 !important; background: transparent !important; }
+.flatpickr-prev-month svg, .flatpickr-next-month svg { fill: #8899aa !important; }
+.flatpickr-prev-month:hover svg, .flatpickr-next-month:hover svg { fill: #00c8ff !important; }
+.flatpickr-day.flatpickr-disabled, .flatpickr-day.prevMonthDay, .flatpickr-day.nextMonthDay { color: #3a4560 !important; }
+
 </style>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.js"></script>
 </head>
 <body>
 <!-- Load Analyzer Modal -->
@@ -1715,10 +1729,277 @@ td {
     <button class="nav-tab" onclick="showTab('calendar', this)">📅 Calendar</button>
     <button class="nav-tab" onclick="showTab('companycut', this)">Company Cut</button>
     <button class="nav-tab" onclick="showTab('settings', this)">Settings</button>
+    <button class="nav-tab" onclick="showTab('samsara', this)" style="background:linear-gradient(135deg,rgba(0,255,136,0.08),rgba(0,180,255,0.08));border:1px solid rgba(0,255,136,0.2);color:var(--success);">🛰️ Samsara</button>
     <button class="nav-tab fleet-btn" onclick="openFleetModal()">🚛 Fleet Overview</button>
   </nav>
 
-  <!-- Sync status banner (hidden by default, shown when offline or syncing) -->
+  <!-- ═══════════════════════════════════════════════════
+       SAMSARA INTEGRATION TAB
+  ═══════════════════════════════════════════════════ -->
+  <div id="samsara" class="tab-content">
+    <style>
+      .sam-section { background: linear-gradient(135deg, var(--bg-elevated) 0%, var(--bg-secondary) 100%); border: 1px solid var(--border-medium); border-radius: 16px; overflow: hidden; margin-bottom: 20px; }
+      .sam-section-header { background: linear-gradient(135deg, rgba(0,255,136,0.08) 0%, rgba(0,180,255,0.08) 100%); padding: 14px 20px; border-bottom: 1px solid var(--border-medium); display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+      .sam-section-title { font-family: 'Orbitron', sans-serif; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; color: var(--success); display: flex; align-items: center; gap: 8px; }
+      .sam-section-body { padding: 20px; }
+      .sam-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+      .sam-card { background: var(--bg-primary); border: 1px solid var(--border-subtle); border-radius: 12px; padding: 14px 16px; transition: all 0.25s; }
+      .sam-card:hover { border-color: var(--accent-blue); box-shadow: 0 4px 16px rgba(0,180,255,0.15); }
+      .sam-card-title { font-size: 14px; font-weight: 800; color: var(--text-primary); margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+      .sam-card-sub { font-size: 11px; color: var(--text-muted); font-weight: 600; margin-bottom: 10px; }
+      .sam-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 6px; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; }
+      .sam-badge.green { background: rgba(0,255,136,0.15); color: var(--success); }
+      .sam-badge.blue { background: rgba(0,180,255,0.15); color: var(--accent-blue); }
+      .sam-badge.yellow { background: rgba(255,184,0,0.15); color: var(--warning); }
+      .sam-badge.red { background: rgba(255,51,102,0.15); color: var(--danger); }
+      .sam-badge.gray { background: rgba(107,122,143,0.15); color: var(--text-muted); }
+      .sam-stat-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--border-subtle); font-size: 13px; }
+      .sam-stat-row:last-child { border-bottom: none; }
+      .sam-stat-label { color: var(--text-muted); font-weight: 600; }
+      .sam-stat-value { font-weight: 700; color: var(--text-primary); }
+      .sam-btn { background: var(--bg-primary); border: 1px solid var(--border-medium); color: var(--text-primary); padding: 10px 16px; border-radius: 10px; font-family: 'Rajdhani', sans-serif; font-size: 13px; font-weight: 700; cursor: pointer; transition: all 0.25s; display: inline-flex; align-items: center; gap: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+      .sam-btn:hover { border-color: var(--accent-blue); background: rgba(0,180,255,0.08); transform: translateY(-1px); }
+      .sam-btn.green { border-color: rgba(0,255,136,0.35); color: var(--success); }
+      .sam-btn.green:hover { background: rgba(0,255,136,0.08); box-shadow: 0 4px 12px rgba(0,255,136,0.2); }
+      .sam-btn.blue { border-color: rgba(0,180,255,0.35); color: var(--accent-blue); }
+      .sam-btn.blue:hover { background: rgba(0,180,255,0.08); }
+      .sam-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+      .sam-input { background: var(--bg-primary); border: 1px solid var(--border-medium); color: var(--text-primary); padding: 10px 14px; border-radius: 10px; font-family: 'Rajdhani', sans-serif; font-size: 14px; font-weight: 600; width: 100%; }
+      .sam-input:focus { outline: none; border-color: var(--accent-cyan); box-shadow: 0 0 12px var(--glow-cyan); }
+      .sam-connect-status { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 10px; font-size: 13px; font-weight: 700; }
+      .sam-connect-status.connected { background: rgba(0,255,136,0.1); border: 1px solid rgba(0,255,136,0.3); color: var(--success); }
+      .sam-connect-status.disconnected { background: rgba(107,122,143,0.1); border: 1px solid var(--border-medium); color: var(--text-muted); }
+      .sam-connect-status.error { background: rgba(255,51,102,0.1); border: 1px solid rgba(255,51,102,0.3); color: var(--danger); }
+      .sam-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+      .sam-dot.green { background: var(--success); box-shadow: 0 0 6px var(--success); animation: blink 2s ease-in-out infinite; }
+      .sam-dot.gray { background: var(--text-muted); }
+      .sam-dot.red { background: var(--danger); }
+      .sam-fuel-bar { height: 6px; border-radius: 4px; background: var(--bg-primary); overflow: hidden; margin: 6px 0; }
+      .sam-fuel-bar-fill { height: 100%; border-radius: 4px; transition: width 0.5s ease; }
+      .sam-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      .sam-table th { padding: 10px 12px; text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); font-weight: 700; border-bottom: 1px solid var(--border-medium); }
+      .sam-table td { padding: 10px 12px; border-bottom: 1px solid var(--border-subtle); }
+      .sam-table tr:hover td { background: rgba(255,255,255,0.02); }
+      .sam-link-select { background: var(--bg-primary); border: 1px solid var(--border-medium); color: var(--text-primary); padding: 6px 10px; border-radius: 8px; font-family: 'Rajdhani', sans-serif; font-size: 12px; font-weight: 600; cursor: pointer; }
+      .sam-apply-fuel { background: rgba(0,255,136,0.1); border: 1px solid rgba(0,255,136,0.3); color: var(--success); padding: 6px 12px; border-radius: 8px; font-family: 'Rajdhani', sans-serif; font-size: 11px; font-weight: 800; cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px; transition: all 0.2s; }
+      .sam-apply-fuel:hover { background: rgba(0,255,136,0.2); }
+      .sam-empty { text-align: center; padding: 40px 20px; color: var(--text-muted); font-size: 14px; font-weight: 600; }
+      .sam-loading { text-align: center; padding: 30px; color: var(--accent-cyan); font-size: 13px; font-weight: 700; }
+      .sam-top-bar { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 20px; }
+      .sam-summary-pills { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+      .sam-summary-pill { background: var(--bg-primary); border: 1px solid var(--border-subtle); border-radius: 10px; padding: 10px 16px; text-align: center; min-width: 100px; }
+      .sam-summary-pill-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); font-weight: 700; }
+      .sam-summary-pill-value { font-size: 18px; font-weight: 800; color: var(--text-primary); margin-top: 2px; }
+    </style>
+
+    <!-- ── API KEY SECTION ── -->
+    <div class="sam-section">
+      <div class="sam-section-header">
+        <div class="sam-section-title">🛰️ Samsara API Connection</div>
+        <div id="samConnectStatus" class="sam-connect-status disconnected">
+          <div class="sam-dot gray"></div>
+          <span>Not Connected</span>
+        </div>
+      </div>
+      <div class="sam-section-body">
+        <div style="display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:flex-end;max-width:800px;">
+          <div>
+            <label style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);font-weight:700;display:block;margin-bottom:6px;">API Key (Token)</label>
+            <input type="password" id="samApiKey" class="sam-input" placeholder="samsara_api_xxxxxxxxxxxxxxxxxxxxxx" oninput="samMarkDirty()" autocomplete="off" />
+          </div>
+          <button class="sam-btn blue" onclick="samSaveKey()">💾 Save Key</button>
+          <button class="sam-btn green" onclick="samTestConnect()">⚡ Test Connection</button>
+        </div>
+        <div style="margin-top:10px;font-size:12px;color:var(--text-muted);">
+          Your API key is stored locally in your browser only — never sent anywhere except directly to Samsara's API (<code style="color:var(--accent-cyan)">api.samsara.com</code>).
+          Get your token from <strong style="color:var(--text-secondary)">Samsara Cloud → Settings → API Tokens</strong>.
+        </div>
+        <div id="samConnectMsg" style="margin-top:10px;display:none;"></div>
+      </div>
+    </div>
+
+    <!-- ── PROXY CONFIG ── -->
+    <div class="sam-section">
+      <div class="sam-section-header">
+        <div class="sam-section-title">🔀 Local Proxy Setup <span style="font-size:10px;color:var(--warning);font-family:'Rajdhani',sans-serif;text-transform:none;letter-spacing:0;margin-left:8px;">Required to bypass CORS</span></div>
+      </div>
+      <div class="sam-section-body">
+        <div style="padding:12px 16px;background:rgba(255,184,0,0.08);border:1px solid rgba(255,184,0,0.3);border-left:4px solid var(--warning);border-radius:10px;margin-bottom:16px;font-size:13px;">
+          <strong style="color:var(--warning);">⚠️ CORS Required:</strong> Samsara's API blocks direct browser requests. 
+          You need to run a tiny local proxy server first — it takes about 30 seconds. 
+          <strong style="color:var(--text-primary);">Instructions below.</strong>
+        </div>
+
+        <!-- Step-by-step instructions -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+          <!-- Node.js option -->
+          <div style="background:var(--bg-primary);border:1px solid var(--border-subtle);border-radius:12px;padding:16px;">
+            <div style="font-size:13px;font-weight:800;color:var(--accent-cyan);margin-bottom:10px;">Option A — Node.js <span style="font-size:10px;color:var(--success);font-weight:700;">(Recommended)</span></div>
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Requires Node.js (free, <a href="https://nodejs.org" target="_blank" style="color:var(--accent-blue);">nodejs.org</a>). No npm install needed.</div>
+            <ol style="font-size:12px;color:var(--text-secondary);padding-left:18px;line-height:2;">
+              <li>Download <code style="color:var(--accent-cyan);background:rgba(0,229,255,0.1);padding:1px 5px;border-radius:4px;">proxy.js</code> from the files provided</li>
+              <li>Open a terminal in the same folder</li>
+              <li>Run: <code style="color:var(--success);background:rgba(0,255,136,0.1);padding:2px 8px;border-radius:4px;">node proxy.js</code></li>
+              <li>You'll see <strong style="color:var(--success);">"🛰️ Samsara Proxy — RUNNING"</strong></li>
+              <li>Enter proxy URL below and click Save</li>
+            </ol>
+          </div>
+          <!-- Python option -->
+          <div style="background:var(--bg-primary);border:1px solid var(--border-subtle);border-radius:12px;padding:16px;">
+            <div style="font-size:13px;font-weight:800;color:var(--accent-cyan);margin-bottom:10px;">Option B — Python 3</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Already on most Macs/Linux. No installs needed.</div>
+            <ol style="font-size:12px;color:var(--text-secondary);padding-left:18px;line-height:2;">
+              <li>Download <code style="color:var(--accent-cyan);background:rgba(0,229,255,0.1);padding:1px 5px;border-radius:4px;">proxy.py</code> from the files provided</li>
+              <li>Open a terminal in the same folder</li>
+              <li>Run: <code style="color:var(--success);background:rgba(0,255,136,0.1);padding:2px 8px;border-radius:4px;">python3 proxy.py</code></li>
+              <li>You'll see <strong style="color:var(--success);">"🛰️ Samsara Proxy — RUNNING"</strong></li>
+              <li>Enter proxy URL below and click Save</li>
+            </ol>
+          </div>
+        </div>
+
+        <!-- Proxy URL input -->
+        <div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:flex-end;max-width:600px;">
+          <div>
+            <label style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);font-weight:700;display:block;margin-bottom:6px;">Proxy URL <span style="color:var(--text-muted);text-transform:none;font-weight:500;">(default: http://localhost:3377)</span></label>
+            <input type="text" id="samProxyUrl" class="sam-input" placeholder="http://localhost:3377" />
+          </div>
+          <button class="sam-btn green" onclick="samSaveProxy()">💾 Save Proxy</button>
+        </div>
+        <div id="samProxyStatus" style="margin-top:8px;font-size:12px;font-weight:700;color:var(--text-muted);">⚪ No proxy configured — direct API calls (may hit CORS)</div>
+      </div>
+    </div>
+
+
+    <div class="sam-section">
+      <div class="sam-section-header">
+        <div class="sam-section-title">🔄 Sync Fleet Data</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="sam-btn green" onclick="samSyncAll()">🔄 Sync All</button>
+          <button class="sam-btn" onclick="samLoadDrivers()">👤 Drivers</button>
+          <button class="sam-btn" onclick="samLoadVehicles()">🚛 Vehicles</button>
+          <button class="sam-btn" onclick="samLoadFuel()">⛽ Fuel & MPG</button>
+          <button class="sam-btn" onclick="samLoadHOS()">🕐 HOS Status</button>
+        </div>
+      </div>
+      <div class="sam-section-body" style="padding:12px 20px;">
+        <div id="samSyncStatus" style="font-size:13px;color:var(--text-muted);font-weight:600;">Click "Sync All" to pull live data from Samsara.</div>
+      </div>
+    </div>
+
+    <!-- ── FUEL & MPG ── -->
+    <div class="sam-section">
+      <div class="sam-section-header">
+        <div class="sam-section-title">⛽ Fuel & MPG — Real Data</div>
+        <div style="font-size:12px;color:var(--text-muted);font-weight:600;" id="samFuelDateRange"></div>
+      </div>
+      <div class="sam-section-body">
+        <div style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+          <div>
+            <label style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);font-weight:700;display:block;margin-bottom:4px;">Period Start</label>
+            <div style="position:relative;">
+              <input type="text" id="samFuelStart" class="sam-input" placeholder="YYYY-MM-DD" style="width:150px;padding-right:32px;cursor:pointer;" readonly />
+              <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--text-muted);pointer-events:none;">📅</span>
+            </div>
+          </div>
+          <div>
+            <label style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);font-weight:700;display:block;margin-bottom:4px;">Period End</label>
+            <div style="position:relative;">
+              <input type="text" id="samFuelEnd" class="sam-input" placeholder="YYYY-MM-DD" style="width:150px;padding-right:32px;cursor:pointer;" readonly />
+              <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--text-muted);pointer-events:none;">📅</span>
+            </div>
+          </div>
+          <div>
+            <button class="sam-btn green" onclick="samLoadFuel()">⛽ Load Fuel Data</button>
+          </div>
+          <!-- Quick range buttons -->
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-self:flex-end;">
+            <button class="sam-btn" style="font-size:11px;padding:6px 10px;" onclick="samFuelQuickRange('thisWeek')">This Week</button>
+            <button class="sam-btn" style="font-size:11px;padding:6px 10px;" onclick="samFuelQuickRange('lastWeek')">Last Week</button>
+            <button class="sam-btn" style="font-size:11px;padding:6px 10px;" onclick="samFuelQuickRange('thisMonth')">This Month</button>
+            <button class="sam-btn" style="font-size:11px;padding:6px 10px;" onclick="samFuelQuickRange('last30')">Last 30d</button>
+          </div>
+        </div>
+        <div id="samFuelContent">
+          <div class="sam-empty">⛽ Connect to Samsara and click "Load Fuel Data" to see real fuel spend & MPG per driver/vehicle.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── DRIVERS ── -->
+    <div class="sam-section">
+      <div class="sam-section-header" onclick="samToggleSection('samDriversBody', 'samDriversChevron')" style="cursor:pointer;">
+        <div class="sam-section-title">👤 Samsara Drivers <span id="samDriversCount" style="font-size:11px;color:var(--text-muted);font-weight:600;margin-left:8px;"></span></div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="font-size:12px;color:var(--text-muted);">Link drivers to apply real fuel data</span>
+          <span id="samDriversChevron" style="color:var(--text-muted);font-size:14px;transition:transform 0.2s;">▼</span>
+        </div>
+      </div>
+      <div id="samDriversBody" style="display:none;">
+        <div style="padding:12px 20px;border-bottom:1px solid var(--border-subtle);">
+          <input type="text" id="samDriverSearch" class="sam-input" placeholder="🔍 Search drivers by name…" oninput="samFilterDrivers()" style="max-width:380px;" />
+        </div>
+        <div class="sam-section-body">
+          <div id="samDriversContent"><div class="sam-empty">No driver data loaded. Click "Drivers" or "Sync All" above.</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── VEHICLES ── -->
+    <div class="sam-section">
+      <div class="sam-section-header" onclick="samToggleSection('samVehiclesBody', 'samVehiclesChevron')" style="cursor:pointer;">
+        <div class="sam-section-title">🚛 Trucks & Trailers <span id="samVehiclesCount" style="font-size:11px;color:var(--text-muted);font-weight:600;margin-left:8px;"></span></div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span id="samVehiclesChevron" style="color:var(--text-muted);font-size:14px;transition:transform 0.2s;">▼</span>
+        </div>
+      </div>
+      <div id="samVehiclesBody" style="display:none;">
+        <div style="padding:12px 20px;border-bottom:1px solid var(--border-subtle);">
+          <input type="text" id="samVehicleSearch" class="sam-input" placeholder="🔍 Search by truck name, plate, or VIN…" oninput="samFilterVehicles()" style="max-width:380px;" />
+        </div>
+        <div class="sam-section-body">
+          <div id="samVehiclesContent"><div class="sam-empty">No vehicle data loaded. Click "Vehicles" or "Sync All" above.</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── HOS STATUS ── -->
+    <div class="sam-section">
+      <div class="sam-section-header" onclick="samToggleSection('samHOSBody', 'samHOSChevron')" style="cursor:pointer;">
+        <div class="sam-section-title">🕐 HOS — Hours of Service <span id="samHOSCount" style="font-size:11px;color:var(--text-muted);font-weight:600;margin-left:8px;"></span></div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span id="samHOSChevron" style="color:var(--text-muted);font-size:14px;transition:transform 0.2s;">▼</span>
+        </div>
+      </div>
+      <div id="samHOSBody" style="display:none;">
+        <div style="padding:12px 20px;border-bottom:1px solid var(--border-subtle);">
+          <input type="text" id="samHOSSearch" class="sam-input" placeholder="🔍 Search drivers…" oninput="samFilterHOS()" style="max-width:380px;" />
+        </div>
+        <div class="sam-section-body">
+          <div id="samHOSContent"><div class="sam-empty">No HOS data loaded. Click "HOS Status" or "Sync All" above.</div></div>
+        </div>
+      </div>
+    </div>
+
+
+
+
+
+  </div><!-- end #samsara tab -->
+
+  <!-- ── SAMSARA PROFILE MODAL ── -->
+  <div id="samProfileOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);z-index:9998;" onclick="samCloseProfile()"></div>
+  <div id="samProfileModal" style="display:none;position:fixed;top:3vh;left:50%;transform:translateX(-50%);width:min(700px,94vw);max-height:92vh;overflow-y:auto;background:var(--bg-primary);border:1px solid var(--border-medium);border-radius:16px;z-index:9999;box-shadow:0 20px 60px rgba(0,0,0,0.6);">
+    <div style="position:sticky;top:0;background:linear-gradient(135deg,var(--bg-elevated),var(--bg-secondary));padding:16px 22px;border-bottom:1px solid var(--border-medium);display:flex;align-items:center;justify-content:space-between;z-index:1;">
+      <div id="samProfileTitle" style="font-family:'Orbitron',sans-serif;font-size:15px;font-weight:700;color:var(--accent-cyan);"></div>
+      <button onclick="samCloseProfile()" style="background:transparent;border:1px solid var(--border-medium);color:var(--text-secondary);width:34px;height:34px;border-radius:8px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;">✕</button>
+    </div>
+    <div id="samProfileBody" style="padding:22px;"></div>
+  </div>
+
+
+
+  <!-- Sync status banner -->
   <div id="syncBanner"></div>
 
   <!-- DISPATCH VIEW TAB (NEW) -->
@@ -8958,7 +9239,1104 @@ document.addEventListener('keydown', function(e) {
   }
 });
 
-dbg('✅ Fleet Overview modal loaded');
+
+/***********************************************
+ * SAMSARA INTEGRATION
+ * Real driver, vehicle, fuel & HOS data
+ ***********************************************/
+(function() {
+
+  const SAM_PROXY_KEY = 'samsara_proxy_url_v1';
+  const SAM_KEY_STORAGE = 'samsara_api_key_v1';
+
+  function samGetBase() {
+    const proxy = localStorage.getItem(SAM_PROXY_KEY) || '';
+    return proxy ? proxy.replace(/\/$/, '') : 'https://api.samsara.com';
+  }
+
+  window.samSaveProxy = function() {
+    const val = (document.getElementById('samProxyUrl')?.value || '').trim();
+    if (val) {
+      localStorage.setItem(SAM_PROXY_KEY, val);
+    } else {
+      localStorage.removeItem(SAM_PROXY_KEY);
+    }
+    const s = document.getElementById('samProxyStatus');
+    s.textContent = val ? '✅ Proxy saved: ' + val : '⚪ No proxy — direct API (may hit CORS)';
+    s.style.color = val ? 'var(--success)' : 'var(--text-muted)';
+  };
+  const SAM_LINK_STORAGE  = 'samsara_driver_links_v1';  // { samsaraDriverId: appDriverId }
+  const SAM_TRUCK_STORAGE = 'samsara_truck_assign_v1';   // { samsaraDriverId: samsaraVehicleId }
+  const SAM_CACHE_STORAGE = 'samsara_cache_v1';
+
+  // ── State ──
+  window._sam = {
+    connected: false,
+    drivers: [],       // raw from API
+    vehicles: [],      // raw from API
+    hos: [],           // raw from API
+    fuelData: [],      // processed fuel/mpg rows
+    links: {}          // samsaraDriverId → appDriverId
+  };
+
+  // ── Helpers ──
+  function samGetKey() {
+    return localStorage.getItem(SAM_KEY_STORAGE) || '';
+  }
+
+  function samSaveCache(key, data) {
+    try {
+      const cache = JSON.parse(localStorage.getItem(SAM_CACHE_STORAGE) || '{}');
+      cache[key] = { data, ts: Date.now() };
+      localStorage.setItem(SAM_CACHE_STORAGE, JSON.stringify(cache));
+    } catch(e) {}
+  }
+
+  function samGetCache(key, maxAgeMs = 5 * 60 * 1000) {
+    try {
+      const cache = JSON.parse(localStorage.getItem(SAM_CACHE_STORAGE) || '{}');
+      const entry = cache[key];
+      if (entry && (Date.now() - entry.ts) < maxAgeMs) return entry.data;
+    } catch(e) {}
+    return null;
+  }
+
+  function samSetStatus(msg, type = 'info') {
+    const el = document.getElementById('samSyncStatus');
+    if (!el) return;
+    const colors = { info: 'var(--text-muted)', ok: 'var(--success)', error: 'var(--danger)', loading: 'var(--accent-cyan)' };
+    el.style.color = colors[type] || colors.info;
+    el.textContent = msg;
+  }
+
+  function samSetConnectStatus(state, msg) {
+    const el = document.getElementById('samConnectStatus');
+    const dot = el?.querySelector('.sam-dot');
+    const span = el?.querySelector('span');
+    if (!el) return;
+    el.className = 'sam-connect-status ' + state;
+    if (dot) { dot.className = 'sam-dot ' + (state === 'connected' ? 'green' : state === 'error' ? 'red' : 'gray'); }
+    if (span) span.textContent = msg;
+  }
+
+  // ── Core fetch wrapper ──
+  async function samFetch(endpoint, params = {}) {
+    const key = samGetKey();
+    if (!key) throw new Error('No API key configured. Enter your Samsara API token above.');
+
+    const url = new URL(samGetBase() + endpoint);
+    Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+
+    const res = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        'Authorization': 'Bearer ' + key,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`Samsara API ${res.status}: ${body.slice(0, 200)}`);
+    }
+    return res.json();
+  }
+
+  // ── Paginated fetch (handles cursor pagination) ──
+  async function samFetchAll(endpoint, params = {}) {
+    let all = [];
+    let cursor = null;
+    let page = 0;
+    do {
+      const p = { limit: 512, ...params };
+      if (cursor) p.after = cursor;
+      const data = await samFetch(endpoint, p);
+      const items = data.data || [];
+      all = all.concat(items);
+      cursor = data.pagination?.endCursor || null;
+      page++;
+      if (page > 20) break; // safety cap
+    } while (cursor);
+    return all;
+  }
+
+  // ── Collapsible section toggle ──
+  window.samToggleSection = function(bodyId, chevronId) {
+    const body = document.getElementById(bodyId);
+    const chev = document.getElementById(chevronId);
+    if (!body) return;
+    const open = body.style.display === 'none' || body.style.display === '';
+    body.style.display = open ? 'block' : 'none';
+    if (chev) chev.style.transform = open ? 'rotate(180deg)' : '';
+  };
+
+  // ── Search/filter helpers ──
+  window.samFilterDrivers = function() {
+    const q = (document.getElementById('samDriverSearch')?.value || '').toLowerCase();
+    const rows = document.querySelectorAll('#samDriversContent tbody tr');
+    rows.forEach(r => {
+      r.style.display = r.textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
+  };
+
+  window.samFilterVehicles = function() {
+    const q = (document.getElementById('samVehicleSearch')?.value || '').toLowerCase();
+    document.querySelectorAll('#samVehiclesContent .sam-card').forEach(card => {
+      card.style.display = card.textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
+  };
+
+  window.samFilterHOS = function() {
+    const q = (document.getElementById('samHOSSearch')?.value || '').toLowerCase();
+    document.querySelectorAll('#samHOSContent .sam-card').forEach(card => {
+      card.style.display = card.textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
+  };
+
+
+  window.samTestConnect = async function() {
+    const msgEl = document.getElementById('samConnectMsg');
+    msgEl.style.display = 'block';
+    msgEl.innerHTML = '<span style="color:var(--accent-cyan)">⚡ Testing connection...</span>';
+    samSetConnectStatus('disconnected', 'Connecting...');
+
+    try {
+      const data = await samFetch('/fleet/drivers', { limit: 1 });
+      window._sam.connected = true;
+      samSetConnectStatus('connected', 'Connected ✓');
+      msgEl.innerHTML = `<span style="color:var(--success)">✅ Connected! Found ${data.pagination ? 'drivers' : 'data'} from Samsara.</span>`;
+      setTimeout(() => { msgEl.style.display = 'none'; }, 3000);
+    } catch(e) {
+      window._sam.connected = false;
+      samSetConnectStatus('error', 'Connection Failed');
+      let errMsg = e.message;
+      if (errMsg.includes('401') || errMsg.includes('403')) errMsg = 'Invalid API key — check your Samsara token.';
+      if (errMsg.includes('Failed to fetch') || errMsg.includes('NetworkError') || errMsg.includes('CORS')) {
+        errMsg = 'CORS/Network error. Samsara\'s API may block direct browser requests. Try using the Chrome extension or a local proxy. Error: ' + e.message;
+      }
+      msgEl.innerHTML = `<span style="color:var(--danger)">❌ ${errMsg}</span>`;
+    }
+  };
+
+  // ── Save Key ──
+  window.samSaveKey = function() {
+    const key = document.getElementById('samApiKey').value.trim();
+    if (!key) return alert('Please enter an API key.');
+    localStorage.setItem(SAM_KEY_STORAGE, key);
+    samSetStatus('API key saved.', 'ok');
+    samSetConnectStatus('disconnected', 'Key saved — click Test Connection');
+  };
+
+  window.samMarkDirty = function() {
+    samSetConnectStatus('disconnected', 'Not Connected');
+  };
+
+  // ── Load Drivers from Samsara ──
+  window.samLoadDrivers = async function() {
+    samSetStatus('⏳ Loading Samsara drivers...', 'loading');
+    try {
+      const drivers = await samFetchAll('/fleet/drivers');
+      window._sam.drivers = drivers;
+      samSaveCache('drivers', drivers);
+      samRenderDrivers();
+      samSetStatus(`✅ Loaded ${drivers.length} drivers from Samsara`, 'ok');
+    } catch(e) {
+      samSetStatus('❌ ' + e.message, 'error');
+      document.getElementById('samDriversContent').innerHTML = `<div class="sam-empty" style="color:var(--danger)">❌ ${e.message}</div>`;
+    }
+  };
+
+  // ── Render Drivers ──
+  function samRenderDrivers() {
+    const el = document.getElementById('samDriversContent');
+    const drivers = window._sam.drivers;
+
+    // Update count badge and auto-open
+    const countEl = document.getElementById('samDriversCount');
+    if (countEl) countEl.textContent = drivers.length ? `(${drivers.length})` : '';
+    const body = document.getElementById('samDriversBody');
+    const chev = document.getElementById('samDriversChevron');
+    if (body) { body.style.display = 'block'; }
+    if (chev) chev.style.transform = 'rotate(180deg)';
+
+    if (!drivers.length) { el.innerHTML = '<div class="sam-empty">No drivers found in your Samsara account.</div>'; return; }
+
+    try { window._sam.links = JSON.parse(localStorage.getItem(SAM_LINK_STORAGE) || '{}'); } catch(e) {}
+
+    const appDriverOptions = Object.entries(state.drivers || {})
+      .map(([id, d]) => `<option value="${id}">${escapeHtml(d.name)}</option>`)
+      .join('');
+
+    el.innerHTML = `
+      <table class="sam-table">
+        <thead><tr>
+          <th>Samsara Driver</th>
+          <th>Status</th>
+          <th>License</th>
+          <th>Link to App Driver</th>
+          <th>Assign Truck</th>
+        </tr></thead>
+        <tbody>
+          ${drivers.map((d, idx) => {
+            const linked = window._sam.links[d.id] || '';
+            let truckAssigns = {};
+            try { truckAssigns = JSON.parse(localStorage.getItem(SAM_TRUCK_STORAGE) || '{}'); } catch(e) {}
+            const assignedTruckId = truckAssigns[d.id] || '';
+            const truckOptions = (window._sam.vehicles || [])
+              .filter(v => !v.name?.toLowerCase().includes('trailer') && v.vehicleType !== 'trailer')
+              .map(v => `<option value="${escapeHtml(v.id)}" ${v.id === assignedTruckId ? 'selected' : ''}>${escapeHtml(v.name || v.id)}</option>`)
+              .join('');
+            return `<tr style="cursor:pointer;" onclick="if(!event.target.closest('select'))samOpenDriverProfile(${idx})">
+              <td>
+                <div style="font-weight:700;color:var(--accent-cyan);text-decoration:underline dotted;">${escapeHtml(d.name || 'Unknown')}</div>
+                <div style="font-size:11px;color:var(--text-muted);">${escapeHtml(d.username || d.id)}</div>
+              </td>
+              <td><span class="sam-badge ${d.isDeactivated ? 'gray' : 'green'}">${d.isDeactivated ? 'Inactive' : 'Active'}</span></td>
+              <td style="font-size:12px;color:var(--text-muted);">${escapeHtml(d.licenseNumber || '—')}</td>
+              <td>
+                <select class="sam-link-select" data-samid="${escapeHtml(d.id)}" onchange="samLinkDriver(this.dataset.samid, this.value)" style="min-width:150px;">
+                  <option value="">-- Not linked --</option>
+                  ${appDriverOptions.replace(`value="${linked}"`, `value="${linked}" selected`)}
+                </select>
+              </td>
+              <td>
+                <select class="sam-link-select" data-samid="${escapeHtml(d.id)}" onchange="samAssignTruck(this.dataset.samid, this.value)" style="min-width:150px;">
+                  <option value="">-- No truck --</option>
+                  ${truckOptions}
+                </select>
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  window.samAssignTruck = function(samDriverId, samVehicleId) {
+    try {
+      const assigns = JSON.parse(localStorage.getItem(SAM_TRUCK_STORAGE) || '{}');
+      if (samVehicleId) {
+        assigns[samDriverId] = samVehicleId;
+      } else {
+        delete assigns[samDriverId];
+      }
+      localStorage.setItem(SAM_TRUCK_STORAGE, JSON.stringify(assigns));
+      const v = window._sam.vehicles?.find(v => v.id === samVehicleId);
+      samSetStatus(v ? `🚛 Assigned ${v.name} to driver` : '🚛 Truck assignment cleared', 'ok');
+    } catch(e) {
+      console.error('samAssignTruck error:', e);
+    }
+  };
+
+
+  window.samLinkDriver = function(samId, appId) {
+    try { window._sam.links = JSON.parse(localStorage.getItem(SAM_LINK_STORAGE) || '{}'); } catch(e) {}
+    if (appId) {
+      window._sam.links[samId] = appId;
+    } else {
+      delete window._sam.links[samId];
+    }
+    localStorage.setItem(SAM_LINK_STORAGE, JSON.stringify(window._sam.links));
+    samSetStatus('Driver link saved.', 'ok');
+  };
+
+  // ── Load Vehicles ──
+  window.samLoadVehicles = async function() {
+    samSetStatus('⏳ Loading Samsara vehicles...', 'loading');
+    try {
+      const vehicles = await samFetchAll('/fleet/vehicles');
+      window._sam.vehicles = vehicles;
+
+      // Also try to get live stats (GPS, fuel %)
+      let statsMap = {};
+      try {
+        const statsRes = await samFetch('/fleet/vehicles/stats', {
+          types: 'fuelPercent,obdOdometerMeters,gps',
+          decorations: 'driver'
+        });
+        (statsRes.data || []).forEach(v => { statsMap[v.id] = v; });
+      } catch(e) { /* stats optional */ }
+
+      samRenderVehicles(statsMap);
+      samSetStatus(`✅ Loaded ${vehicles.length} vehicles from Samsara`, 'ok');
+    } catch(e) {
+      samSetStatus('❌ ' + e.message, 'error');
+      document.getElementById('samVehiclesContent').innerHTML = `<div class="sam-empty" style="color:var(--danger)">❌ ${e.message}</div>`;
+    }
+  };
+
+  function samRenderVehicles(statsMap = {}) {
+    const el = document.getElementById('samVehiclesContent');
+    const vehicles = window._sam.vehicles;
+
+    const countEl = document.getElementById('samVehiclesCount');
+    if (countEl) countEl.textContent = vehicles.length ? `(${vehicles.length})` : '';
+    const body = document.getElementById('samVehiclesBody');
+    const chev = document.getElementById('samVehiclesChevron');
+    if (body) body.style.display = 'block';
+    if (chev) chev.style.transform = 'rotate(180deg)';
+
+    if (!vehicles.length) { el.innerHTML = '<div class="sam-empty">No vehicles found.</div>'; return; }
+
+    const trucks   = vehicles.filter(v => !v.name?.toLowerCase().includes('trailer') && v.vehicleType !== 'trailer');
+    const trailers = vehicles.filter(v =>  v.name?.toLowerCase().includes('trailer') || v.vehicleType === 'trailer');
+
+    function vehicleCards(list, icon) {
+      return list.map((v, i) => {
+        const vIdx = vehicles.indexOf(v);
+        const stats   = statsMap[v.id] || {};
+        const fuelPct = stats.fuelPercent?.value ?? null;
+        const odo     = stats.obdOdometerMeters?.value ? Math.round(stats.obdOdometerMeters.value / 1609.34).toLocaleString() : null;
+        const gps     = stats.gps;
+        const driver  = stats.driver;
+        const fuelColor = fuelPct === null ? '#4b5563' : fuelPct > 40 ? 'var(--success)' : fuelPct > 20 ? 'var(--warning)' : 'var(--danger)';
+        return `<div class="sam-card" style="cursor:pointer;" onclick="samOpenVehicleProfile(${vIdx})">
+          <div class="sam-card-title" style="color:var(--accent-cyan);text-decoration:underline dotted;">${icon} ${escapeHtml(v.name || v.id)}</div>
+          <div class="sam-card-sub">${escapeHtml(v.licensePlate || v.vin?.slice(-8) || v.id)}</div>
+          ${fuelPct !== null ? `
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">Fuel: <span style="font-weight:700;color:${fuelColor}">${fuelPct.toFixed(0)}%</span></div>
+            <div class="sam-fuel-bar"><div class="sam-fuel-bar-fill" style="width:${fuelPct}%;background:${fuelColor};"></div></div>
+          ` : ''}
+          ${odo ? `<div style="font-size:12px;color:var(--text-muted);">Odometer: <span style="color:var(--text-primary);font-weight:700;">${odo} mi</span></div>` : ''}
+          ${gps ? `<div style="font-size:11px;color:var(--accent-cyan);margin-top:4px;">📍 ${gps.reverseGeo?.formattedLocation || (gps.latitude?.toFixed(3) + ', ' + gps.longitude?.toFixed(3))}</div>` : ''}
+          ${driver ? `<div style="font-size:11px;color:var(--warning);margin-top:4px;">👤 ${escapeHtml(driver.name || '—')}</div>` : ''}
+          <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">Tap for details & MPG →</div>
+        </div>`;
+      }).join('');
+    }
+
+    el.innerHTML = `
+      <div style="margin-bottom:16px;">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);font-weight:700;margin-bottom:10px;">🚛 Trucks (${trucks.length})</div>
+        <div class="sam-grid">${trucks.length ? vehicleCards(trucks, '🚛') : '<div class="sam-empty">No trucks found.</div>'}</div>
+      </div>
+      <div>
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);font-weight:700;margin-bottom:10px;">🚚 Trailers (${trailers.length})</div>
+        <div class="sam-grid">${trailers.length ? vehicleCards(trailers, '🚚') : '<div style="font-size:13px;color:var(--text-muted);">No trailers detected.</div>'}</div>
+      </div>`;
+  }
+
+  // ── Date Pickers ──
+  (function initFuelDatePickers() {
+    const now = new Date();
+    const day = now.getDay();
+    const mon = new Date(now); mon.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
+    const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+    const fmt = d => d.toISOString().slice(0, 10);
+    if (typeof flatpickr !== 'undefined') {
+      flatpickr('#samFuelStart', { defaultDate: fmt(mon), maxDate: 'today', dateFormat: 'Y-m-d', disableMobile: true });
+      flatpickr('#samFuelEnd',   { defaultDate: fmt(sun), maxDate: 'today', dateFormat: 'Y-m-d', disableMobile: true });
+    } else {
+      ['samFuelStart','samFuelEnd'].forEach((id, i) => {
+        const el = document.getElementById(id);
+        if (el) { el.type = 'date'; el.value = i === 0 ? fmt(mon) : fmt(sun); el.readOnly = false; }
+      });
+    }
+  })();
+
+  window.samFuelQuickRange = function(range) {
+    const now = new Date(), day = now.getDay();
+    const fmt = d => d.toISOString().slice(0, 10);
+    let start, end;
+    if (range === 'thisWeek') {
+      start = new Date(now); start.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
+      end   = new Date(start); end.setDate(start.getDate() + 6);
+    } else if (range === 'lastWeek') {
+      const lastSun = new Date(now); lastSun.setDate(now.getDate() - day);
+      end   = lastSun;
+      start = new Date(lastSun); start.setDate(lastSun.getDate() - 6);
+    } else if (range === 'thisMonth') {
+      start = new Date(now.getFullYear(), now.getMonth(), 1);
+      end   = new Date(now);
+    } else {
+      end   = new Date(now);
+      start = new Date(now); start.setDate(now.getDate() - 30);
+    }
+    const set = (id, val) => {
+      const el = document.getElementById(id);
+      if (el && el._flatpickr) el._flatpickr.setDate(fmt(val));
+      else if (el) el.value = fmt(val);
+    };
+    set('samFuelStart', start);
+    set('samFuelEnd', end);
+  };
+
+  // ── Load Fuel Data ──
+  window.samLoadFuel = async function(opts = {}) {
+    const startEl = document.getElementById('samFuelStart');
+    const endEl   = document.getElementById('samFuelEnd');
+
+    // Default to current week Mon–Sun
+    if (!startEl.value || !endEl.value) {
+      const now = new Date();
+      const day = now.getDay();
+      const mon = new Date(now);
+      mon.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
+      const sun = new Date(mon);
+      sun.setDate(mon.getDate() + 6);
+      startEl.value = mon.toISOString().slice(0, 10);
+      endEl.value   = sun.toISOString().slice(0, 10);
+    }
+
+    const startDate = opts.startDate || startEl.value;
+    const endDate   = opts.endDate   || endEl.value;
+
+    // /fleet/reports/*/fuel-energy needs startDate/endDate as RFC3339 hour-rounded strings
+    const startRfc = startDate + 'T00:00:00Z';
+    const endRfc   = (() => {
+      const d = new Date(endDate + 'T00:00:00Z');
+      d.setDate(d.getDate() + 1);
+      return d.toISOString().replace('.000Z', 'Z');
+    })();
+
+    document.getElementById('samFuelDateRange').textContent = startDate + ' → ' + endDate;
+    samSetStatus('⏳ Loading fuel & energy data…', 'loading');
+    document.getElementById('samFuelContent').innerHTML = `<div class="sam-loading">⛽ Fetching… (startDate=${startRfc} endDate=${endRfc})</div>`;
+
+    let rows = [];
+    let source = '';
+    const errors = [];
+    const debugLog = [`📤 Sending: startDate=${startRfc}  endDate=${endRfc}`];
+
+    // Build a quick driver name lookup from already-loaded drivers
+    const driverNameMap = {};
+    (window._sam.drivers || []).forEach(d => { if (d.id) driverNameMap[d.id] = d.name; });
+
+    // ── Primary: driver fuel-energy report ──
+    try {
+      const res = await samFetch('/fleet/reports/drivers/fuel-energy', {
+        startDate: startRfc,
+        endDate:   endRfc
+      });
+      // Real structure: res.data.driverReports[]
+      const data = res.data?.driverReports ?? res.data ?? [];
+      debugLog.push(`📥 drivers → ${data.length} records`);
+      if (data.length) {
+        rows = data.map(d => {
+          const dId   = d.driver?.id ?? '';
+          const dName = d.driver?.name ?? driverNameMap[dId] ?? dId ?? 'Unknown';
+          const ml    = d.fuelConsumedMl ?? 0;
+          const gal   = ml / 3785.41;
+          const dist  = (d.distanceTraveledMeters ?? 0) / 1609.34;
+          const mpg   = d.efficiencyMpge ?? (gal > 0 ? dist / gal : null);
+          const cost  = d.estFuelEnergyCost?.amount ?? null;
+          return {
+            id: dId, name: dName,
+            fuelConsumedGal: gal > 0 ? gal : null,
+            mpg:  mpg,
+            distanceMiles: dist > 0 ? dist : null,
+            idleTimeMs: d.engineIdleTimeDurationMs ?? null,
+            estCost: cost,
+            vehicleName: null,
+            source: 'drivers'
+          };
+        });
+        source = '/fleet/reports/drivers/fuel-energy';
+      }
+    } catch(e) {
+      debugLog.push(`❌ drivers: ${e.message.slice(0, 200)}`);
+      errors.push(`drivers fuel-energy → ${e.message.slice(0, 150)}`);
+    }
+
+    // ── Fallback: vehicle fuel-energy report ──
+    if (!rows.length) {
+      try {
+        const res = await samFetch('/fleet/reports/vehicles/fuel-energy', {
+          startDate: startRfc,
+          endDate:   endRfc
+        });
+        // Real structure: res.data.vehicleReports[]
+        const data = res.data?.vehicleReports ?? res.data ?? [];
+        debugLog.push(`📥 vehicles → ${data.length} records`);
+        if (data.length) {
+          rows = data.map(v => {
+            const ml   = v.fuelConsumedMl ?? 0;
+            const gal  = ml / 3785.41;
+            const dist = (v.distanceTraveledMeters ?? 0) / 1609.34;
+            const mpg  = v.efficiencyMpge ?? (gal > 0 ? dist / gal : null);
+            const cost = v.estFuelEnergyCost?.amount ?? null;
+            return {
+              id: v.vehicle?.id ?? '',
+              name: v.vehicle?.name ?? 'Unknown Vehicle',
+              fuelConsumedGal: gal > 0 ? gal : null,
+              mpg, distanceMiles: dist > 0 ? dist : null,
+              idleTimeMs: v.engineIdleTimeDurationMs ?? null,
+              estCost: cost,
+              vehicleName: v.vehicle?.name ?? null,
+              source: 'vehicles'
+            };
+          });
+          source = '/fleet/reports/vehicles/fuel-energy';
+        }
+      } catch(e) {
+        debugLog.push(`❌ vehicles: ${e.message.slice(0, 200)}`);
+        errors.push(`vehicles fuel-energy → ${e.message.slice(0, 150)}`);
+      }
+    }
+
+    window._sam.fuelData  = rows;
+    window._sam.fuelDates = { startDate, endDate };
+
+    if (rows.length) {
+      samRenderFuel(rows, startDate, endDate);
+      samSetStatus(`✅ Fuel data — ${rows.length} entries via ${source}`, 'ok');
+    } else {
+      samSetStatus('⚠️ No fuel data returned', 'error');
+      document.getElementById('samFuelContent').innerHTML = `
+        <div style="padding:16px 20px;background:rgba(255,184,0,0.08);border:1px solid rgba(255,184,0,0.3);border-left:4px solid var(--warning);border-radius:10px;">
+          <div style="font-size:14px;font-weight:800;color:var(--warning);margin-bottom:10px;">⚠️ No fuel data returned</div>
+          <div style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">
+            Ensure your API token has <strong style="color:var(--accent-cyan)">Read Fuel &amp; Energy</strong> enabled.<br>
+            <strong>Samsara → Settings → API Tokens → Edit token</strong>
+          </div>
+          <div style="font-size:11px;font-family:monospace;color:#0cf;line-height:1.8;white-space:pre-wrap;background:rgba(0,0,0,0.3);padding:10px;border-radius:6px;">${escapeHtml(debugLog.join('\n'))}</div>
+        </div>`;
+    }
+  };
+
+  function samRenderFuel(rows, startDate, endDate) {
+    const el = document.getElementById('samFuelContent');
+    if (!rows.length) { el.innerHTML = '<div class="sam-empty">No fuel data found for this period.</div>'; return; }
+
+    try { window._sam.links = JSON.parse(localStorage.getItem(SAM_LINK_STORAGE) || '{}'); } catch(e) {}
+
+    // Reverse link map: samId → appDriverId, and appDriverId → samId
+    const appDriverOptions = Object.entries(state.drivers || {})
+      .map(([id, d]) => `<option value="${id}">${escapeHtml(d.name)}</option>`)
+      .join('');
+
+    // Total summary
+    const totalGal = rows.reduce((s, r) => s + (r.fuelConsumedGal || 0), 0);
+    const totalMiles = rows.reduce((s, r) => s + (r.distanceMiles || 0), 0);
+    const dieselPricePerGal = (typeof settings !== 'undefined' && settings.dieselPrice) ? settings.dieselPrice : 4.00;
+    const totalCost  = rows.reduce((s, r) => s + (r.estCost ?? (r.fuelConsumedGal ?? 0) * dieselPricePerGal), 0);
+    const fleetMpg = totalMiles && totalGal ? totalMiles / totalGal : 0;
+
+    el.innerHTML = `
+      <div class="sam-summary-pills">
+        <div class="sam-summary-pill">
+          <div class="sam-summary-pill-label">Total Fuel</div>
+          <div class="sam-summary-pill-value">${totalGal.toFixed(0)} gal</div>
+        </div>
+        <div class="sam-summary-pill">
+          <div class="sam-summary-pill-label">Fuel Cost</div>
+          <div class="sam-summary-pill-value" style="color:var(--danger)">$${totalCost.toLocaleString('en-US',{maximumFractionDigits:0})}</div>
+        </div>
+        <div class="sam-summary-pill">
+          <div class="sam-summary-pill-label">Fleet MPG</div>
+          <div class="sam-summary-pill-value" style="color:${fleetMpg >= 6.5 ? 'var(--success)' : fleetMpg >= 5.5 ? 'var(--warning)' : 'var(--danger)'}">${fleetMpg ? fleetMpg.toFixed(1) : '—'}</div>
+        </div>
+        <div class="sam-summary-pill">
+          <div class="sam-summary-pill-label">Total Miles</div>
+          <div class="sam-summary-pill-value">${totalMiles ? totalMiles.toLocaleString('en-US',{maximumFractionDigits:0}) : '—'}</div>
+        </div>
+        <div class="sam-summary-pill">
+          <div class="sam-summary-pill-label">Drivers</div>
+          <div class="sam-summary-pill-value">${rows.length}</div>
+        </div>
+      </div>
+
+      <table class="sam-table">
+        <thead><tr>
+          <th>Driver</th>
+          <th>Vehicle</th>
+          <th>Miles</th>
+          <th>Fuel (gal)</th>
+          <th>Fuel Cost</th>
+          <th>MPG</th>
+          <th>Idle Time</th>
+          <th>Apply to App</th>
+        </tr></thead>
+        <tbody>
+          ${rows.map(r => {
+            const fuelDollars = r.estCost ?? (r.fuelConsumedGal != null ? r.fuelConsumedGal * dieselPricePerGal : null);
+            const idleHrs = r.idleTimeMs != null ? (r.idleTimeMs / 3600000).toFixed(1) : null;
+            const mpgColor = !r.mpg ? 'var(--text-muted)' : r.mpg >= 6.5 ? 'var(--success)' : r.mpg >= 5.5 ? 'var(--warning)' : 'var(--danger)';
+
+            // Find linked app driver
+            const linkedAppId = window._sam.links[r.id] || '';
+            const linkedDriver = linkedAppId ? state.drivers?.[linkedAppId] : null;
+
+            return `<tr style="cursor:pointer;" onclick="if(!event.target.closest('button,select'))samOpenFuelDriverProfile('${escapeHtml(r.id)}')">
+              <td>
+                <div style="font-weight:700;color:var(--accent-cyan);text-decoration:underline dotted;">${escapeHtml(r.name)}</div>
+                <div style="font-size:10px;color:var(--text-muted);">${escapeHtml(r.id)}</div>
+              </td>
+              <td style="font-size:12px;color:var(--text-muted);">${escapeHtml(r.vehicleName || '—')}</td>
+              <td style="font-weight:700;">${r.distanceMiles != null ? r.distanceMiles.toLocaleString('en-US',{maximumFractionDigits:0}) : '—'}</td>
+              <td style="font-weight:700;">${r.fuelConsumedGal != null ? r.fuelConsumedGal.toFixed(1) : '—'}</td>
+              <td style="font-weight:700;color:var(--danger);">${fuelDollars != null ? '$' + fuelDollars.toFixed(2) : '—'}</td>
+              <td style="font-weight:800;color:${mpgColor};">${r.mpg != null ? r.mpg.toFixed(1) : '—'}</td>
+              <td style="font-size:12px;color:var(--text-muted);">${idleHrs != null ? idleHrs + ' hrs' : '—'}</td>
+              <td>
+                ${linkedDriver && fuelDollars != null ? `
+                  <button class="sam-apply-fuel" onclick="samApplyFuelToDriver('${escapeHtml(r.id)}', ${fuelDollars.toFixed(2)}, ${r.mpg ? r.mpg.toFixed(2) : 'null'})">
+                    ⛽ Apply to ${escapeHtml(linkedDriver.name.split(' ')[0])}
+                  </button>
+                ` : `<span style="font-size:11px;color:var(--text-muted);">${linkedDriver ? 'No $ data' : 'Link driver ↑'}</span>`}
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+
+      <div style="margin-top:14px;padding:12px 16px;background:rgba(0,180,255,0.06);border:1px solid rgba(0,180,255,0.15);border-radius:10px;font-size:12px;color:var(--text-muted);">
+        <strong style="color:var(--accent-cyan);">ℹ️ How "Apply" works:</strong>
+        Clicking "Apply" will update the fuel cost used in the driver's net calculations for the <strong>current active week</strong>.
+        The real Samsara fuel $ replaces the estimated fuel cost in all current-week load records.
+        <br><br>
+        <strong>Diesel price used:</strong> $${dieselPricePerGal.toFixed(2)}/gal. 
+        <span style="color:var(--text-secondary);">To change this, go to Settings and add a <code>dieselPrice</code> value, or the system uses $4.00 default.</span>
+      </div>
+    `;
+  }
+
+  // Apply real fuel cost to a linked app driver's current week
+  window.samApplyFuelToDriver = function(samDriverId, fuelDollars, realMpg) {
+    try { window._sam.links = JSON.parse(localStorage.getItem(SAM_LINK_STORAGE) || '{}'); } catch(e) {}
+    const appDriverId = window._sam.links[samDriverId];
+    if (!appDriverId) return alert('No app driver linked. Link the Samsara driver first.');
+
+    const driver = state.drivers?.[appDriverId];
+    if (!driver) return alert('App driver not found. It may have been deleted.');
+
+    const wk = driver.weeks?.[driver.currentWeekId];
+    if (!wk || !wk.loads?.length) return alert('No loads in the current week for ' + driver.name + '.');
+
+    const confirm1 = confirm(
+      `Apply real Samsara fuel data to ${driver.name}?\n\n` +
+      `Real fuel cost: $${fuelDollars.toFixed(2)} (this week)\n` +
+      (realMpg ? `Real MPG: ${realMpg.toFixed(1)} MPG\n` : '') +
+      `\nThis will distribute $${fuelDollars.toFixed(2)} across ${wk.loads.length} load(s) ` +
+      `and recalculate their net profit.\n\nProceed?`
+    );
+    if (!confirm1) return;
+
+    // Distribute fuel cost proportionally across loads by miles
+    const totalMiles = wk.loads.reduce((s, l) => s + (Number(l.miles) || 0), 0);
+    const s = getSpecs?.() || {};
+
+    wk.loads.forEach(l => {
+      if (!l.details) l.details = {};
+      const mileFraction = totalMiles > 0 ? (Number(l.miles) || 0) / totalMiles : (1 / wk.loads.length);
+      const loadFuel = fuelDollars * mileFraction;
+      l.details.fuel = Math.round(loadFuel * 100) / 100;
+      l.details.samsaraFuel = true; // flag so we know it's real data
+
+      // Update MPG on driver if available
+      if (realMpg) driver.realMpg = realMpg;
+
+      // Recalculate net
+      if (typeof calcLoadNet === 'function') {
+        const calc = calcLoadNet(driver, s, {
+          gross: l.gross || 0,
+          miles: l.miles || 0,
+          tolls: l.details?.tolls || 0,
+          detention: l.details?.detention || 0,
+          accessorials: l.details?.accessorials || 0,
+          fuelOverride: l.details.fuel
+        });
+        l.net = calc.net;
+        l.details.cut = calc.cut;
+        l.details.maint = calc.maint;
+        l.details.fixed = calc.fixed;
+        if (calc.driverPay) l.details.driverPay = calc.driverPay;
+      }
+    });
+
+    if (typeof saveState === 'function') saveState();
+    if (typeof updateUI === 'function') updateUI();
+
+    alert(`✅ Applied real Samsara fuel data to ${driver.name}!\n\n` +
+          `$${fuelDollars.toFixed(2)} distributed across ${wk.loads.length} loads.\n` +
+          (realMpg ? `Real MPG recorded: ${realMpg.toFixed(1)}\n` : '') +
+          `All load net profits have been recalculated.`);
+
+    samSetStatus(`✅ Samsara fuel applied to ${driver.name}`, 'ok');
+  };
+
+  // ── Load HOS ──
+  window.samLoadHOS = async function() {
+    samSetStatus('⏳ Loading HOS status...', 'loading');
+    const hosEl = document.getElementById('samHOSContent');
+    hosEl.innerHTML = '<div class="sam-loading">🕐 Fetching HOS data...</div>';
+    try {
+      const data = await samFetch('/fleet/hos/currentViolations', { limit: 512 });
+      const violations = data.data || [];
+
+      // Also get current duty statuses
+      let dutyCurrent = [];
+      try {
+        const dutyRes = await samFetch('/fleet/drivers', { limit: 512 });
+        dutyCurrent = dutyRes.data || [];
+      } catch(e) {}
+
+      window._sam.hos = dutyCurrent;
+      samRenderHOS(dutyCurrent, violations);
+      samSetStatus(`✅ HOS data loaded for ${dutyCurrent.length} drivers`, 'ok');
+    } catch(e) {
+      samSetStatus('❌ ' + e.message, 'error');
+      hosEl.innerHTML = `<div class="sam-empty" style="color:var(--danger)">❌ ${e.message}</div>`;
+    }
+  };
+
+  function samRenderHOS(drivers, violations = []) {
+    const el = document.getElementById('samHOSContent');
+
+    const countEl = document.getElementById('samHOSCount');
+    const active  = drivers.filter(d => !d.isDeactivated);
+    if (countEl) countEl.textContent = active.length ? `(${active.length} active)` : '';
+    const body = document.getElementById('samHOSBody');
+    const chev = document.getElementById('samHOSChevron');
+    if (body) body.style.display = 'block';
+    if (chev) chev.style.transform = 'rotate(180deg)';
+
+    if (!drivers.length) { el.innerHTML = '<div class="sam-empty">No HOS data available.</div>'; return; }
+
+    const violationDriverIds = new Set(violations.map(v => v.driverId));
+    const hosStatusMap = {
+      'driving':             { label: 'Driving',    badge: 'green'  },
+      'onDuty':              { label: 'On Duty',     badge: 'blue'   },
+      'sleeper':             { label: 'Sleeper',     badge: 'gray'   },
+      'offDuty':             { label: 'Off Duty',    badge: 'gray'   },
+      'yardMove':            { label: 'Yard Move',   badge: 'yellow' },
+      'personalConveyance':  { label: 'PC',          badge: 'gray'   }
+    };
+
+    el.innerHTML = `<div class="sam-grid">
+      ${active.map(d => {
+        const hos        = d.currentHosStatus || {};
+        const dutyStatus = hos.currentDutyStatus || 'unknown';
+        const statusInfo = hosStatusMap[dutyStatus] || { label: dutyStatus || 'Unknown', badge: 'gray' };
+        const hasVio     = violationDriverIds.has(d.id);
+        const driveLeft  = hos.remainingDrivingTimeMs ? Math.floor(hos.remainingDrivingTimeMs / 3600000) + 'h ' + Math.floor((hos.remainingDrivingTimeMs % 3600000) / 60000) + 'm' : null;
+        const cycleLeft  = hos.hosCycle?.remainingMs  ? Math.floor(hos.hosCycle.remainingMs  / 3600000) + 'h' : null;
+        return `<div class="sam-card" style="${hasVio ? 'border-color:var(--danger);' : ''}">
+          <div class="sam-card-title">${escapeHtml(d.name || 'Unknown')} ${hasVio ? '<span class="sam-badge red">⚠️ Violation</span>' : ''}</div>
+          <div class="sam-card-sub">${escapeHtml(d.username || '—')}</div>
+          <div style="margin-bottom:8px;"><span class="sam-badge ${statusInfo.badge}" style="font-size:12px;padding:4px 10px;">${statusInfo.label}</span></div>
+          ${driveLeft ? `<div class="sam-stat-row"><span class="sam-stat-label">Drive Left</span><span class="sam-stat-value" style="color:${parseInt(driveLeft)<=2?'var(--danger)':parseInt(driveLeft)<=4?'var(--warning)':'var(--success)'};">${driveLeft}</span></div>` : ''}
+          ${cycleLeft ? `<div class="sam-stat-row"><span class="sam-stat-label">Cycle Left</span><span class="sam-stat-value">${cycleLeft}</span></div>` : ''}
+          ${hasVio ? `<div style="margin-top:8px;font-size:11px;color:var(--danger);font-weight:700;">⚠️ HOS Violation detected</div>` : ''}
+        </div>`;
+      }).join('')}
+    </div>`;
+  }
+
+  // ── Sync All ──
+  window.samSyncAll = async function() {
+    samSetStatus('⏳ Syncing all Samsara data...', 'loading');
+    const start = Date.now();
+    let errors = [];
+
+    await samLoadDrivers().catch(e => errors.push('Drivers: ' + e.message));
+    await samLoadVehicles().catch(e => errors.push('Vehicles: ' + e.message));
+    await samLoadFuel().catch(e => errors.push('Fuel: ' + e.message));
+    await samLoadHOS().catch(e => errors.push('HOS: ' + e.message));
+
+    const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+    if (errors.length) {
+      samSetStatus(`⚠️ Sync complete with errors (${elapsed}s): ${errors.join(' | ')}`, 'error');
+    } else {
+      samSetStatus(`✅ Full sync complete in ${elapsed}s`, 'ok');
+    }
+  };
+
+  // ── Init: load saved key on page load ──
+  window.addEventListener('load', function() {
+    const savedKey = samGetKey();
+    const keyInput = document.getElementById('samApiKey');
+    if (keyInput && savedKey) {
+      keyInput.value = savedKey;
+      samSetConnectStatus('disconnected', 'Key loaded — click Test Connection');
+    }
+
+    // Load saved proxy URL
+    const savedProxy = localStorage.getItem(SAM_PROXY_KEY) || '';
+    const proxyInput = document.getElementById('samProxyUrl');
+    const proxyStatus = document.getElementById('samProxyStatus');
+    if (proxyInput) proxyInput.value = savedProxy || 'http://localhost:3377';
+    if (proxyStatus && savedProxy) {
+      proxyStatus.textContent = '✅ Proxy configured: ' + savedProxy;
+      proxyStatus.style.color = 'var(--success)';
+    }
+
+    // Set default fuel date range to current week
+    const samFuelStart = document.getElementById('samFuelStart');
+    const samFuelEnd = document.getElementById('samFuelEnd');
+    if (samFuelStart && samFuelEnd && !samFuelStart.value) {
+      const now = new Date();
+      const day = now.getDay();
+      const mon = new Date(now);
+      mon.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
+      const sun = new Date(mon);
+      sun.setDate(mon.getDate() + 6);
+      samFuelStart.value = mon.toISOString().slice(0, 10);
+      samFuelEnd.value = sun.toISOString().slice(0, 10);
+    }
+
+    // Load saved driver links
+    try { window._sam.links = JSON.parse(localStorage.getItem(SAM_LINK_STORAGE) || '{}'); } catch(e) {}
+  });
+
+  // ═══════════════════════════════════════════
+  // PROFILE MODAL — Driver & Vehicle click-through
+  // ═══════════════════════════════════════════
+
+  window.samCloseProfile = function() {
+    document.getElementById('samProfileModal').style.display  = 'none';
+    document.getElementById('samProfileOverlay').style.display = 'none';
+  };
+
+  function samOpenProfile(title, bodyHtml) {
+    document.getElementById('samProfileTitle').textContent    = title;
+    document.getElementById('samProfileBody').innerHTML       = bodyHtml;
+    document.getElementById('samProfileModal').style.display  = 'block';
+    document.getElementById('samProfileOverlay').style.display = 'block';
+  }
+
+  // ── Open Driver Profile ──
+  window.samOpenDriverProfile = function(driverIdx) {
+    const d = window._sam.drivers[driverIdx];
+    if (!d) return;
+
+    // Find linked app driver
+    try { window._sam.links = JSON.parse(localStorage.getItem(SAM_LINK_STORAGE) || '{}'); } catch(e) {}
+    const linkedAppId = Object.entries(window._sam.links).find(([s,a]) => s === d.id)?.[1] || '';
+    const linkedName  = linkedAppId && state.drivers?.[linkedAppId] ? state.drivers[linkedAppId].name : null;
+
+    // Find assigned truck
+    let truckAssigns = {};
+    try { truckAssigns = JSON.parse(localStorage.getItem(SAM_TRUCK_STORAGE) || '{}'); } catch(e) {}
+    const assignedTruckId = truckAssigns[d.id] || '';
+    const assignedTruck   = assignedTruckId ? window._sam.vehicles?.find(v => v.id === assignedTruckId) : null;
+
+    // Find fuel data for this driver
+    const fuelRow = window._sam.fuelData?.find(r => r.id === d.id);
+    const diesel  = (typeof settings !== 'undefined' && settings.dieselPrice) ? settings.dieselPrice : 4.00;
+
+    // Truck options for inline assignment
+    const truckOptions = (window._sam.vehicles || [])
+      .filter(v => !v.name?.toLowerCase().includes('trailer') && v.vehicleType !== 'trailer')
+      .map(v => `<option value="${escapeHtml(v.id)}" ${v.id === assignedTruckId ? 'selected' : ''}>${escapeHtml(v.name || v.id)}</option>`)
+      .join('');
+
+    samOpenProfile('👤 ' + (d.name || 'Driver'), `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px;">
+        ${samProfileRow('Name',    d.name || '—')}
+        ${samProfileRow('Username', d.username || '—')}
+        ${samProfileRow('Status',  d.isDeactivated ? '⛔ Inactive' : '✅ Active')}
+        ${samProfileRow('License', d.licenseNumber || '—')}
+        ${samProfileRow('Phone',   d.phone || '—')}
+        ${samProfileRow('Linked App Driver', linkedName ? '✅ ' + linkedName : '— Not linked')}
+      </div>
+
+      <!-- Truck Assignment -->
+      <div style="background:var(--bg-secondary);border:1px solid var(--border-medium);border-radius:12px;padding:16px;margin-bottom:20px;">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--accent-cyan);font-weight:700;margin-bottom:10px;">🚛 Assigned Truck</div>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+          <select class="sam-link-select" onchange="samAssignTruck('${escapeHtml(d.id)}', this.value)" style="min-width:200px;flex:1;">
+            <option value="">-- No truck assigned --</option>
+            ${truckOptions}
+          </select>
+          ${assignedTruck ? `<span style="font-size:13px;color:var(--success);">✅ ${escapeHtml(assignedTruck.name)}</span>` : ''}
+        </div>
+      </div>
+
+      ${fuelRow ? `
+      <div style="background:var(--bg-secondary);border:1px solid var(--border-medium);border-radius:12px;padding:16px;margin-bottom:20px;">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--success);font-weight:700;margin-bottom:12px;">⛽ Fuel & MPG — ${window._sam.fuelDates?.startDate || ''} → ${window._sam.fuelDates?.endDate || ''}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+          ${samStatPill('MPG', fuelRow.mpg != null ? fuelRow.mpg.toFixed(1) : '—', fuelRow.mpg >= 6.5 ? 'var(--success)' : fuelRow.mpg >= 5.5 ? 'var(--warning)' : 'var(--danger)')}
+          ${samStatPill('Fuel Used', fuelRow.fuelConsumedGal != null ? fuelRow.fuelConsumedGal.toFixed(1) + ' gal' : '—', 'var(--text-primary)')}
+          ${samStatPill('Est. Fuel $', fuelRow.fuelConsumedGal != null ? '$' + (fuelRow.fuelConsumedGal * diesel).toFixed(2) : '—', 'var(--danger)')}
+          ${samStatPill('Miles', fuelRow.distanceMiles != null ? Math.round(fuelRow.distanceMiles).toLocaleString() : '—', 'var(--text-primary)')}
+          ${fuelRow.idleTimeMs != null ? samStatPill('Idle Time', (fuelRow.idleTimeMs/3600000).toFixed(1) + ' hrs', 'var(--warning)') : ''}
+        </div>
+      </div>` : `
+      <div style="padding:12px 16px;background:rgba(107,122,143,0.08);border:1px solid var(--border-subtle);border-radius:10px;margin-bottom:20px;font-size:13px;color:var(--text-muted);">
+        ⛽ No fuel data for this driver in the selected period. Load fuel data from the Fuel & MPG section first.
+      </div>`}
+
+      <div style="background:var(--bg-secondary);border:1px solid var(--border-medium);border-radius:12px;padding:16px;">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--accent-cyan);font-weight:700;margin-bottom:10px;">🕐 Current HOS Status</div>
+        ${samRenderHOSInline(d)}
+      </div>
+    `);
+  };
+
+  // ── Open Vehicle Profile ──
+  window.samOpenVehicleProfile = function(vehicleIdx) {
+    const v = window._sam.vehicles[vehicleIdx];
+    if (!v) return;
+
+    // Default date range — current week
+    const now = new Date();
+    const day = now.getDay();
+    const mon = new Date(now); mon.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
+    const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+    const defaultStart = mon.toISOString().slice(0,10);
+    const defaultEnd   = sun.toISOString().slice(0,10);
+
+    // Stored per-vehicle MPG cache
+    const cacheKey = 'sam_vmpg_' + v.id;
+    let cached = null;
+    try { cached = JSON.parse(localStorage.getItem(cacheKey) || 'null'); } catch(e) {}
+
+    samOpenProfile('🚛 ' + (v.name || 'Vehicle'), `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px;">
+        ${samProfileRow('Name',          v.name || '—')}
+        ${samProfileRow('License Plate', v.licensePlate || '—')}
+        ${samProfileRow('VIN',           v.vin || '—')}
+        ${samProfileRow('Make/Model',    [v.make, v.model, v.year].filter(Boolean).join(' ') || '—')}
+        ${samProfileRow('Serial',        v.serial || '—')}
+        ${samProfileRow('Notes',         v.notes || '—')}
+      </div>
+
+      <!-- Per-vehicle MPG with custom date range -->
+      <div style="background:var(--bg-secondary);border:1px solid var(--border-medium);border-radius:12px;padding:16px;margin-bottom:20px;">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--success);font-weight:700;margin-bottom:12px;">⛽ Vehicle Fuel & MPG</div>
+        <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px;">
+          <div>
+            <label style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);font-weight:700;display:block;margin-bottom:4px;">From</label>
+            <input type="date" id="vmpgStart" class="sam-input" value="${defaultStart}" style="width:150px;" />
+          </div>
+          <div>
+            <label style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);font-weight:700;display:block;margin-bottom:4px;">To</label>
+            <input type="date" id="vmpgEnd" class="sam-input" value="${defaultEnd}" style="width:150px;" />
+          </div>
+          <button class="sam-btn green" onclick="samLoadVehicleMPG('${escapeHtml(v.id)}', '${vehicleIdx}')">⛽ Load MPG</button>
+        </div>
+        <div id="vmpgResult">
+          ${cached ? samRenderVehicleMPGResult(cached) : '<div style="font-size:13px;color:var(--text-muted);">Click "Load MPG" to fetch fuel data for this vehicle.</div>'}
+        </div>
+      </div>
+    `);
+  };
+
+  // Load MPG for a specific vehicle
+  window.samLoadVehicleMPG = async function(vehicleId, vehicleIdx) {
+    const startDate = document.getElementById('vmpgStart')?.value;
+    const endDate   = document.getElementById('vmpgEnd')?.value;
+    const resultEl  = document.getElementById('vmpgResult');
+    if (!startDate || !endDate) return;
+
+    resultEl.innerHTML = '<div class="sam-loading" style="padding:10px;">⛽ Loading…</div>';
+
+    try {
+      const startTime = startDate + 'T00:00:00Z';
+      const endTime   = (() => {
+        const d = new Date(endDate + 'T00:00:00Z');
+        d.setDate(d.getDate() + 1);
+        return d.toISOString().replace('.000Z', 'Z');
+      })();
+      // Try vehicle efficiency endpoints in order
+      let vRow = null;
+      for (const [ep, idKey] of [
+        ['/driver-efficiency/vehicles', v => v.vehicle?.id ?? v.vehicleId],
+        ['/fleet/reports/vehicles/fuel-energy', v => v.vehicle?.id ?? v.vehicleId]
+      ]) {
+        try {
+          const res  = await samFetch(ep, { startTime, endTime });
+          const data = res.data || [];
+          vRow = data.find(v => idKey(v) === vehicleId);
+          if (vRow) break;
+        } catch(e) { /* try next */ }
+      }
+      const res  = { data: vRow ? [vRow] : [] };
+      const data = res.data || [];
+
+      if (vRow) {
+        const ml   = vRow.fuelConsumedMl ?? 0;
+        const gal  = ml / 3785.41;
+        const dist = (vRow.distanceTraveledMeters ?? 0) / 1609.34;
+        const mpg  = vRow.efficiencyMpge ?? (gal > 0 ? dist / gal : null);
+        const result = { startDate, endDate, gal: gal > 0 ? gal : null, dist: dist > 0 ? dist : null, mpg,
+          idleMs: vRow.engineIdleTimeDurationMs ?? null, cost: vRow.estFuelEnergyCost?.amount ?? null };
+        try { localStorage.setItem('sam_vmpg_' + vehicleId, JSON.stringify(result)); } catch(e) {}
+        resultEl.innerHTML = samRenderVehicleMPGResult(result);
+      } else {
+        resultEl.innerHTML = '<div style="font-size:13px;color:var(--text-muted);">No fuel data for this vehicle in that date range.</div>';
+      }
+    } catch(e) {
+      resultEl.innerHTML = `<div style="font-size:13px;color:var(--danger);">❌ ${escapeHtml(e.message.slice(0,200))}</div>`;
+    }
+  };
+
+  function samRenderVehicleMPGResult(r) {
+    const diesel = (typeof settings !== 'undefined' && settings.dieselPrice) ? settings.dieselPrice : 4.00;
+    const mpgColor = !r.mpg ? 'var(--text-muted)' : r.mpg >= 6.5 ? 'var(--success)' : r.mpg >= 5.5 ? 'var(--warning)' : 'var(--danger)';
+    const costDisplay = r.cost != null ? '$' + r.cost.toFixed(2) : (r.gal != null ? '$' + (r.gal * diesel).toFixed(2) : '—');
+    return `
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;">${r.startDate} → ${r.endDate}</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
+        ${samStatPill('MPG', r.mpg != null ? r.mpg.toFixed(1) : '—', mpgColor)}
+        ${samStatPill('Fuel Used', r.gal != null ? r.gal.toFixed(1) + ' gal' : '—', 'var(--text-primary)')}
+        ${samStatPill('Fuel Cost', costDisplay, 'var(--danger)')}
+        ${samStatPill('Miles', r.dist != null ? Math.round(r.dist).toLocaleString() : '—', 'var(--text-primary)')}
+        ${r.idleMs != null ? samStatPill('Idle', (r.idleMs/3600000).toFixed(1) + ' hrs', 'var(--warning)') : ''}
+      </div>`;
+  }
+
+  // Open driver profile from fuel table (looks up by samsara ID)
+  window.samOpenFuelDriverProfile = function(samId) {
+    const idx = window._sam.drivers.findIndex(d => d.id === samId);
+    if (idx >= 0) {
+      samOpenDriverProfile(idx);
+    } else {
+      // Driver may not be loaded yet — build a minimal profile from fuel data
+      const fuelRow = window._sam.fuelData?.find(r => r.id === samId);
+      if (!fuelRow) return;
+      const diesel = (typeof settings !== 'undefined' && settings.dieselPrice) ? settings.dieselPrice : 4.00;
+      samOpenProfile('👤 ' + fuelRow.name, `
+        <div style="margin-bottom:16px;font-size:13px;color:var(--text-muted);">Full profile unavailable — load Drivers first for HOS & linking info.</div>
+        <div style="background:var(--bg-secondary);border:1px solid var(--border-medium);border-radius:12px;padding:16px;">
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--success);font-weight:700;margin-bottom:12px;">⛽ Fuel & MPG — ${window._sam.fuelDates?.startDate || ''} → ${window._sam.fuelDates?.endDate || ''}</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
+            ${samStatPill('MPG', fuelRow.mpg != null ? fuelRow.mpg.toFixed(1) : '—', fuelRow.mpg >= 6.5 ? 'var(--success)' : fuelRow.mpg >= 5.5 ? 'var(--warning)' : 'var(--danger)')}
+            ${samStatPill('Fuel Used', fuelRow.fuelConsumedGal != null ? fuelRow.fuelConsumedGal.toFixed(1) + ' gal' : '—', 'var(--text-primary)')}
+            ${samStatPill('Est. Cost', fuelRow.fuelConsumedGal != null ? '$' + (fuelRow.fuelConsumedGal * diesel).toFixed(2) : '—', 'var(--danger)')}
+            ${samStatPill('Miles', fuelRow.distanceMiles != null ? Math.round(fuelRow.distanceMiles).toLocaleString() : '—', 'var(--text-primary)')}
+          </div>
+        </div>`);
+    }
+  };
+
+
+  function samRenderHOSInline(d) {
+    const hos = d.currentHosStatus || {};
+    const status = hos.currentDutyStatus || 'unknown';
+    const labels = { driving:'Driving', onDuty:'On Duty', sleeper:'Sleeper', offDuty:'Off Duty', yardMove:'Yard Move', personalConveyance:'PC' };
+    const label  = labels[status] || status;
+    const driveLeft = hos.remainingDrivingTimeMs ? Math.floor(hos.remainingDrivingTimeMs/3600000) + 'h ' + Math.floor((hos.remainingDrivingTimeMs%3600000)/60000) + 'm' : null;
+    const cycleLeft = hos.hosCycle?.remainingMs  ? Math.floor(hos.hosCycle.remainingMs/3600000) + 'h' : null;
+    return `
+      <div style="display:flex;gap:12px;flex-wrap:wrap;">
+        <span class="sam-badge ${status==='driving'?'green':status==='onDuty'?'blue':'gray'}" style="font-size:13px;padding:5px 12px;">${label}</span>
+        ${driveLeft ? `<span style="font-size:13px;color:var(--text-secondary);">Drive left: <strong style="color:${parseInt(driveLeft)<=2?'var(--danger)':parseInt(driveLeft)<=4?'var(--warning)':'var(--success)'};">${driveLeft}</strong></span>` : ''}
+        ${cycleLeft ? `<span style="font-size:13px;color:var(--text-secondary);">Cycle left: <strong>${cycleLeft}</strong></span>` : ''}
+        ${!driveLeft && !cycleLeft ? '<span style="font-size:13px;color:var(--text-muted);">No HOS clock data available</span>' : ''}
+      </div>`;
+  }
+
+  // ── Profile UI helpers ──
+  function samProfileRow(label, value) {
+    return `<div style="background:var(--bg-primary);border:1px solid var(--border-subtle);border-radius:8px;padding:10px 14px;">
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);font-weight:700;margin-bottom:3px;">${label}</div>
+      <div style="font-size:14px;font-weight:700;color:var(--text-primary);">${value}</div>
+    </div>`;
+  }
+  function samStatPill(label, value, color) {
+    return `<div style="background:var(--bg-primary);border:1px solid var(--border-subtle);border-radius:8px;padding:10px;text-align:center;">
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);font-weight:700;margin-bottom:4px;">${label}</div>
+      <div style="font-size:18px;font-weight:800;color:${color};">${value}</div>
+    </div>`;
+  }
+
+
+
+})(); // end Samsara IIFE
+
+
 
 /***********************************************
  * FIREBASE AUTH + CLOUD SYNC (SEPARATE ACCOUNTS)
