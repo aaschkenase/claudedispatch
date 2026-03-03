@@ -7594,252 +7594,287 @@ function setCurrentDriverFromFleet(driverId){
 
 function showDriverDetailModal(driverId){
   dbg('🔵 showDriverDetailModal called with driverId:', driverId);
-  
   const d = state.drivers[driverId];
-  if (!d) {
-    console.error('❌ Driver not found:', driverId);
-    return;
-  }
-  
-  dbg('✅ Driver found:', d.name);
-  
-  const split = getDriverSplit(d);
-  const wk = d.weeks[d.currentWeekId] || { loads: [] };
-  const t = computeWeekTotals(wk, d);
-  const s = getSpecs();
-  const targetNet = getDriverTargetNet(d);
-  
-  dbg('📊 Week data:', {loads: wk.loads.length, net: t.net, target: targetNet});
-  
-  // Calculate progress
-  const targetProgress = targetNet > 0 ? Math.min(100, (t.net / targetNet) * 100) : 0;
+  if (!d) { console.error('❌ Driver not found:', driverId); return; }
+
+  const split  = getDriverSplit(d);
+  const wk     = d.weeks[d.currentWeekId] || { loads: [] };
+  const t      = computeWeekTotals(wk, d);
+  const s      = getSpecs();
+  const targetNet   = getDriverTargetNet(d);
+  const targetProg  = targetNet > 0 ? Math.min(100, (t.net / targetNet) * 100) : 0;
   const loadsTarget = s.loadsPerWeek || 5;
-  const loadsProgress = Math.min(100, (wk.loads.length / loadsTarget) * 100);
-  
-  // Status determination
-  let statusEmoji = '🟢';
-  let statusText = 'On Track';
-  let statusColor = 'var(--success)';
-  if (targetProgress < 50) {
-    statusEmoji = '🔴';
-    statusText = 'Behind';
-    statusColor = 'var(--danger)';
-  } else if (targetProgress < 85) {
-    statusEmoji = '🟡';
-    statusText = 'Needs Push';
-    statusColor = 'var(--warning)';
-  }
-  
-  // Build daily breakdown
-  const dayOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday', 'Next Monday'];
-  const loadsByDay = {};
-  dayOrder.forEach(day => loadsByDay[day] = []);
-  
-  wk.loads.forEach((load, idx) => {
-    if (load.pickupDay && dayOrder.includes(load.pickupDay)) {
-      loadsByDay[load.pickupDay].push({...load, idx: idx + 1});
-    }
-  });
-  
-  let dailyBreakdown = '';
-  dayOrder.forEach(day => {
-    const loads = loadsByDay[day];
-    if (loads.length > 0) {
-      loads.forEach(load => {
-        dailyBreakdown += `
-          <div style="padding: 10px 12px; background: var(--bg-primary); border-left: 3px solid var(--accent-cyan); border-radius: 6px; margin-bottom: 8px;">
-            <div style="font-size: 13px; font-weight: 700; color: var(--text-primary); margin-bottom: 4px;">
-              ${day}: ${escapeHtml(load.origin)} → ${escapeHtml(load.dest)}
-            </div>
-            <div style="font-size: 12px; color: var(--text-secondary);">
-              💰 ${money(load.net)} net | 📏 ${load.miles.toLocaleString()} mi | 📊 $${(load.gross/load.miles).toFixed(2)}/mi
-            </div>
-          </div>
-        `;
+  const isCompany   = d.driverType === 'company';
+
+  // ── per-load rows (exclude next-week deliveries same as computeWeekTotals) ──
+  let loads = (wk.loads || []).filter(l => !l.deliversNextWeek);
+  // include cross-week carries
+  if (wk.start) {
+    const prevMonday = new Date(wk.start + 'T00:00:00'); prevMonday.setDate(prevMonday.getDate()-7);
+    const prevWk = d.weeks?.[isoDate(prevMonday)];
+    if (prevWk) {
+      (prevWk.loads||[]).filter(l=>l.deliversNextWeek).forEach(cl=>{
+        if (!loads.some(l=>l.fromPreviousWeek&&l.origin===cl.origin&&l.dest===cl.dest&&toNum(l.gross)===toNum(cl.gross)))
+          loads.push(cl);
       });
-    } else if (['Saturday', 'Sunday'].includes(day)) {
-      dailyBreakdown += `
-        <div style="padding: 10px 12px; background: rgba(0,255,136,0.05); border-left: 3px solid rgba(0,255,136,0.3); border-radius: 6px; margin-bottom: 8px;">
-          <div style="font-size: 13px; color: var(--text-muted);">
-            ${day}: Home Time 🏠
-          </div>
-        </div>
-      `;
-    } else {
-      dailyBreakdown += `
-        <div style="padding: 10px 12px; background: rgba(255,255,255,0.02); border-left: 3px solid var(--border-subtle); border-radius: 6px; margin-bottom: 8px;">
-          <div style="font-size: 13px; color: var(--text-muted);">
-            ${day}: Available
-          </div>
-        </div>
-      `;
     }
-  });
-  
-  // Calculate recommendations
-  const loadsNeeded = Math.max(0, loadsTarget - wk.loads.length);
-  const netNeeded = Math.max(0, targetNet - t.net);
-  
-  let recommendations = '';
-  if (targetProgress >= 100) {
-    recommendations = '🎉 Target exceeded! Great week!';
-  } else if (loadsNeeded > 0) {
-    recommendations = `• ${loadsNeeded} more load${loadsNeeded > 1 ? 's' : ''} needed to hit target<br>`;
-    recommendations += `• Need ${money(netNeeded)} more net revenue<br>`;
-    const avgNeeded = netNeeded / loadsNeeded;
-    recommendations += `• Target avg ${money(avgNeeded)} net per remaining load`;
-  } else {
-    recommendations = '• On track with load count<br>• Focus on maintaining profitability';
   }
-  
-  // Get current location
-  let currentLocation = 'Unknown';
-  if (wk.loads.length > 0) {
-    const lastLoad = wk.loads[wk.loads.length - 1];
-    currentLocation = `${escapeHtml(lastLoad.dest)}`;
+
+  // ── Status badge ──
+  const [sEmoji, sTxt, sColor] = targetProg >= 100 ? ['🟢','On Target','var(--success)']
+    : targetProg >= 85 ? ['🟡','Almost There','var(--warning)']
+    : targetProg >= 50 ? ['🟡','Needs Push','var(--warning)']
+    : ['🔴','Behind','var(--danger)'];
+
+  // ── Totals incl. detention & accessorials ──
+  const totalRevenue = t.gross + t.detention + t.accessorials;
+  const totalCosts   = t.fuel + t.maint + t.fixed + t.tolls + t.driverPay;
+  const netCheck     = totalRevenue - totalCosts;
+
+  function pct(v) { return t.gross > 0 ? ((v/t.gross)*100).toFixed(1)+'%' : '—'; }
+  function row(label, val, color, note='', bold=false) {
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid rgba(255,255,255,0.04);">
+      <span style="font-size:13px;color:var(--text-secondary);${bold?'font-weight:700;color:var(--text-primary);':''}">  ${label}</span>
+      <span style="display:flex;align-items:center;gap:10px;">
+        ${note ? `<span style="font-size:11px;color:var(--text-muted);">${note}</span>` : ''}
+        <span style="font-size:13px;font-weight:${bold?'800':'600'};color:${color};">${val}</span>
+      </span>
+    </div>`;
   }
-  
+  function divider(label) {
+    return `<div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--text-muted);text-transform:uppercase;padding:14px 0 4px;">${label}</div>`;
+  }
+
+  // ── Load-level table rows ──
+  const dayOrder = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday','Next Monday'];
+  const loadRows = loads.map((l, i) => {
+    const lg    = toNum(l.gross);
+    const lnet  = toNum(l.net);
+    const lmi   = toNum(l.miles);
+    const lfuel = toNum(l.details?.fuel);
+    const lmaint= toNum(l.details?.maint);
+    const lfixed= toNum(l.details?.fixed);
+    const ltoll = toNum(l.details?.tolls);
+    const ldet  = toNum(l.details?.detention);
+    const lacc  = toNum(l.details?.accessorials);
+    const lpay  = toNum(l.details?.driverPay);
+    const lrev  = lg + ldet + lacc;
+    const lcost = lfuel + lmaint + lfixed + ltoll + lpay;
+    const rpm   = lmi > 0 ? lg/lmi : 0;
+    const netCol= lnet >= 0 ? 'var(--success)' : 'var(--danger)';
+    const day   = l.pickupDay || '—';
+    return `
+      <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+        <td style="padding:10px 8px;font-size:12px;color:var(--text-muted);white-space:nowrap;">${day}</td>
+        <td style="padding:10px 8px;">
+          <div style="font-size:12px;font-weight:700;color:var(--text-primary);">${escapeHtml(l.origin||'?')} → ${escapeHtml(l.dest||'?')}</div>
+          <div style="font-size:10px;color:var(--text-muted);">${lmi.toLocaleString()} mi${l.fromPreviousWeek?' · carried':''}${l.deliversNextWeek?' · next wk':''}</div>
+        </td>
+        <td style="padding:10px 8px;font-size:12px;font-weight:700;color:var(--success);text-align:right;">${money(lrev)}</td>
+        <td style="padding:10px 8px;font-size:11px;color:var(--danger);text-align:right;">${lfuel>0?'('+money(lfuel)+')':'—'}</td>
+        <td style="padding:10px 8px;font-size:11px;color:var(--danger);text-align:right;">${lmaint>0?'('+money(lmaint)+')':'—'}</td>
+        <td style="padding:10px 8px;font-size:11px;color:var(--danger);text-align:right;">${lfixed>0?'('+money(lfixed)+')':'—'}</td>
+        <td style="padding:10px 8px;font-size:11px;color:var(--danger);text-align:right;">${ltoll>0?'('+money(ltoll)+')':'—'}</td>
+        <td style="padding:10px 8px;font-size:11px;color:var(--danger);text-align:right;">${lpay>0?'('+money(lpay)+')':'—'}</td>
+        <td style="padding:10px 8px;font-size:12px;font-weight:800;color:${netCol};text-align:right;">${money(lnet)}</td>
+        <td style="padding:10px 8px;font-size:11px;color:var(--text-muted);text-align:right;">$${rpm.toFixed(2)}</td>
+      </tr>`;
+  }).join('');
+
+  // totals footer row
+  const footerRpm = t.miles > 0 ? t.gross/t.miles : 0;
+  const loadFooter = `
+    <tr style="border-top:2px solid rgba(255,255,255,0.15);background:rgba(0,0,0,0.2);">
+      <td style="padding:10px 8px;font-size:11px;font-weight:800;color:var(--text-muted);" colspan="2">TOTALS (${loads.length} load${loads.length!==1?'s':''})</td>
+      <td style="padding:10px 8px;font-size:12px;font-weight:800;color:var(--success);text-align:right;">${money(totalRevenue)}</td>
+      <td style="padding:10px 8px;font-size:11px;font-weight:700;color:var(--danger);text-align:right;">(${money(t.fuel)})</td>
+      <td style="padding:10px 8px;font-size:11px;font-weight:700;color:var(--danger);text-align:right;">(${money(t.maint)})</td>
+      <td style="padding:10px 8px;font-size:11px;font-weight:700;color:var(--danger);text-align:right;">(${money(t.fixed)})</td>
+      <td style="padding:10px 8px;font-size:11px;font-weight:700;color:var(--danger);text-align:right;">${t.tolls>0?'('+money(t.tolls)+')':'—'}</td>
+      <td style="padding:10px 8px;font-size:11px;font-weight:700;color:var(--danger);text-align:right;">${t.driverPay>0?'('+money(t.driverPay)+')':'—'}</td>
+      <td style="padding:10px 8px;font-size:13px;font-weight:900;color:${t.net>=0?'var(--success)':'var(--danger)'};text-align:right;">${money(t.net)}</td>
+      <td style="padding:10px 8px;font-size:11px;color:var(--text-muted);text-align:right;">$${footerRpm.toFixed(2)}</td>
+    </tr>`;
+
+  const currentLocation = loads.length > 0 ? escapeHtml(loads[loads.length-1].dest||'—') : 'Unknown';
+
   const modalHtml = `
-    <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); z-index: 10000; display: flex; align-items: center; justify-content: center; padding: 20px;" onclick="this.remove()">
-      <div style="background: var(--bg-elevated); border: 1px solid var(--border-medium); border-radius: 16px; max-width: 700px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.5);" onclick="event.stopPropagation()">
-        
-        <div style="background: linear-gradient(135deg, rgba(0,180,255,0.15), rgba(0,255,136,0.15)); padding: 24px; border-bottom: 1px solid var(--border-medium);">
-          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-            <h2 style="margin: 0; font-size: 24px; font-weight: 800; color: var(--text-primary);">
-              ${escapeHtml(d.name)}
-            </h2>
-            <button onclick="this.closest('div[style*=\\'position: fixed\\']').remove()" style="background: none; border: none; color: var(--text-muted); font-size: 24px; cursor: pointer; padding: 0; width: 32px; height: 32px;">×</button>
-          </div>
-          <div style="font-size: 13px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px;">
-            Week: ${wk.label || 'Current Week'}
-          </div>
-        </div>
-        
-        <div style="padding: 20px;">
-          <div style="font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 16px;">
-            📊 WEEKLY PERFORMANCE
-          </div>
-          
-          <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 16px;">
-            <div style="background: var(--bg-primary); padding: 12px; border-radius: 8px;">
-              <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Loads Completed</div>
-              <div style="font-size: 20px; font-weight: 700; color: var(--text-primary);">
-                ${wk.loads.length} / ${loadsTarget}
-              </div>
-              <div style="margin-top: 8px; height: 6px; background: var(--border-subtle); border-radius: 3px; overflow: hidden;">
-                <div style="height: 100%; background: var(--accent-cyan); width: ${loadsProgress}%;"></div>
+    <div id="driverDetailOverlay" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.88);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;" onclick="this.remove()">
+      <div style="background:var(--bg-elevated);border:1px solid var(--border-medium);border-radius:16px;width:100%;max-width:900px;max-height:92vh;overflow-y:auto;box-shadow:0 12px 48px rgba(0,0,0,0.6);" onclick="event.stopPropagation()">
+
+        <!-- HEADER -->
+        <div style="background:linear-gradient(135deg,rgba(0,180,255,0.18),rgba(0,255,136,0.12));padding:20px 24px;border-bottom:1px solid var(--border-medium);position:sticky;top:0;z-index:10;">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div>
+              <div style="font-size:22px;font-weight:900;color:var(--text-primary);">${escapeHtml(d.name)}</div>
+              <div style="font-size:12px;color:var(--text-muted);margin-top:2px;text-transform:uppercase;letter-spacing:1px;">
+                Week of ${wk.label||wk.start||'Current'} &nbsp;·&nbsp; ${loads.length} Load${loads.length!==1?'s':''} &nbsp;·&nbsp; ${t.miles.toLocaleString()} mi &nbsp;·&nbsp; 📍 ${currentLocation}
               </div>
             </div>
-            
-            <div style="background: var(--bg-primary); padding: 12px; border-radius: 8px;">
-              <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Total Gross</div>
-              <div style="font-size: 20px; font-weight: 700; color: var(--success);">
-                ${money(t.gross)}
-              </div>
-            </div>
-            
-            <div style="background: var(--bg-primary); padding: 12px; border-radius: 8px;">
-              <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Total Net</div>
-              <div style="font-size: 20px; font-weight: 700; color: ${t.net >= 0 ? 'var(--success)' : 'var(--danger)'};">
-                ${money(t.net)}
-              </div>
-              <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
-                ${(split*100).toFixed(0)}% split
-              </div>
-            </div>
-            
-            <div style="background: var(--bg-primary); padding: 12px; border-radius: 8px;">
-              <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Avg RPM</div>
-              <div style="font-size: 20px; font-weight: 700; color: var(--text-primary);">
-                ${money(t.rpm)}
-              </div>
-            </div>
-          </div>
-          
-          <div style="background: ${statusColor}20; border: 1px solid ${statusColor}; border-radius: 8px; padding: 12px; text-align: center;">
-            <div style="font-size: 18px; font-weight: 700; color: ${statusColor};">
-              ${statusEmoji} ${statusText}
-            </div>
-            <div style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">
-              ${targetProgress.toFixed(0)}% of weekly target (${money(targetNet)})
+            <div style="display:flex;align-items:center;gap:12px;">
+              <div style="padding:6px 14px;background:${sColor}22;border:1px solid ${sColor};border-radius:20px;font-size:12px;font-weight:700;color:${sColor};">${sEmoji} ${sTxt} · ${targetProg.toFixed(0)}%</div>
+              <button onclick="document.getElementById('driverDetailOverlay').remove()" style="background:none;border:none;color:var(--text-muted);font-size:26px;cursor:pointer;line-height:1;padding:0;">×</button>
             </div>
           </div>
         </div>
-        
-        <div style="padding: 0 20px 20px;">
-          <div style="font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 12px;">
-            📈 DAILY BREAKDOWN
-          </div>
-          ${dailyBreakdown}
+
+        <!-- TOP KPI ROW -->
+        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:var(--border-subtle);border-bottom:1px solid var(--border-medium);">
+          ${[
+            ['Gross Revenue', money(t.gross), 'var(--success)'],
+            ['Total Revenue', money(totalRevenue), 'var(--success)'],
+            ['Total Costs', '('+money(totalCosts)+')', 'var(--danger)'],
+            ['NET', money(t.net), t.net>=0?'var(--success)':'var(--danger)'],
+            ['Avg RPM', '$'+footerRpm.toFixed(2)+'/mi', 'var(--accent-cyan)'],
+          ].map(([lbl,val,col])=>`
+            <div style="background:var(--bg-elevated);padding:14px 16px;text-align:center;">
+              <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">${lbl}</div>
+              <div style="font-size:18px;font-weight:900;color:${col};">${val}</div>
+            </div>`).join('')}
         </div>
-        
-        <div style="padding: 0 20px 20px;">
-          <div style="font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 12px;">
-            💰 FINANCIAL SNAPSHOT
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;border-bottom:1px solid var(--border-medium);">
+
+          <!-- LEFT: P&L STATEMENT -->
+          <div style="padding:20px 24px;border-right:1px solid var(--border-medium);">
+            <div style="font-size:12px;font-weight:800;letter-spacing:1.5px;color:var(--accent-cyan);text-transform:uppercase;margin-bottom:12px;">📋 P&L Statement</div>
+
+            ${divider('Revenue')}
+            ${row('Freight Revenue', money(t.gross), 'var(--success)', pct(t.gross))}
+            ${t.detention>0 ? row('+ Detention Pay', money(t.detention), 'var(--success)') : ''}
+            ${t.accessorials>0 ? row('+ Accessorials', money(t.accessorials), 'var(--success)') : ''}
+            ${row('Total Revenue', money(totalRevenue), 'var(--success)', '', true)}
+
+            ${divider('Operating Costs')}
+            ${row('Fuel', '('+money(t.fuel)+')', 'var(--danger)', pct(t.fuel))}
+            ${row('Maintenance', '('+money(t.maint)+')', 'var(--danger)', pct(t.maint))}
+            ${row('Fixed (truck/ins)', '('+money(t.fixed)+')', 'var(--danger)', pct(t.fixed))}
+            ${t.tolls>0 ? row('Tolls', '('+money(t.tolls)+')', 'var(--danger)', pct(t.tolls)) : ''}
+            ${isCompany
+              ? row((d.companyPayType==='weekly'?'Driver Salary':'Driver Pay'), '('+money(t.driverPay)+')', 'var(--danger)', pct(t.driverPay))
+              : t.driverPay>0 ? row('Driver Pay', '('+money(t.driverPay)+')', 'var(--danger)', pct(t.driverPay)) : ''
+            }
+            ${row('Total Costs', '('+money(totalCosts)+')', 'var(--danger)', pct(totalCosts), true)}
+
+            ${divider('Net')}
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0 4px;">
+              <span style="font-size:16px;font-weight:900;color:var(--text-primary);">NET INCOME</span>
+              <span style="font-size:20px;font-weight:900;color:${t.net>=0?'var(--success)':'var(--danger)'};">${money(t.net)}</span>
+            </div>
+            ${!isCompany ? `<div style="font-size:11px;color:var(--text-muted);padding-bottom:4px;">Owner-op at ${(split*100).toFixed(0)}% split · company cut ${money(t.gross*(1-split))}</div>` : ''}
+
+            <!-- Target progress bar -->
+            <div style="margin-top:16px;padding:12px;background:rgba(0,0,0,0.2);border-radius:8px;border:1px solid var(--border-subtle);">
+              <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);margin-bottom:6px;">
+                <span>Weekly Target Progress</span><span>${money(t.net)} / ${money(targetNet)}</span>
+              </div>
+              <div style="height:8px;background:var(--border-subtle);border-radius:4px;overflow:hidden;">
+                <div style="height:100%;width:${Math.min(100,targetProg)}%;background:${sColor};border-radius:4px;transition:width 0.3s;"></div>
+              </div>
+              <div style="font-size:11px;color:${sColor};margin-top:5px;font-weight:700;">
+                ${targetProg>=100 ? '🎉 Target hit!' : money(Math.max(0,targetNet-t.net))+' to go'}
+              </div>
+            </div>
           </div>
-          
-          <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
-            <div style="background: var(--bg-primary); padding: 10px 12px; border-radius: 6px;">
-              <div style="font-size: 11px; color: var(--text-muted);">Target Progress</div>
-              <div style="font-size: 16px; font-weight: 700; color: var(--text-primary);">
-                ${targetProgress.toFixed(0)}%
+
+          <!-- RIGHT: COST BREAKDOWN VISUAL -->
+          <div style="padding:20px 24px;">
+            <div style="font-size:12px;font-weight:800;letter-spacing:1.5px;color:var(--accent-cyan);text-transform:uppercase;margin-bottom:12px;">📊 Cost Breakdown</div>
+
+            ${[
+              ['Fuel',          t.fuel,      'var(--danger)',       '⛽'],
+              ['Maintenance',   t.maint,     '#f59e0b',            '🔧'],
+              ['Fixed Costs',   t.fixed,     '#8b5cf6',            '🏦'],
+              ['Tolls',         t.tolls,     '#ec4899',            '🛣️'],
+              ['Driver Pay',    t.driverPay, '#06b6d4',            '👤'],
+            ].filter(([,v])=>v>0).map(([lbl,v,col,ic])=>{
+              const barPct = t.gross > 0 ? Math.min(100,(v/t.gross)*100) : 0;
+              return `
+                <div style="margin-bottom:12px;">
+                  <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;">
+                    <span style="color:var(--text-secondary);">${ic} ${lbl}</span>
+                    <span style="font-weight:700;color:${col};">${money(v)} <span style="font-size:10px;color:var(--text-muted);">(${(t.gross>0?(v/t.gross*100):0).toFixed(1)}%)</span></span>
+                  </div>
+                  <div style="height:6px;background:var(--border-subtle);border-radius:3px;overflow:hidden;">
+                    <div style="height:100%;width:${barPct}%;background:${col};border-radius:3px;"></div>
+                  </div>
+                </div>`;
+            }).join('')}
+
+            <!-- Net margin bar -->
+            ${(()=>{
+              const margin = t.gross > 0 ? (t.net/t.gross*100) : 0;
+              const mCol = margin >= 25 ? 'var(--success)' : margin >= 15 ? 'var(--warning)' : 'var(--danger)';
+              return `
+                <div style="margin-top:20px;padding:14px;background:rgba(0,0,0,0.25);border-radius:10px;border:1px solid var(--border-subtle);">
+                  <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px;">Net Margin</div>
+                  <div style="font-size:28px;font-weight:900;color:${mCol};">${margin.toFixed(1)}%</div>
+                  <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">
+                    ${margin>=25?'💚 Strong':'margin>=15?⚠️ Acceptable:🔴 Tight'} &nbsp;·&nbsp; $${(t.miles>0?(t.net/t.miles):0).toFixed(2)} net/mile
+                  </div>
+                  <div style="margin-top:10px;height:8px;background:var(--border-subtle);border-radius:4px;overflow:hidden;">
+                    <div style="height:100%;width:${Math.min(100,Math.max(0,margin))}%;background:${mCol};border-radius:4px;"></div>
+                  </div>
+                </div>`;
+            })()}
+
+            <div style="margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+              <div style="background:rgba(0,0,0,0.2);border-radius:8px;padding:10px 12px;border:1px solid var(--border-subtle);">
+                <div style="font-size:10px;color:var(--text-muted);">Total Miles</div>
+                <div style="font-size:16px;font-weight:800;color:var(--text-primary);">${t.miles.toLocaleString()}</div>
               </div>
-              <div style="font-size: 11px; color: var(--text-secondary); margin-top: 2px;">
-                ${t.net >= targetNet ? '+' : ''}${money(t.net - targetNet)}
-              </div>
-            </div>
-            
-            <div style="background: var(--bg-primary); padding: 10px 12px; border-radius: 6px;">
-              <div style="font-size: 11px; color: var(--text-muted);">Fuel Costs</div>
-              <div style="font-size: 16px; font-weight: 700; color: var(--text-primary);">
-                ${money(t.fuel)}
-              </div>
-              <div style="font-size: 11px; color: var(--text-secondary); margin-top: 2px;">
-                ${t.gross > 0 ? ((t.fuel/t.gross)*100).toFixed(1) : '0.0'}% of gross
-              </div>
-            </div>
-            
-            <div style="background: var(--bg-primary); padding: 10px 12px; border-radius: 6px;">
-              <div style="font-size: 11px; color: var(--text-muted);">Current Location</div>
-              <div style="font-size: 14px; font-weight: 700; color: var(--accent-cyan);">
-                📍 ${currentLocation}
-              </div>
-            </div>
-            
-            <div style="background: var(--bg-primary); padding: 10px 12px; border-radius: 6px;">
-              <div style="font-size: 11px; color: var(--text-muted);">Projected Weekly</div>
-              <div style="font-size: 16px; font-weight: 700; color: var(--text-primary);">
-                ${money(t.net)}
+              <div style="background:rgba(0,0,0,0.2);border-radius:8px;padding:10px 12px;border:1px solid var(--border-subtle);">
+                <div style="font-size:10px;color:var(--text-muted);">Gross RPM</div>
+                <div style="font-size:16px;font-weight:800;color:var(--accent-cyan);">$${footerRpm.toFixed(2)}</div>
               </div>
             </div>
           </div>
         </div>
-        
-        <div style="padding: 0 20px 20px;">
-          <div style="font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 12px;">
-            🎯 RECOMMENDATIONS
+
+        <!-- LOAD TABLE -->
+        ${loads.length > 0 ? `
+        <div style="padding:0;">
+          <div style="padding:16px 24px 10px;font-size:12px;font-weight:800;letter-spacing:1.5px;color:var(--accent-cyan);text-transform:uppercase;border-bottom:1px solid var(--border-subtle);">
+            🚛 Load-by-Load Breakdown
           </div>
-          
-          <div style="background: rgba(0,180,255,0.1); border: 1px solid var(--accent-cyan); border-radius: 8px; padding: 12px; line-height: 1.6;">
-            <div style="font-size: 13px; color: var(--text-primary);">
-              ${recommendations}
-            </div>
+          <div style="overflow-x:auto;">
+            <table style="width:100%;border-collapse:collapse;font-size:12px;">
+              <thead>
+                <tr style="background:rgba(0,0,0,0.3);border-bottom:1px solid var(--border-medium);">
+                  <th style="padding:8px 8px;text-align:left;font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;white-space:nowrap;">Day</th>
+                  <th style="padding:8px 8px;text-align:left;font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;">Route</th>
+                  <th style="padding:8px 8px;text-align:right;font-size:10px;font-weight:700;color:var(--success);text-transform:uppercase;letter-spacing:1px;white-space:nowrap;">Revenue</th>
+                  <th style="padding:8px 8px;text-align:right;font-size:10px;font-weight:700;color:var(--danger);text-transform:uppercase;letter-spacing:1px;white-space:nowrap;">Fuel</th>
+                  <th style="padding:8px 8px;text-align:right;font-size:10px;font-weight:700;color:var(--danger);text-transform:uppercase;letter-spacing:1px;white-space:nowrap;">Maint</th>
+                  <th style="padding:8px 8px;text-align:right;font-size:10px;font-weight:700;color:var(--danger);text-transform:uppercase;letter-spacing:1px;white-space:nowrap;">Fixed</th>
+                  <th style="padding:8px 8px;text-align:right;font-size:10px;font-weight:700;color:var(--danger);text-transform:uppercase;letter-spacing:1px;white-space:nowrap;">Tolls</th>
+                  <th style="padding:8px 8px;text-align:right;font-size:10px;font-weight:700;color:var(--danger);text-transform:uppercase;letter-spacing:1px;white-space:nowrap;">Driver</th>
+                  <th style="padding:8px 8px;text-align:right;font-size:10px;font-weight:700;color:var(--success);text-transform:uppercase;letter-spacing:1px;white-space:nowrap;">Net</th>
+                  <th style="padding:8px 8px;text-align:right;font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;white-space:nowrap;">RPM</th>
+                </tr>
+              </thead>
+              <tbody>${loadRows}</tbody>
+              <tfoot>${loadFooter}</tfoot>
+            </table>
           </div>
-        </div>
-        
-        <div style="padding: 20px; border-top: 1px solid var(--border-medium); display: flex; gap: 12px;">
-          <button onclick="setCurrentDriverFromFleet('${driverId}'); this.closest('div[style*=\\'position: fixed\\']').remove();" style="flex: 1; padding: 12px; background: var(--accent-cyan); color: #000; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; font-size: 14px;">
-            View Dashboard
+        </div>` : `<div style="padding:24px;text-align:center;color:var(--text-muted);">No loads this week yet.</div>`}
+
+        <!-- FOOTER BUTTONS -->
+        <div style="padding:16px 24px;border-top:1px solid var(--border-medium);display:flex;gap:12px;background:var(--bg-elevated);border-radius:0 0 16px 16px;">
+          <button onclick="setCurrentDriverFromFleet('${driverId}'); document.getElementById('driverDetailOverlay').remove();" style="flex:1;padding:11px;background:var(--accent-cyan);color:#000;border:none;border-radius:8px;font-weight:800;cursor:pointer;font-size:13px;">
+            ↗ Open Dashboard
           </button>
-          <button onclick="copyDriverSummary('${driverId}')" style="flex: 1; padding: 12px; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-medium); border-radius: 8px; font-weight: 700; cursor: pointer; font-size: 14px;">
-            Copy Summary
+          <button onclick="copyDriverSummary('${driverId}')" style="flex:1;padding:11px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border-medium);border-radius:8px;font-weight:700;cursor:pointer;font-size:13px;">
+            📋 Copy Summary
+          </button>
+          <button onclick="document.getElementById('driverDetailOverlay').remove()" style="padding:11px 18px;background:var(--bg-primary);color:var(--text-muted);border:1px solid var(--border-subtle);border-radius:8px;font-weight:600;cursor:pointer;font-size:13px;">
+            Close
           </button>
         </div>
-        
+
       </div>
-    </div>
-  `;
-  
+    </div>`;
+
   document.body.insertAdjacentHTML('beforeend', modalHtml);
 }
 
