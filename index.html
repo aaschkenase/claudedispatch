@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
 <meta http-equiv="Pragma" content="no-cache" />
 <meta http-equiv="Expires" content="0" />
-<!-- VERSION: V6-FEATURES - Feb 26, 2026 - DH cost calc, what-if projection, analyzer modal with collapsible sections -->
+<!-- VERSION: V7-COMPANY-DRIVERS - Mar 2, 2026 - Company driver support, weekly salary flat expense, calcLoadNet -->
 <title>Dispatch Command Center</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -1840,6 +1840,32 @@ td {
         <div class="stat-value" id="wk_be_rpm">$0.00</div>
       </div>
     </div>
+    
+    <!-- Company driver breakdown — hidden for owner-ops -->
+    <div id="companyDriverStats" style="display:none; margin-top:-8px; margin-bottom:16px; padding:12px 16px; background:rgba(0,180,255,0.06); border:1px solid rgba(0,180,255,0.15); border-radius:10px;">
+      <div style="font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--accent-cyan); font-weight:700; margin-bottom:8px;">
+        🏢 Company Driver Breakdown
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px;">
+        <div>
+          <div style="font-size:11px; color:var(--text-muted);">Gross Revenue</div>
+          <div style="font-size:16px; font-weight:700; color:var(--text-primary);" id="co_gross">$0</div>
+        </div>
+        <div>
+          <div style="font-size:11px; color:var(--text-muted);">Driver Pay</div>
+          <div style="font-size:16px; font-weight:700; color:var(--warning);" id="co_driver_pay">$0</div>
+        </div>
+        <div>
+          <div style="font-size:11px; color:var(--text-muted);">Company Net</div>
+          <div style="font-size:16px; font-weight:700; color:var(--success);" id="co_company_net">$0</div>
+        </div>
+      </div>
+      <div style="margin-top:8px; display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; font-size:11px; color:var(--text-muted);">
+        <div>Fuel+Maint: <span id="co_var_costs" style="color:var(--text-secondary);">$0</span></div>
+        <div>Fixed Costs: <span id="co_fixed_costs" style="color:var(--text-secondary);">$0</span></div>
+        <div>Driver Check: <span id="co_driver_check" style="font-weight:700; color:var(--success);">$0</span></div>
+      </div>
+    </div>
 
     <div class="dash-grid">
       <div>
@@ -2028,7 +2054,7 @@ td {
               <th>Route</th>
               <th>Miles</th>
               <th>Gross</th>
-              <th>Net</th>
+              <th id="loadTableNetHeader">Net</th>
               <th>Gross RPM</th>
               <th>Actions</th>
             </tr>
@@ -2241,7 +2267,8 @@ td {
       <div class="card-header">Notes</div>
       <div class="card-body">
         <div class="hint-text">
-          "Company Cut" is calculated as <strong>Gross × (1 − Split)</strong>. Example: split 80% → company cut 20%.<br/>
+          "Company Cut" is calculated as <strong>Gross × (1 − Split)</strong> for owner-operators. Example: split 80% → company cut 20%.<br/>
+          For <strong>Company Drivers</strong> (marked [CO]), the company cut is <strong>Gross − Driver Pay − Costs</strong> (the net profit to the company).<br/>
           If a load has a stored split, we use that. If not, we use that driver's split override; if none, we use the global default split in Settings.
         </div>
       </div>
@@ -2356,12 +2383,48 @@ td {
         <div class="card">
           <div class="card-header">Driver Overrides (Selected Driver)</div>
           <div class="card-body">
+            <!-- Driver Type -->
             <div class="input-row">
-              <div class="input-group">
-                <label>Split % for this driver</label>
-                <input id="d_split" type="number" inputmode="decimal" min="0" max="1" step="0.01" oninput="this.dataset.dirty='true'" onfocus="this.dataset.editing='true'" onblur="this.dataset.editing='false'" />
+              <div class="input-group" style="flex:2;">
+                <label>Driver Type</label>
+                <select id="d_driver_type" onchange="this.dataset.dirty='true'; toggleCompanyPayFields()" style="width:100%; padding:10px; background:var(--bg-elevated); color:var(--text-primary); border:1px solid var(--border-medium); border-radius:8px; font-size:14px;">
+                  <option value="owner_op">Owner Operator (% split)</option>
+                  <option value="company">Company Driver (fixed pay)</option>
+                </select>
               </div>
             </div>
+
+            <!-- Owner-op fields (shown by default) -->
+            <div id="ownerOpFields">
+              <div class="input-row">
+                <div class="input-group">
+                  <label>Split % for this driver</label>
+                  <input id="d_split" type="number" inputmode="decimal" min="0" max="1" step="0.01" oninput="this.dataset.dirty='true'" onfocus="this.dataset.editing='true'" onblur="this.dataset.editing='false'" />
+                </div>
+              </div>
+            </div>
+
+            <!-- Company driver fields (hidden by default) -->
+            <div id="companyDriverFields" style="display:none;">
+              <div class="input-row">
+                <div class="input-group">
+                  <label>Pay Structure</label>
+                  <select id="d_company_pay_type" onchange="this.dataset.dirty='true'; updatePayRateLabel()" style="width:100%; padding:10px; background:var(--bg-elevated); color:var(--text-primary); border:1px solid var(--border-medium); border-radius:8px; font-size:14px;">
+                    <option value="cpm">Cents Per Mile (CPM)</option>
+                    <option value="per_load">Flat Rate Per Load</option>
+                    <option value="weekly">Weekly Salary</option>
+                  </select>
+                </div>
+                <div class="input-group">
+                  <label id="payRateLabel">Rate ($/mile)</label>
+                  <input id="d_company_pay_rate" type="number" inputmode="decimal" min="0" step="0.01" oninput="this.dataset.dirty='true'" placeholder="e.g. 0.65" />
+                </div>
+              </div>
+              <div class="hint-text" id="companyPayHint" style="margin-top:4px; margin-bottom:8px;">
+                CPM: Enter dollars per mile (e.g. 0.65 = 65¢/mi). Net shown = company profit after driver pay + costs.
+              </div>
+            </div>
+
             <div class="input-row">
               <div class="input-group">
                 <label>Target Net / Week for this driver</label>
@@ -2376,9 +2439,10 @@ td {
             </div>
             <button class="btn-primary no-print" onclick="saveDriverOverrides()">Save Driver Override</button>
             <div class="hint-text">
-              Example split: 0.80 (80%), 0.88 (88%). This affects new loads + company cut analytics. Existing loads keep their saved split.<br/>
-              Target net: Set a specific weekly goal for this driver (e.g., 1500, 2000). Leave blank to use global default.<br/>
-              Miles/day: How many miles this driver can realistically drive per day (default: 600). Used in Load Analyzer.
+              <b>Owner Operator:</b> Split: 0.80 = 80%. Net = driver's take-home after costs.<br/>
+              <b>Company Driver:</b> CPM (e.g. 0.65), flat per load, or weekly salary. Net = company profit after paying driver + costs.<br/>
+              Target net: Set a specific weekly goal (e.g., 1500, 2000). Leave blank to use global default.<br/>
+              Miles/day: How many miles this driver can realistically drive per day (default: 600).
             </div>
           </div>
         </div>
@@ -3346,6 +3410,68 @@ function getDriverVariableDeductions(driver){
   return 0;
 }
 
+/**
+ * Central net calculation for both owner-op and company drivers.
+ * Returns { net, cut, driverPay, fuel, maint, fixed, split } so callers get full breakdown.
+ * 
+ * Owner-op: net = (gross * split) - costs → net is driver's take-home
+ * Company:  net = gross - driverPay - costs → net is company's profit
+ */
+/**
+ * Get the true weekly driver pay for a company driver.
+ * Weekly salary = flat rate regardless of # loads.
+ * CPM/per_load = sum of actual per-load amounts from totals.
+ */
+function getWeeklyDriverPay(driver, weekTotals) {
+  if (driver.driverType !== 'company') return 0;
+  const payType = driver.companyPayType || 'cpm';
+  if (payType === 'weekly') return toNum(driver.companyPayRate);
+  return weekTotals ? weekTotals.driverPay : 0;
+}
+
+function calcLoadNet(driver, specs, { gross, miles, tolls, detention, accessorials }) {
+  detention = detention || 0;
+  accessorials = accessorials || 0;
+  tolls = tolls || 0;
+
+  const driverFixedWeekly = getDriverFixedWeekly(driver);
+  const fixedPerLoad = driverFixedWeekly / specs.loadsPerWeek;
+  const fuel = (miles / specs.mpg) * specs.fuel;
+  const maint = miles * specs.maint;
+  const fixed = fixedPerLoad;
+  const totalRevenue = gross + detention + accessorials;
+
+  const isCompany = driver.driverType === 'company';
+
+  if (isCompany) {
+    // Company driver: driver gets paid, company keeps the rest
+    let driverPay = 0;
+    const payType = driver.companyPayType || 'cpm';
+    const payRate = toNum(driver.companyPayRate);
+
+    if (payType === 'cpm') {
+      // Cents per mile on loaded miles only (or total if no loaded distinction)
+      const loadedMiles = miles; // caller should pass loadedMiles if available
+      driverPay = loadedMiles * payRate;
+    } else if (payType === 'per_load') {
+      driverPay = payRate;
+    } else if (payType === 'weekly') {
+      // Weekly salary is a flat week-level expense, NOT per-load.
+      // driverPay stays 0 here; subtracted at week level via getWeeklyDriverPay()
+      driverPay = 0;
+    }
+
+    const net = totalRevenue - driverPay - fuel - maint - fixed - tolls;
+    return { net, cut: totalRevenue, driverPay, fuel, maint, fixed, tolls, split: null, isCompany: true };
+  } else {
+    // Owner-op: driver gets split%, pays costs from their share
+    const split = getDriverSplit(driver);
+    const cut = totalRevenue * split;
+    const net = cut - fuel - maint - fixed - tolls;
+    return { net, cut, driverPay: 0, fuel, maint, fixed, tolls, split, isCompany: false };
+  }
+}
+
 /************************* 
  * NAV 
  *************************/
@@ -3387,8 +3513,9 @@ function renderDriverSelect(){
                     d.pauseReason === 'repairs' ? '🔧' : '⏸️';
       statusBadge = ` ${emoji}`;
     }
+    const typeBadge = d.driverType === 'company' ? ' [CO]' : '';
     
-    return `<option value="${id}" ${selected}>${escapeHtml(d.name)}${statusBadge}</option>`;
+    return `<option value="${id}" ${selected}>${escapeHtml(d.name)}${typeBadge}${statusBadge}</option>`;
   }).join("");
 }
 
@@ -3396,6 +3523,12 @@ function onDriverChange(){
   const sel = document.getElementById("driverSelect");
   state.currentDriverId = sel.value;
   calendarWeekStart = null; // Reset calendar to show new driver's current week
+
+  // Reset settings dirty flags so new driver's values load
+  ['d_driver_type','d_company_pay_type','d_company_pay_rate','d_split','d_target_net','d_miles_per_day','d_truck_number','d_trailer_number'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.dataset.dirty = 'false'; el.dataset.editing = 'false'; }
+  });
 
   // Always default to the most recent open (non-closed) week when switching drivers.
   // If the driver has NO open weeks (all closed), auto-create the current week for them.
@@ -3461,6 +3594,9 @@ function addDriver(){
     stickyNotes: "",
     splitOverride: null,
     targetNetOverride: null,
+    driverType: 'owner_op',      // 'owner_op' or 'company'
+    companyPayType: 'cpm',       // 'cpm', 'per_load', or 'weekly'
+    companyPayRate: null,        // dollar amount (CPM = $/mile, per_load = $/load, weekly = $/week)
     status: 'active', // 'active' or 'paused'
     pauseReason: null, // 'sick', 'home_time', 'vacation', 'repairs', 'other'
     pauseNote: null, // custom note for 'other'
@@ -3599,9 +3735,19 @@ function resolveAllDriverWeeks() {
 function cleanupWeeksForAllDrivers(){ resolveAllDriverWeeks(); }
 function getMostRecentOpenWeekId(d) {
   if (!d || !d.weeks) return null;
+  const thisWeekId = isoDate(startOfWeekMonday(new Date()));
+  
+  // Prefer this week if it exists and is open
+  if (d.weeks[thisWeekId] && !d.weeks[thisWeekId].closed) return thisWeekId;
+  
+  // Otherwise: most recent open week at or before this week (no future)
   const ids = Object.keys(d.weeks).sort().reverse();
-  const open = ids.find(id => !d.weeks[id].closed);
-  return open || ids[0] || null;
+  const openCurrent = ids.find(id => !d.weeks[id].closed && id <= thisWeekId);
+  if (openCurrent) return openCurrent;
+  
+  // Fallback: any open week (could be future if nothing else)
+  const anyOpen = ids.find(id => !d.weeks[id].closed);
+  return anyOpen || ids[0] || null;
 }
 
 function renderWeekSelect(){
@@ -4035,48 +4181,78 @@ function saveDriverVariableCosts(){
   dbg('✅ Saved variable costs for', d.name, ':', d.fixedCosts);
 }
 
+function toggleCompanyPayFields() {
+  const type = document.getElementById('d_driver_type').value;
+  document.getElementById('ownerOpFields').style.display = type === 'owner_op' ? '' : 'none';
+  document.getElementById('companyDriverFields').style.display = type === 'company' ? '' : 'none';
+  updatePayRateLabel();
+}
+
+function updatePayRateLabel() {
+  const payType = document.getElementById('d_company_pay_type').value;
+  const label = document.getElementById('payRateLabel');
+  const hint = document.getElementById('companyPayHint');
+  const input = document.getElementById('d_company_pay_rate');
+  if (payType === 'cpm') {
+    label.innerText = 'Rate ($/mile)';
+    input.placeholder = 'e.g. 0.65';
+    input.step = '0.01';
+    hint.innerText = 'CPM: Enter dollars per mile (e.g. 0.65 = 65¢/mi). Net = company profit after driver pay + costs.';
+  } else if (payType === 'per_load') {
+    label.innerText = 'Rate ($/load)';
+    input.placeholder = 'e.g. 500';
+    input.step = '1';
+    hint.innerText = 'Flat rate per load. Driver gets this amount per dispatched load. Net = company profit.';
+  } else {
+    label.innerText = 'Weekly salary ($)';
+    input.placeholder = 'e.g. 1800';
+    input.step = '1';
+    hint.innerText = 'Weekly salary divided evenly across loads. Net = company profit after salary + costs.';
+  }
+}
+
 function bindDriverOverridesToInputs(){
   const d = getDriver();
   const s = getSpecs();
   
   dbg('📋 Binding driver overrides for:', d.name);
-  dbg('  - splitOverride:', d.splitOverride);
-  dbg('  - targetNetOverride:', d.targetNetOverride);
   
+  // Driver type — skip if user has changed it
+  const typeEl = document.getElementById('d_driver_type');
+  if (typeEl && typeEl.dataset.dirty !== 'true') {
+    typeEl.value = d.driverType || 'owner_op';
+    toggleCompanyPayFields();
+  }
+  
+  // Company pay fields — skip if user has changed them
+  const payTypeEl = document.getElementById('d_company_pay_type');
+  if (payTypeEl && payTypeEl.dataset.dirty !== 'true') {
+    payTypeEl.value = d.companyPayType || 'cpm';
+    updatePayRateLabel();
+  }
+  const payRateEl = document.getElementById('d_company_pay_rate');
+  if (payRateEl && payRateEl.dataset.dirty !== 'true') {
+    payRateEl.value = d.companyPayRate || '';
+  }
+
   const splitEl = document.getElementById("d_split");
   const splitVal = Number(d.splitOverride);
-  // Don't overwrite if currently editing OR if field has been modified
   if (splitEl && splitEl.dataset.editing !== 'true' && splitEl.dataset.dirty !== 'true') {
     splitEl.value = (Number.isFinite(splitVal) ? splitVal : s.split);
-    dbg('  - Split input set to:', splitEl.value);
-  } else if (splitEl) {
-    dbg('  - Split input being edited/modified, not overwriting');
-  } else {
-    console.error('❌ Split input element not found!');
   }
   
   const targetEl = document.getElementById("d_target_net");
   const targetVal = Number(d.targetNetOverride);
-  // Don't overwrite if currently editing OR if field has been modified
   if (targetEl && targetEl.dataset.editing !== 'true' && targetEl.dataset.dirty !== 'true') {
     targetEl.value = (Number.isFinite(targetVal) ? targetVal : "");
     targetEl.placeholder = `Default: ${s.targetNet}`;
-    dbg('  - Target input set to:', targetEl.value || '(empty, using default)');
-  } else if (targetEl) {
-    dbg('  - Target input being edited/modified, not overwriting');
-  } else {
-    console.error('❌ Target net input element not found!');
   }
   
   const milesPerDayEl = document.getElementById("d_miles_per_day");
   const milesPerDayVal = Number(d.milesPerDayOverride);
-  // Don't overwrite if currently editing OR if field has been modified
   if (milesPerDayEl && milesPerDayEl.dataset.editing !== 'true' && milesPerDayEl.dataset.dirty !== 'true') {
     milesPerDayEl.value = (Number.isFinite(milesPerDayVal) ? milesPerDayVal : "");
     milesPerDayEl.placeholder = "600";
-    dbg('  - Miles/day input set to:', milesPerDayEl.value || '(empty, using default 600)');
-  } else if (milesPerDayEl) {
-    dbg('  - Miles/day input being edited/modified, not overwriting');
   }
   
   // Bind truck/trailer info
@@ -4151,42 +4327,69 @@ function saveTruckTrailerInfo(){
 function saveDriverOverrides(){
   const d = getDriver();
   
-  dbg('💾 Saving driver overrides for:', d.name);
+  // Driver type
+  const driverType = document.getElementById('d_driver_type').value;
+  d.driverType = driverType || 'owner_op';
   
-  const splitEl = document.getElementById("d_split");
-  const targetEl = document.getElementById("d_target_net");
-  const milesPerDayEl = document.getElementById("d_miles_per_day");
-  
-  const splitVal = parseFloat(splitEl.value);
-  dbg('  - Split input value:', splitVal);
-  
-  if (!(Number.isFinite(splitVal) && splitVal > 0 && splitVal < 1.00001)) {
-    console.error('❌ Invalid split value:', splitVal);
-    return alert("Enter a valid split like 0.80 or 0.88.");
+  if (driverType === 'company') {
+    // Company driver fields
+    d.companyPayType = document.getElementById('d_company_pay_type').value || 'cpm';
+    const payRate = parseFloat(document.getElementById('d_company_pay_rate').value);
+    if (!Number.isFinite(payRate) || payRate <= 0) {
+      return alert("Enter a valid pay rate for the company driver.");
+    }
+    d.companyPayRate = payRate;
+  } else {
+    // Owner-op: validate split
+    const splitEl = document.getElementById("d_split");
+    const splitVal = parseFloat(splitEl.value);
+    if (!(Number.isFinite(splitVal) && splitVal > 0 && splitVal < 1.00001)) {
+      return alert("Enter a valid split like 0.80 or 0.88.");
+    }
+    d.splitOverride = splitVal;
   }
   
+  const targetEl = document.getElementById("d_target_net");
+  const milesPerDayEl = document.getElementById("d_miles_per_day");
   const targetVal = parseFloat(targetEl.value);
-  dbg('  - Target input value:', targetVal);
-  
   const milesPerDayVal = parseFloat(milesPerDayEl.value);
-  dbg('  - Miles/day input value:', milesPerDayVal);
   
-  d.splitOverride = splitVal;
   d.targetNetOverride = (Number.isFinite(targetVal) && targetVal >= 0) ? targetVal : null;
   d.milesPerDayOverride = (Number.isFinite(milesPerDayVal) && milesPerDayVal >= 400) ? milesPerDayVal : null;
   
-  dbg('✅ Saved overrides:');
-  dbg('  - splitOverride:', d.splitOverride);
-  dbg('  - targetNetOverride:', d.targetNetOverride);
-  dbg('  - milesPerDayOverride:', d.milesPerDayOverride);
-  
-  // Clear dirty flags after successful save
-  splitEl.dataset.dirty = 'false';
+  // Clear dirty flags
+  document.getElementById("d_driver_type").dataset.dirty = 'false';
+  document.getElementById("d_company_pay_type").dataset.dirty = 'false';
+  document.getElementById("d_split").dataset.dirty = 'false';
   targetEl.dataset.dirty = 'false';
   milesPerDayEl.dataset.dirty = 'false';
+  document.getElementById("d_company_pay_rate").dataset.dirty = 'false';
+  
+  // Recalculate all loads in current week with new settings
+  const s = getSpecs();
+  const wk = getCurrentWeek();
+  if (wk && wk.loads) {
+    wk.loads.forEach(l => {
+      const miles = toNum(l.miles);
+      const tolls = toNum(l.details?.tolls);
+      const detention = toNum(l.details?.detention);
+      const accessorials = toNum(l.details?.accessorials);
+      const calc = calcLoadNet(d, s, { gross: toNum(l.gross), miles, tolls, detention, accessorials });
+      l.net = calc.net;
+      if (l.details) {
+        l.details.fuel = calc.fuel;
+        l.details.maint = calc.maint;
+        l.details.fixed = calc.fixed;
+        l.details.cut = calc.cut;
+        l.details.split = calc.isCompany ? null : calc.split;
+        l.details.driverPay = calc.driverPay || 0;
+        l.details.driverType = d.driverType || 'owner_op';
+      }
+    });
+  }
   
   saveState();
-  alert("Driver overrides saved.");
+  alert("Driver overrides saved — all loads this week recalculated.");
   updateUI();
 }
 
@@ -4482,22 +4685,55 @@ function undoCloseWeek(){
 /************************* 
  * CALCS + DATE RANGE TOTALS 
  *************************/
-function computeWeekTotals(week){
+function computeWeekTotals(week, driver){
   const loads = week.loads || [];
   // Exclude loads that deliver next week from this week's revenue
-  const currentWeekLoads = loads.filter(l => !l.deliversNextWeek);
+  let currentWeekLoads = loads.filter(l => !l.deliversNextWeek);
+  
+  // Auto-include cross-week loads from the PREVIOUS week that deliver THIS week.
+  // These are loads sitting in the prior week with deliversNextWeek=true
+  // that haven't been formally carried over by closeAllWeeks yet.
+  if (driver && week.start) {
+    const thisStart = new Date(week.start + 'T00:00:00');
+    const prevMonday = new Date(thisStart);
+    prevMonday.setDate(prevMonday.getDate() - 7);
+    const prevId = isoDate(prevMonday);
+    const prevWeek = driver.weeks?.[prevId];
+    if (prevWeek) {
+      const crossWeekLoads = (prevWeek.loads || []).filter(l => l.deliversNextWeek);
+      // Only include if not already carried over (avoid double-counting)
+      crossWeekLoads.forEach(cl => {
+        const alreadyCarried = currentWeekLoads.some(l => 
+          l.fromPreviousWeek && l.origin === cl.origin && l.dest === cl.dest 
+          && toNum(l.gross) === toNum(cl.gross) && toNum(l.miles) === toNum(cl.miles)
+        );
+        if (!alreadyCarried) {
+          currentWeekLoads.push(cl);
+        }
+      });
+    }
+  }
   
   const gross = currentWeekLoads.reduce((s,l) => s + (toNum(l.gross)), 0);
   const miles = currentWeekLoads.reduce((s,l) => s + (toNum(l.miles)), 0);
-  const net = currentWeekLoads.reduce((s,l) => s + (toNum(l.net)), 0);
+  let net = currentWeekLoads.reduce((s,l) => s + (toNum(l.net)), 0);
   const fuel = currentWeekLoads.reduce((s,l)=> s + (toNum(l.details?.fuel)), 0);
   const maint = currentWeekLoads.reduce((s,l)=> s + (toNum(l.details?.maint)), 0);
   const tolls = currentWeekLoads.reduce((s,l)=> s + (toNum(l.details?.tolls)), 0);
   const fixed = currentWeekLoads.reduce((s,l)=> s + (toNum(l.details?.fixed)), 0);
   const detention = currentWeekLoads.reduce((s,l)=> s + (toNum(l.details?.detention)), 0);
   const accessorials = currentWeekLoads.reduce((s,l)=> s + (toNum(l.details?.accessorials)), 0);
+  let driverPay = currentWeekLoads.reduce((s,l)=> s + (toNum(l.details?.driverPay)), 0);
+  
+  // Weekly salary company drivers: flat salary is a week-level expense
+  if (driver && driver.driverType === 'company' && (driver.companyPayType || 'cpm') === 'weekly' && currentWeekLoads.length > 0) {
+    const weeklySalary = toNum(driver.companyPayRate);
+    driverPay = weeklySalary;
+    net = net - weeklySalary;
+  }
+  
   const rpm = miles>0 ? gross/miles : 0;
-  return { gross,miles,net,fuel,maint,tolls,fixed,detention,accessorials,rpm };
+  return { gross,miles,net,fuel,maint,tolls,fixed,detention,accessorials,driverPay,rpm };
 }
 
 function loadDateFallback(load, week){
@@ -4588,16 +4824,15 @@ function analyzeLoad(){
   // Show analyzer summary bar
   document.getElementById('analyzerSummaryBar').style.display = 'block';
   
-  // Calculate this load's metrics - USE DRIVER-SPECIFIC COSTS
-  const driverFixedWeekly = getDriverFixedWeekly(driver);
-  const fixedPerLoad = driverFixedWeekly / s.loadsPerWeek;
-  
-  const fuel = (miles / s.mpg) * s.fuel;
-  const maint = miles * s.maint;
-  const fixed = fixedPerLoad;
-  const net = (gross * split) - fuel - maint - fixed - tolls;
+  // Calculate this load's metrics using central calc
+  const calc = calcLoadNet(driver, s, { gross, miles, tolls, detention: 0, accessorials: 0 });
+  const fuel = calc.fuel;
+  const maint = calc.maint;
+  const fixed = calc.fixed;
+  const net = calc.net;
   const rpm = miles > 0 ? gross / miles : 0;
-  const beGross = miles > 0 ? ((fuel + maint + fixed + tolls) / split) : 0;
+  const totalCosts = fuel + maint + fixed + tolls + (calc.driverPay || 0);
+  const beGross = miles > 0 ? totalCosts : 0;
   const beRpm = miles > 0 ? (beGross / miles) : 0;
   
   // Multi-day calculation - use driver's setting or default to 600
@@ -4610,11 +4845,17 @@ function analyzeLoad(){
   
   // Current week metrics
   const wk = getCurrentWeek();
-  const wkTotals = computeWeekTotals(wk);
-  const currentNet = wkTotals.net;
+  const wkTotals = computeWeekTotals(wk, driver);
+  let currentNet = wkTotals.net;
   const currentAvgRpm = wkTotals.rpm;
+  // For weekly salary company drivers, adding a load doesn't add more salary cost
+  // so marginal company contribution = gross - variable costs only
+  let marginalNet = net;
+  if (driver.driverType === 'company' && driver.companyPayType === 'weekly') {
+    marginalNet = gross - calc.fuel - calc.maint - calc.fixed - tolls;
+  }
   const gapBefore = targetNet - currentNet;
-  const newNet = currentNet + net;
+  const newNet = currentNet + marginalNet;
   const newGap = targetNet - newNet;
   const gapClosed = gapBefore - newGap;
   const progressBefore = currentNet > 0 ? (currentNet / targetNet * 100) : 0;
@@ -4725,7 +4966,7 @@ function analyzeLoad(){
   // ─── WHAT-IF WEEK PROJECTION ───
   const projGross = wkTotals.gross + gross;
   const projMiles = wkTotals.miles + miles;
-  const projNet = currentNet + net;
+  const projNet = currentNet + marginalNet;
   const projRpm = projMiles > 0 ? projGross / projMiles : 0;
   const projLoads = wk.loads.length + 1;
   const projDhMiles = (wkTotals.miles - wk.loads.reduce((s,l) => s + (l.loadedMiles || l.miles || 0), 0)) + dhMiles;
@@ -4801,7 +5042,7 @@ function analyzeLoad(){
             <td style="padding:5px 6px; color:var(--text-secondary);">Net</td>
             <td style="padding:5px 6px; text-align:right; font-weight:600;">${money(currentNet)}</td>
             <td style="padding:5px 6px; text-align:right; font-weight:700; color:${projNet >= targetNet ? 'var(--success)' : 'var(--text-primary)'};">${money(projNet)}</td>
-            <td style="padding:5px 6px; text-align:right; color:${net >= 0 ? 'var(--success)' : 'var(--danger)'};">${net >= 0 ? '+' : ''}${money(net)}</td>
+            <td style="padding:5px 6px; text-align:right; color:${marginalNet >= 0 ? 'var(--success)' : 'var(--danger)'};">${marginalNet >= 0 ? '+' : ''}${money(marginalNet)}</td>
           </tr>
           <tr style="border-top:1px solid var(--border-subtle);">
             <td style="padding:5px 6px; color:var(--text-secondary);">RPM</td>
@@ -4882,7 +5123,7 @@ function analyzeLoad(){
         <div style="font-size: 14px; font-weight: 700; padding: 10px; background: var(--bg-elevated); border-radius: 8px; text-align: center;">
           ${net > 0 
             ? 'Closes gap by <span style="color: var(--success);">' + money(gapClosed) + '</span>' + (newGap <= 0 ? ' ✅ Target met!' : '')
-            : '<span style="color: var(--danger);">Widens gap by ' + money(Math.abs(net)) + '</span>'
+            : '<span style="color: var(--danger);">Widens gap by ' + money(Math.abs(marginalNet)) + '</span>'
           }
         </div>
       </div>
@@ -4990,6 +5231,7 @@ function preview(){
   const s = getSpecs();
   const driver = getDriver();
   const split = getDriverSplit(driver);
+  const isCompany = driver.driverType === 'company';
   
   const gross = parseFloat(document.getElementById('pay_gross').value) || 0;
   const miles = (parseFloat(document.getElementById('mi_load').value)||0) 
@@ -4998,26 +5240,43 @@ function preview(){
   const detention = parseFloat(document.getElementById('cost_detention').value) || 0;
   const accessorials = parseFloat(document.getElementById('cost_accessorials').value) || 0;
   
-  // USE DRIVER-SPECIFIC COSTS
-  const driverFixedWeekly = getDriverFixedWeekly(driver);
-  const fixedPerLoad = driverFixedWeekly / s.loadsPerWeek;
-  
-  const fuel = (miles / s.mpg) * s.fuel;
-  const maint = miles * s.maint;
-  const fixed = fixedPerLoad;
-  const net = ((gross + detention + accessorials) * split) - fuel - maint - fixed - tolls;
+  // Central net calculation
+  const calc = calcLoadNet(driver, s, { gross, miles, tolls, detention, accessorials });
+  const net = calc.net;
+  const fuel = calc.fuel;
+  const maint = calc.maint;
+  const fixed = calc.fixed;
   
   const el = document.getElementById('preview_net');
   el.innerText = money(net);
   el.className = 'preview-value ' + (net >= 0 ? 'positive' : 'negative');
   
   const grossRpm = miles>0 ? gross/miles : 0;
-  const beGross = miles>0 ? ((fuel + maint + fixed + tolls) / split) : 0;
+  // Break-even: for company driver, include driver pay in costs
+  const totalCosts = fuel + maint + fixed + tolls + (calc.driverPay || 0);
+  const beGross = miles>0 ? totalCosts : 0;
   const beRpm = miles>0 ? (beGross/miles) : 0;
   
-  document.getElementById('preview_hint').innerText = miles>0 
-    ? `Split: ${(split*100).toFixed(0)}% • Gross RPM: ${money(grossRpm)} • Break-even RPM: ${money(beRpm)}`
-    : "";
+  if (isCompany) {
+    let payLabel, payInfo;
+    if (driver.companyPayType === 'cpm') {
+      payLabel = `${toNum(driver.companyPayRate).toFixed(2)}/mi`;
+      payInfo = `Driver Pay: ${money(calc.driverPay)}`;
+    } else if (driver.companyPayType === 'per_load') {
+      payLabel = `$${toNum(driver.companyPayRate)}/load`;
+      payInfo = `Driver Pay: ${money(calc.driverPay)}`;
+    } else {
+      payLabel = `$${toNum(driver.companyPayRate)}/wk salary`;
+      payInfo = `Salary: ${money(toNum(driver.companyPayRate))}/wk (flat)`;
+    }
+    document.getElementById('preview_hint').innerText = miles>0 
+      ? `Co. Driver (${payLabel}) • ${payInfo} • Gross RPM: ${money(grossRpm)} • BE RPM: ${money(beRpm)}`
+      : "";
+  } else {
+    document.getElementById('preview_hint').innerText = miles>0 
+      ? `Split: ${(split*100).toFixed(0)}% • Gross RPM: ${money(grossRpm)} • Break-even RPM: ${money(beRpm)}`
+      : "";
+  }
   
   // Deadhead cost calculator
   const dhEl = document.getElementById('dh_cost_display');
@@ -5051,7 +5310,7 @@ function updateWarnBanner(){
   const driver = getDriver();
   const targetNet = getDriverTargetNet(driver);
   const wk = getCurrentWeek();
-  const t = computeWeekTotals(wk);
+  const t = computeWeekTotals(wk, driver);
   const warn = document.getElementById("warn");
   
   if (wk.loads.length > 0 && t.net < targetNet) {
@@ -5217,15 +5476,13 @@ function addLoad(){
   const driver = getDriver();
   const split = getDriverSplit(driver);
   
-  // USE DRIVER-SPECIFIC COSTS
-  const driverFixedWeekly = getDriverFixedWeekly(driver);
-  const fixedPerLoad = driverFixedWeekly / s.loadsPerWeek;
-  
-  const fuel = (miles / s.mpg) * s.fuel;
-  const maint = miles * s.maint;
-  const fixed = fixedPerLoad;
-  const cut = (gross + detention + accessorials) * split;
-  const net = cut - fuel - maint - fixed - tolls;
+  // Central net calculation (handles owner-op vs company driver)
+  const calc = calcLoadNet(driver, s, { gross, miles, tolls, detention, accessorials });
+  const fuel = calc.fuel;
+  const maint = calc.maint;
+  const fixed = calc.fixed;
+  const cut = calc.cut;
+  const net = calc.net;
   
   let routeGeo = null;
   try {
@@ -5255,7 +5512,9 @@ function addLoad(){
       detention,
       accessorials,
       cut,
-      split,
+      split: calc.isCompany ? null : split,
+      driverPay: calc.driverPay || 0,
+      driverType: driver.driverType || 'owner_op',
       mpg: s.mpg,
       fuelPrice: s.fuel,
       maintRate: s.maint,
@@ -5350,10 +5609,17 @@ function viewDetail(i){
       <span>Split Used:</span>
       <span>${(splitUsed*100).toFixed(0)}%</span>
     </div>
+    ${(l.details?.driverType === 'company') ? `
+    <div class="breakdown-row">
+      <span>Driver Pay:</span>
+      <span class="${toNum(l.details?.driverPay) > 0 ? 'negative' : ''}" style="font-size:12px;">
+        ${toNum(l.details?.driverPay) > 0 ? '-' + money(l.details?.driverPay) : '<span style="color:var(--text-muted);">salary at week level</span>'}
+      </span>
+    </div>` : `
     <div class="breakdown-row">
       <span>Your Cut:</span>
       <span class="positive">${money(l.details?.cut || (l.gross*splitUsed))}</span>
-    </div>
+    </div>`}
     <div class="breakdown-row">
       <span>Fuel Cost:</span>
       <span class="negative">-${money(l.details?.fuel || 0)}</span>
@@ -5371,7 +5637,7 @@ function viewDetail(i){
       <span class="negative">-${money(l.details?.tolls || 0)}</span>
     </div>
     <div class="breakdown-row total">
-      <span>NET PROFIT:</span>
+      <span>${(l.details?.driverType === 'company') ? 'CO. NET:' : 'NET PROFIT:'}</span>
       <span class="${(l.net||0)>=0?'positive':'negative'}">${money(l.net)}</span>
     </div>
     <div class="hint-text" style="margin-top: 12px;">
@@ -5477,29 +5743,23 @@ function saveLoadEdit(i){
       l.details.accessorials = newAccessorials;
     }
     
-    // Recalculate using stored split
+    // Recalculate using central calc (handles both driver types)
     const driver = getDriver();
-    const split = l.details?.split || getDriverSplit(driver);
     const s = getSpecs();
     const miles = l.miles || 0;
     const tolls = l.details?.tolls || 0;
     
-    // USE DRIVER-SPECIFIC COSTS
-    const driverFixedWeekly = getDriverFixedWeekly(driver);
-    const fixedPerLoad = driverFixedWeekly / s.loadsPerWeek;
-    
-    const fuel = (miles / s.mpg) * s.fuel;
-    const maint = miles * s.maint;
-    const fixed = fixedPerLoad;
-    const cut = (newGross + newDetention + newAccessorials) * split;
-    l.net = cut - fuel - maint - fixed - tolls;
+    const calc = calcLoadNet(driver, s, { gross: newGross, miles, tolls, detention: newDetention, accessorials: newAccessorials });
+    l.net = calc.net;
     
     // Update details
     if (l.details) {
-      l.details.cut = cut;
-      l.details.fuel = fuel;
-      l.details.maint = maint;
-      l.details.fixed = fixed;
+      l.details.cut = calc.cut;
+      l.details.fuel = calc.fuel;
+      l.details.maint = calc.maint;
+      l.details.fixed = calc.fixed;
+      l.details.driverPay = calc.driverPay || 0;
+      l.details.driverType = driver.driverType || 'owner_op';
     }
   }
   
@@ -5692,7 +5952,7 @@ function renderCalendar(){
       
       // Week summary
       if (loads.length > 0) {
-        const totals = computeWeekTotals(week);
+        const totals = computeWeekTotals(week, d);
         html += `
           <div style="margin-top: 12px; padding: 12px; background: rgba(0,180,255,0.05); border-radius: 8px; font-size: 13px;">
             <strong>${loads.length} load${loads.length > 1 ? 's' : ''}</strong> • 
@@ -5890,7 +6150,7 @@ function renderDispatchView(){
     // Always show this week for fleet overview
     const fleetWkId = d.weeks?.[thisWeekId] ? thisWeekId : d.currentWeekId;
     const wk = d.weeks[fleetWkId] || { loads: [] };
-    const t = computeWeekTotals(wk);
+    const t = computeWeekTotals(wk, d);
     
     fleetGross += t.gross;
     fleetNet += t.net;
@@ -5907,7 +6167,7 @@ function renderDispatchView(){
     driverCards.push(`
       <div class="driver-card">
         <div class="driver-card-header">
-          <div class="driver-name">${escapeHtml(d.name)}</div>
+          <div class="driver-name">${escapeHtml(d.name)}${d.driverType === 'company' ? ' <span style="font-size:10px;padding:2px 5px;border-radius:4px;background:rgba(0,180,255,0.15);color:var(--accent-cyan);font-weight:700;">CO</span>' : ''}</div>
           <div class="driver-status active">Active</div>
         </div>
         
@@ -5925,13 +6185,18 @@ function renderDispatchView(){
             <div class="driver-metric-value positive">${money(t.gross)}</div>
           </div>
           <div class="driver-metric">
-            <div class="driver-metric-label">Net</div>
+            <div class="driver-metric-label">${d.driverType === 'company' ? 'Co. Net' : 'Net'}</div>
             <div class="driver-metric-value ${t.net>=0?'positive':'negative'}">${money(t.net)}</div>
           </div>
+          ${d.driverType === 'company' ? `
+          <div class="driver-metric">
+            <div class="driver-metric-label">Drv Pay</div>
+            <div class="driver-metric-value" style="color:var(--warning);">${money(t.driverPay)}</div>
+          </div>` : `
           <div class="driver-metric">
             <div class="driver-metric-label">RPM</div>
             <div class="driver-metric-value">${money(t.rpm)}</div>
-          </div>
+          </div>`}
         </div>
         
         <div class="current-route">
@@ -5972,7 +6237,7 @@ async function copyDriverSummary(driverId){
   
   const split = getDriverSplit(d);
   const wk = d.weeks[d.currentWeekId] || { loads: [] };
-  const t = computeWeekTotals(wk);
+  const t = computeWeekTotals(wk, d);
   
   const summary = `DRIVER: ${d.name}
 Week: ${wk.label}
@@ -6347,7 +6612,7 @@ async function copySummary(){
   const d = getDriver();
   const wk = getCurrentWeek();
   const targetNet = getDriverTargetNet(d);
-  const t = computeWeekTotals(wk);
+  const t = computeWeekTotals(wk, d);
   const split = getDriverSplit(d);
   
   const summary = `DISPATCH COMMAND CENTER — WEEK SUMMARY
@@ -6380,7 +6645,7 @@ function printWeeklySummary(){
   const d = getDriver();
   const wk = getCurrentWeek();
   const targetNet = getDriverTargetNet(d);
-  const t = computeWeekTotals(wk);
+  const t = computeWeekTotals(wk, d);
   const split = getDriverSplit(d);
   const s = getSpecs();
   
@@ -6417,8 +6682,12 @@ function printWeeklySummary(){
       <span class="value">${escapeHtml(wk.label)}</span>
     </div>
     <div class="info-row">
-      <span class="label">Split:</span>
-      <span class="value">${(split*100).toFixed(0)}%</span>
+      <span class="label">${d.driverType === 'company' ? 'Pay Type:' : 'Split:'}</span>
+      <span class="value">${d.driverType === 'company' 
+        ? (d.companyPayType === 'cpm' ? '$' + toNum(d.companyPayRate).toFixed(2) + '/mile' 
+           : d.companyPayType === 'per_load' ? '$' + toNum(d.companyPayRate) + '/load' 
+           : '$' + toNum(d.companyPayRate) + '/week')
+        : (split*100).toFixed(0) + '%'}</span>
     </div>
     <div class="info-row">
       <span class="label">Target Net:</span>
@@ -6532,8 +6801,26 @@ function generateSettlement(){
   const s = getSpecs();
   const split = getDriverSplit(d);
   const targetNet = getDriverTargetNet(d);
-  const t = computeWeekTotals(wk);
-  const loads = (wk.loads || []).filter(l => !l.deliversNextWeek);
+  const t = computeWeekTotals(wk, d);
+  let loads = (wk.loads || []).filter(l => !l.deliversNextWeek);
+  
+  // Include incoming cross-week loads from previous week
+  if (wk.start) {
+    const _thisStart = new Date(wk.start + 'T00:00:00');
+    const _prevMon = new Date(_thisStart);
+    _prevMon.setDate(_prevMon.getDate() - 7);
+    const _prevId = isoDate(_prevMon);
+    const _prevWeek = d.weeks?.[_prevId];
+    if (_prevWeek) {
+      ((_prevWeek.loads || []).filter(l => l.deliversNextWeek)).forEach(cl => {
+        const alreadyCarried = loads.some(l =>
+          l.fromPreviousWeek && l.origin === cl.origin && l.dest === cl.dest
+          && toNum(l.gross) === toNum(cl.gross) && toNum(l.miles) === toNum(cl.miles)
+        );
+        if (!alreadyCarried) loads.push({ ...cl, fromPreviousWeek: true });
+      });
+    }
+  }
   
   if (loads.length === 0) return alert("No loads to settle for this week.");
   
@@ -6548,17 +6835,28 @@ function generateSettlement(){
   const totalFixedCosts = truckPmt + trailerPmt + insurance + advances + foodPersonal + repairs;
   
   // Calculate totals
+  const isCompany = d.driverType === 'company';
   const totalGrossLineHaul = loads.reduce((s,l) => s + toNum(l.gross), 0);
   const totalDetention = loads.reduce((s,l) => s + toNum(l.details?.detention), 0);
   const totalAccessorials = loads.reduce((s,l) => s + toNum(l.details?.accessorials), 0);
   const totalAllInGross = totalGrossLineHaul + totalDetention + totalAccessorials;
-  const driverPay = totalAllInGross * split;
-  const companyCut = totalAllInGross * (1 - split);
+  
+  let driverPay, companyCut;
+  if (isCompany) {
+    // Company driver: t.driverPay has correct value (flat salary or per-load sum)
+    driverPay = t.driverPay;
+    companyCut = totalAllInGross - driverPay;
+  } else {
+    driverPay = totalAllInGross * split;
+    companyCut = totalAllInGross * (1 - split);
+  }
+  
   const totalFuel = loads.reduce((s,l) => s + toNum(l.details?.fuel), 0);
   const totalMaint = loads.reduce((s,l) => s + toNum(l.details?.maint), 0);
   const totalTolls = loads.reduce((s,l) => s + toNum(l.details?.tolls), 0);
   const totalDeductions = totalFixedCosts + totalFuel + totalMaint + totalTolls;
-  const netToDriver = driverPay - totalDeductions;
+  const netToDriver = isCompany ? driverPay : (driverPay - totalDeductions);
+  const netToCompany = isCompany ? (totalAllInGross - driverPay - totalDeductions) : companyCut;
   
   const settDate = new Date().toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' });
   
@@ -6655,8 +6953,12 @@ function generateSettlement(){
       <span class="info-value">${escapeHtml(d.trailerNumber || '—')}</span>
     </div>
     <div class="info-item">
-      <span class="info-label">Driver Split</span>
-      <span class="info-value">${(split * 100).toFixed(0)}%</span>
+      <span class="info-label">${isCompany ? 'Pay Structure' : 'Driver Split'}</span>
+      <span class="info-value">${isCompany 
+        ? (d.companyPayType === 'cpm' ? '$' + toNum(d.companyPayRate).toFixed(2) + '/mile' 
+           : d.companyPayType === 'per_load' ? '$' + toNum(d.companyPayRate) + '/load' 
+           : '$' + toNum(d.companyPayRate) + '/week')
+        : (split * 100).toFixed(0) + '%'}</span>
     </div>
     <div class="info-item">
       <span class="info-label">Total Loads</span>
@@ -6677,7 +6979,7 @@ function generateSettlement(){
         <th class="text-right">Detention</th>
         <th class="text-right">Accessorials</th>
         <th class="text-right">Total Gross</th>
-        <th class="text-right">Driver Pay<br><span class="muted">(${(split*100).toFixed(0)}%)</span></th>
+        <th class="text-right">${isCompany ? 'Driver Pay<br><span class="muted">(Company)</span>' : 'Driver Pay<br><span class="muted">(' + (split*100).toFixed(0) + '%)</span>'}</th>
       </tr>
     </thead>
     <tbody>
@@ -6685,7 +6987,9 @@ function generateSettlement(){
         const det = toNum(l.details?.detention);
         const acc = toNum(l.details?.accessorials);
         const loadTotal = toNum(l.gross) + det + acc;
-        const loadDriverPay = loadTotal * (Number(l.details?.split) || split);
+        const loadDriverPay = isCompany 
+          ? toNum(l.details?.driverPay) 
+          : loadTotal * (Number(l.details?.split) || split);
         const dayStr = (l.pickupDay && l.deliveryDay) ? l.pickupDay.substring(0,3) + '–' + l.deliveryDay.substring(0,3) : '—';
         return '<tr>'
           + '<td class="text-center muted">' + (i+1) + '</td>'
@@ -6773,6 +7077,24 @@ function generateSettlement(){
       <span class="summary-label">Total Gross Revenue (All Loads)</span>
       <span class="summary-value">${money(totalAllInGross)}</span>
     </div>
+    ${isCompany ? `
+    <div class="summary-row">
+      <span class="summary-label">Driver Pay (${d.companyPayType === 'cpm' ? '$' + toNum(d.companyPayRate).toFixed(2) + '/mi' : d.companyPayType === 'per_load' ? '$' + toNum(d.companyPayRate) + '/load' : '$' + toNum(d.companyPayRate) + '/wk'})</span>
+      <span class="summary-value negative">-${money(driverPay)}</span>
+    </div>
+    <div class="summary-row">
+      <span class="summary-label">Operating Costs (Fuel, Maint, Fixed, Tolls)</span>
+      <span class="summary-value negative">-${money(totalDeductions)}</span>
+    </div>
+    <div class="summary-row total">
+      <span class="summary-label" style="font-size:16px;">COMPANY NET PROFIT</span>
+      <span class="summary-value ${netToCompany >= 0 ? '' : 'negative'}">${money(netToCompany)}</span>
+    </div>
+    <div class="summary-row" style="border-top:1px solid #ccc; padding-top:8px; margin-top:4px;">
+      <span class="summary-label">Driver's Check</span>
+      <span class="summary-value positive" style="font-size:16px;">${money(driverPay)}</span>
+    </div>
+    ` : `
     <div class="summary-row">
       <span class="summary-label">Company Cut (${((1-split)*100).toFixed(0)}%)</span>
       <span class="summary-value negative">-${money(companyCut)}</span>
@@ -6789,6 +7111,7 @@ function generateSettlement(){
       <span class="summary-label" style="font-size:16px;">NET PAY TO DRIVER</span>
       <span class="summary-value ${netToDriver >= 0 ? '' : 'negative'}">${money(netToDriver)}</span>
     </div>
+    `}
   </div>
 
   <div class="footer">
@@ -6935,7 +7258,7 @@ function printDriverYTD(){
     <tbody>
       ${Object.keys(d.weeks).sort().reverse().map(wkId => {
         const w = d.weeks[wkId];
-        const t = computeWeekTotals(w);
+        const t = computeWeekTotals(w, d);
         const rpm = t.miles>0 ? (t.gross/t.miles) : 0;
         return `
           <tr>
@@ -6975,6 +7298,12 @@ function pct(v){
 
 function setCurrentDriverFromFleet(driverId){
   state.currentDriverId = driverId;
+  const d = getDriver();
+  if (d) d.currentWeekId = getMostRecentOpenWeekId(d) || d.currentWeekId;
+  ['d_driver_type','d_company_pay_type','d_company_pay_rate','d_split','d_target_net','d_miles_per_day','d_truck_number','d_trailer_number'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.dataset.dirty = 'false'; el.dataset.editing = 'false'; }
+  });
   refreshAll();
   
   // Switch to dashboard tab
@@ -6995,7 +7324,7 @@ function showDriverDetailModal(driverId){
   
   const split = getDriverSplit(d);
   const wk = d.weeks[d.currentWeekId] || { loads: [] };
-  const t = computeWeekTotals(wk);
+  const t = computeWeekTotals(wk, d);
   const s = getSpecs();
   const targetNet = getDriverTargetNet(d);
   
@@ -7254,7 +7583,7 @@ function updateFleetTables(){
     const split = getDriverSplit(d);
     
     const wk = d.weeks[d.currentWeekId] || { loads: [] };
-    const cw = computeWeekTotals(wk);
+    const cw = computeWeekTotals(wk, d);
     const mtd = totalsForDriverInRange(d, monthStart, now);
     const ytd = totalsForDriverInRange(d, yearStart, now);
     
@@ -7275,17 +7604,18 @@ function updateFleetTables(){
       </tr>
     `);
     
-    const cwCut = cw.gross * (1 - split);
+    const isCoDriver = d.driverType === 'company';
+    const cwCut = isCoDriver ? cw.net : cw.gross * (1 - split);
     cutRows.push(`
       <tr>
-        <td style="font-weight:800;">${escapeHtml(d.name)}</td>
-        <td>${pct(split)}</td>
+        <td style="font-weight:800;">${escapeHtml(d.name)}${isCoDriver ? ' <span style="font-size:10px;color:var(--accent-cyan);">[CO]</span>' : ''}</td>
+        <td>${isCoDriver ? (d.companyPayType || 'cpm').toUpperCase() : pct(split)}</td>
         <td class="positive">${money(cw.gross)}</td>
         <td class="positive">${money(cwCut)}</td>
         <td class="positive">${money(mtd.gross)}</td>
-        <td class="positive">${money(mtd.companyCut)}</td>
+        <td class="positive">${money(isCoDriver ? mtd.net : mtd.companyCut)}</td>
         <td class="positive">${money(ytd.gross)}</td>
-        <td class="positive">${money(ytd.companyCut)}</td>
+        <td class="positive">${money(isCoDriver ? ytd.net : ytd.companyCut)}</td>
       </tr>
     `);
     
@@ -7332,7 +7662,7 @@ function renderWeeklyChart(){
   
   recentWeekIds.forEach(id => {
     const w = d.weeks[id];
-    const t = computeWeekTotals(w);
+    const t = computeWeekTotals(w, d);
     labels.push(w.label || id);
     netData.push(t.net);
     grossData.push(t.gross);
@@ -7500,7 +7830,7 @@ function renderAlerts() {
 
     const currentWeek = (wkId && driver?.weeks && driver.weeks[wkId]) ? driver.weeks[wkId] : null;
     if (!currentWeek) return;
-    const weekTotals = computeWeekTotals(currentWeek);
+    const weekTotals = computeWeekTotals(currentWeek, driver);
     const targetGross = getDriverTargetNet(driver);
     
     // Alert: Behind target (target is gross)
@@ -7967,7 +8297,7 @@ function calculateDriverRankings() {
     const wkId = getBestWeekForAnalytics(driver);
     const currentWeek = (wkId && driver.weeks && driver.weeks[wkId]) ? driver.weeks[wkId] : null;
     if (!currentWeek) return;
-    const totals = computeWeekTotals(currentWeek);
+    const totals = computeWeekTotals(currentWeek, driver);
     
     // Calculate deadhead %
     const totalMiles = totals.miles;
@@ -8079,7 +8409,29 @@ function updateUI(){
   const wk = getCurrentWeek();
   const loads = wk.loads;
   const s = getSpecs();
-  const totals = computeWeekTotals(wk);
+  const totals = computeWeekTotals(wk, d);
+  const isCoDriver = d.driverType === 'company';
+  
+  // Find incoming cross-week loads from previous week (not yet formally carried over)
+  let incomingCrossWeek = [];
+  if (wk.start) {
+    const thisStart = new Date(wk.start + 'T00:00:00');
+    const prevMonday = new Date(thisStart);
+    prevMonday.setDate(prevMonday.getDate() - 7);
+    const prevId = isoDate(prevMonday);
+    const prevWeek = d.weeks?.[prevId];
+    if (prevWeek) {
+      (prevWeek.loads || []).filter(l => l.deliversNextWeek).forEach(cl => {
+        const alreadyCarried = loads.some(l => 
+          l.fromPreviousWeek && l.origin === cl.origin && l.dest === cl.dest 
+          && toNum(l.gross) === toNum(cl.gross) && toNum(l.miles) === toNum(cl.miles)
+        );
+        if (!alreadyCarried) {
+          incomingCrossWeek.push({ ...cl, _incoming: true });
+        }
+      });
+    }
+  }
   
   // Update current location bar
   updateCurrentLocation(loads);
@@ -8110,20 +8462,52 @@ function updateUI(){
   document.getElementById('wk_miles').innerText = totals.miles.toLocaleString();
   
   const wkProfitEl = document.getElementById('wk_profit');
-  wkProfitEl.innerText = money(totals.net);
-  wkProfitEl.className = "stat-value " + (totals.net>=0 ? "positive" : "negative");
+  const wkProfitLabel = wkProfitEl.closest('.stat-card').querySelector('.stat-label');
+  
+  if (isCoDriver) {
+    wkProfitLabel.innerText = 'Company Net';
+    wkProfitEl.innerText = money(totals.net);
+    wkProfitEl.className = "stat-value " + (totals.net>=0 ? "positive" : "negative");
+  } else {
+    wkProfitLabel.innerText = 'Net Profit';
+    wkProfitEl.innerText = money(totals.net);
+    wkProfitEl.className = "stat-value " + (totals.net>=0 ? "positive" : "negative");
+  }
   
   document.getElementById('wk_rpm').innerText = money(totals.rpm);
   
   const split = getDriverSplit(d);
-  const wkCosts = (totals.gross * split) - totals.net;
-  const wkBreakEvenGross = split>0 ? (wkCosts / split) : 0;
+  const wkCosts = isCoDriver ? (totals.gross - totals.net) : ((totals.gross * split) - totals.net);
+  const wkBreakEvenGross = isCoDriver ? wkCosts : (split>0 ? (wkCosts / split) : 0);
   const wkBERpm = totals.miles>0 ? (wkBreakEvenGross / totals.miles) : 0;
   document.getElementById('wk_be_rpm').innerText = money(wkBERpm);
+  
+  // Company driver breakdown panel
+  const coStatsEl = document.getElementById('companyDriverStats');
+  if (isCoDriver && loads.length > 0) {
+    const varCosts = totals.fuel + totals.maint + totals.tolls;
+    
+    coStatsEl.style.display = '';
+    document.getElementById('co_gross').innerText = money(totals.gross);
+    document.getElementById('co_driver_pay').innerText = money(totals.driverPay);
+    const coNetEl = document.getElementById('co_company_net');
+    coNetEl.innerText = money(totals.net);
+    coNetEl.style.color = totals.net >= 0 ? 'var(--success)' : 'var(--danger)';
+    document.getElementById('co_var_costs').innerText = money(varCosts);
+    document.getElementById('co_fixed_costs').innerText = money(totals.fixed);
+    document.getElementById('co_driver_check').innerText = money(totals.driverPay);
+  } else {
+    coStatsEl.style.display = 'none';
+  }
+  
+  // Relabel load table Net header for company drivers
+  const netHeader = document.getElementById('loadTableNetHeader');
+  if (netHeader) netHeader.innerText = isCoDriver ? 'Co. Net' : 'Net';
   
   document.getElementById('loadList').innerHTML = loads.map((l,i)=>{
     const grossRpm = l.miles>0 ? l.gross/l.miles : 0;
     const isMultiStop = l.stops && l.stops.length > 0;
+    const loadDriverPay = toNum(l.details?.driverPay);
     
     // Build day info with cross-week indicators
     let dayInfo = '';
@@ -8167,12 +8551,35 @@ function updateUI(){
         </td>
         <td>${Number(l.miles||0).toLocaleString()}</td>
         <td class="positive">${money(l.gross)}</td>
-        <td class="${(l.net||0)>=0?'positive':'negative'}">${money(l.net)}</td>
+        <td class="${(l.net||0)>=0?'positive':'negative'}">${money(l.net)}${isCoDriver && loadDriverPay > 0 ? '<div style="font-size:10px;color:var(--text-muted);font-weight:400;">DrvPay: ' + money(loadDriverPay) + '</div>' : (isCoDriver && d.companyPayType === 'weekly' ? '<div style="font-size:10px;color:var(--text-muted);font-weight:400;">before salary</div>' : '')}</td>
         <td>${money(grossRpm)}</td>
         <td>
           <button class="action-btn" onclick="viewDetail(${i})">Detail</button>
           <button class="action-btn delete" onclick="delLoad(${i})">X</button>
         </td>
+      </tr>
+    `;
+  }).join("") + incomingCrossWeek.map(l => {
+    const grossRpm = l.miles>0 ? l.gross/l.miles : 0;
+    const loadDriverPay = toNum(l.details?.driverPay);
+    let dayInfo = '';
+    if (l.pickupDay) {
+      dayInfo = `<div style="font-size:11px;color:var(--accent-cyan);margin-top:2px;">Pick ${l.pickupDay} (Prev Week) • Del Monday</div>`;
+    }
+    return `
+      <tr style="border-left: 3px solid var(--accent-cyan);">
+        <td style="font-weight:700;font-size:13px;">
+          ${escapeHtml(l.origin)} 
+          <span style="color:var(--accent-cyan)">➜</span> 
+          ${escapeHtml(l.dest)}
+          <span style="display:inline-block;background:rgba(0,180,255,0.15);color:var(--accent-cyan);padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;margin-left:8px;">↩ Prev Week Pickup</span>
+          ${dayInfo}
+        </td>
+        <td>${Number(l.miles||0).toLocaleString()}</td>
+        <td class="positive">${money(l.gross)}</td>
+        <td class="${(l.net||0)>=0?'positive':'negative'}">${money(l.net)}${isCoDriver && loadDriverPay > 0 ? '<div style="font-size:10px;color:var(--text-muted);font-weight:400;">DrvPay: ' + money(loadDriverPay) + '</div>' : (isCoDriver && d.companyPayType === 'weekly' ? '<div style="font-size:10px;color:var(--text-muted);font-weight:400;">before salary</div>' : '')}</td>
+        <td>${money(grossRpm)}</td>
+        <td><span style="font-size:11px;color:var(--text-muted);">prev week</span></td>
       </tr>
     `;
   }).join("");
@@ -8208,7 +8615,7 @@ function updateUI(){
   if (bestWeekEl || worstWeekEl) {
     let best=null,worst=null;
     for (const wkId of Object.keys(d.weeks||{})){
-      const t = computeWeekTotals(d.weeks[wkId]);
+      const t = computeWeekTotals(d.weeks[wkId], d);
       if (!best || t.net > best.net) best = { net: t.net };
       if (!worst || t.net < worst.net) worst = { net: t.net };
     }
@@ -8222,7 +8629,7 @@ function updateUI(){
     const weekIds = Object.keys(d.weeks).sort().reverse();
     weekHistoryEl.innerHTML = weekIds.map(id=>{
       const w = d.weeks[id];
-      const t = computeWeekTotals(w);
+      const t = computeWeekTotals(w, d);
       const rpm = t.miles>0 ? (t.gross/t.miles) : 0;
       return `
         <tr>
@@ -8363,9 +8770,10 @@ function renderFleetCards(){
     const wk = d.weeks?.[fleetWkId] || { loads: [] };
     const loads = (wk.loads || []).filter(l => !l.deliversNextWeek);
     
-    const gross = loads.reduce((sum, l) => sum + toNum(l.gross), 0);
-    const miles = loads.reduce((sum, l) => sum + toNum(l.miles), 0);
-    const net = loads.reduce((sum, l) => sum + toNum(l.net), 0);
+    const wkTotals = computeWeekTotals(wk, d);
+    const gross = wkTotals.gross;
+    const miles = wkTotals.miles;
+    const net = wkTotals.net;
     const rpm = miles > 0 ? gross / miles : 0;
     
     // Last drop location
@@ -8398,6 +8806,7 @@ function renderFleetCards(){
       name: d.name || 'Unnamed',
       truckNumber: d.truckNumber || '',
       trailerNumber: d.trailerNumber || '',
+      driverType: d.driverType || 'owner_op',
       split,
       targetNet,
       gross,
@@ -8482,7 +8891,7 @@ function renderFleetCards(){
       <div class="fleet-card ${d.isPaused ? 'status-paused' : ''}" onclick="selectDriverFromFleet('${d.id}')">
         <div class="fc-top">
           <div>
-            <div class="fc-name">${escapeHtml(d.name)}</div>
+            <div class="fc-name">${escapeHtml(d.name)}${d.driverType === 'company' ? ' <span style="font-size:9px;padding:2px 6px;border-radius:4px;background:rgba(0,180,255,0.15);color:var(--accent-cyan);font-weight:700;vertical-align:middle;letter-spacing:0.5px;">CO</span>' : ''}</div>
             <div class="fc-truck">${d.truckNumber ? 'Truck #' + escapeHtml(d.truckNumber) : ''}${d.truckNumber && d.trailerNumber ? ' • ' : ''}${d.trailerNumber ? 'Trailer #' + escapeHtml(d.trailerNumber) : ''}${!d.truckNumber && !d.trailerNumber ? 'No truck/trailer assigned' : ''}</div>
           </div>
           <div style="display:flex;gap:6px;align-items:center;">
@@ -8504,7 +8913,7 @@ function renderFleetCards(){
             <div class="fc-stat-value positive">${money(d.gross)}</div>
           </div>
           <div class="fc-stat">
-            <div class="fc-stat-label">Net</div>
+            <div class="fc-stat-label">${d.driverType === 'company' ? 'Co. Net' : 'Net'}</div>
             <div class="fc-stat-value" style="color:${d.net >= 0 ? 'var(--success)' : 'var(--danger)'}">${money(d.net)}</div>
           </div>
         </div>
@@ -8526,6 +8935,13 @@ function renderFleetCards(){
 function selectDriverFromFleet(driverId){
   if (!state.drivers[driverId]) return;
   state.currentDriverId = driverId;
+  const d = getDriver();
+  if (d) d.currentWeekId = getMostRecentOpenWeekId(d) || d.currentWeekId;
+  // Reset settings dirty flags so new driver's values load
+  ['d_driver_type','d_company_pay_type','d_company_pay_rate','d_split','d_target_net','d_miles_per_day','d_truck_number','d_trailer_number'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.dataset.dirty = 'false'; el.dataset.editing = 'false'; }
+  });
   refreshAll({ settings: true });
   
   // Close fleet modal and switch to dispatch view
