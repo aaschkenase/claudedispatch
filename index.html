@@ -2253,6 +2253,13 @@ td {
                 <input id="cost_tolls" type="number" inputmode="decimal" min="0" step="0.01" value="0" oninput="preview()">
               </div>
             </div>
+            <div style="margin:-4px 0 12px;">
+              <button id="gmapsCalcBtn" onclick="gmapsAutoFillLoadMiles()" type="button"
+                style="padding:7px 14px;background:rgba(0,180,255,0.12);border:1px solid var(--accent-cyan);color:var(--accent-cyan);border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;">
+                🗺️ Get Miles from Origin → Destination
+              </button>
+              <span style="font-size:11px;color:var(--text-muted);margin-left:8px;">Auto-fills Loaded Miles using Google Maps</span>
+            </div>
 
             <div class="input-row">
               <div class="input-group">
@@ -2657,6 +2664,31 @@ td {
             <button class="btn-primary no-print" onclick="saveSettings()">Save Global Settings</button>
             <div class="hint-text">
               Global split and target net are defaults. You can override per driver below.
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">🗺️ Google Maps API</div>
+          <div class="card-body">
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;line-height:1.6;">
+              Used to auto-calculate <strong>loaded miles</strong> and <strong>deadhead miles</strong> in the load form and Load Simulator. Get a free key at <strong>console.cloud.google.com</strong> — enable the <strong>Routes API</strong> and <strong>Geocoding API</strong>.
+            </div>
+            <div class="input-row">
+              <div class="input-group">
+                <label>API Key</label>
+                <input type="password" id="gmapsApiKey" placeholder="AIzaSy..." autocomplete="off"
+                  style="font-family:monospace;font-size:13px;"
+                  oninput="gmapsSavePending()">
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:4px;">
+              <button class="btn-primary no-print" onclick="gmapsSaveKey()" style="flex:1;">Save Key</button>
+              <button class="btn-primary no-print" onclick="gmapsTestKey()" style="flex:1;background:var(--bg-elevated);border:1px solid var(--border-medium);color:var(--text-primary);">Test Connection</button>
+            </div>
+            <div id="gmapsStatus" style="margin-top:10px;font-size:12px;color:var(--text-muted);min-height:18px;"></div>
+            <div class="hint-text" style="margin-top:8px;">
+              Key is stored locally in your browser only — never sent anywhere except Google's API directly.
             </div>
           </div>
         </div>
@@ -6616,18 +6648,90 @@ async function getLoc(city){
   }
 }
 
+// OSRM removed — routing now handled by Google Maps (gmapsGetMiles)
+// Kept as no-op to avoid breaking any legacy references
 async function osrmRouteMilesGeo(lon1, lat1, lon2, lat2){
-  const url = `https://router.project-osrm.org/route/v1/driving/${lon1},${lat1};${lon2},${lat2}?overview=full&geometries=geojson&steps=false`;
-  const res = await fetchRetry(url, 2, 700);
-  const j = await res.json();
-  
-  if (!j?.routes?.[0]) throw new Error("Route not found");
-  
-  const r = j.routes[0];
-  return {
-    miles: Math.round(r.distance * 0.000621371),
-    geo: r.geometry
-  };
+  throw new Error("OSRM removed — use gmapsGetMiles() instead");
+}
+
+async function calcRoute(){
+  const o = document.getElementById('origin').value.trim();
+  const d = document.getElementById('dest').value.trim();
+  if (!o || !d) return alert("Enter origin and destination cities first");
+
+  const btn = document.querySelector('button[onclick="calcRoute()"]');
+  if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
+
+  const key = gmapsGetKey();
+
+  try {
+    setStatus("Calculating route…", true);
+
+    if (key) {
+      // ── Google Maps path ──
+      const loadMiles = await gmapsGetMiles(o, d, key);
+      document.getElementById('mi_load').value = loadMiles;
+
+      // Deadhead from last drop if available
+      const wk = getCurrentWeek();
+      const lastLoad = wk.loads?.length ? wk.loads[wk.loads.length - 1] : null;
+      const lastCity = lastLoad?.dest || '';
+      if (lastCity && lastCity !== o) {
+        try {
+          const dhMiles = await gmapsGetMiles(lastCity, o, key);
+          document.getElementById('mi_dh').value = dhMiles;
+        } catch(e) {
+          document.getElementById('mi_dh').value = 0;
+        }
+      } else {
+        document.getElementById('mi_dh').value = 0;
+      }
+
+      setStatus("", false);
+      if (btn) { btn.textContent = '📡 Get Miles'; btn.disabled = false; }
+      preview();
+
+    } else {
+      // ── No key: straight-line estimate fallback ──
+      setStatus("No Google Maps key — estimating…", true);
+      const locA = await getLoc(o);
+      const locB = await getLoc(d);
+
+      if (!locA || !locB) {
+        setStatus("City not found — enter miles manually", true);
+        setTimeout(() => setStatus("", false), 3000);
+        if (btn) { btn.textContent = '📡 Get Miles'; btn.disabled = false; }
+        return;
+      }
+
+      const R = 3959;
+      const lat1 = Number(locA.lat) * Math.PI / 180;
+      const lat2 = Number(locB.lat) * Math.PI / 180;
+      const dLat = (Number(locB.lat) - Number(locA.lat)) * Math.PI / 180;
+      const dLon = (Number(locB.lon) - Number(locA.lon)) * Math.PI / 180;
+      const a = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
+      const estimate = Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)) * 1.25);
+
+      const userMiles = prompt(
+        `⚠️ No Google Maps key saved (Settings → Google Maps API)\n\n` +
+        `Straight-line estimate: ~${estimate} mi (×1.25 for roads)\n\n` +
+        `Enter actual loaded miles or click OK to use estimate:`,
+        estimate
+      );
+      if (userMiles !== null) {
+        document.getElementById('mi_load').value = parseInt(userMiles) || estimate;
+        document.getElementById('mi_dh').value = 0;
+        preview();
+      }
+      setStatus("", false);
+      if (btn) { btn.textContent = '📡 Get Miles'; btn.disabled = false; }
+    }
+  } catch(e) {
+    console.error("Route error:", e);
+    setStatus("", false);
+    if (btn) { btn.textContent = '📡 Get Miles'; btn.disabled = false; }
+    alert("Routing error: " + e.message + "\n\nEnter miles manually.");
+  }
 }
 
 /************************* 
@@ -6731,128 +6835,6 @@ function renderStops(){
   `).join('');
 }
 
-async function calcRoute(){
-  const o = document.getElementById('origin').value;
-  const d = document.getElementById('dest').value;
-  if (!o || !d) return alert("Enter cities first");
-  
-  try{
-    setStatus("Finding cities…", true);
-    const locA = await getLoc(o);
-    const locB = await getLoc(d);
-    
-    if (!locA || !locB){
-      setStatus("City not found (check spelling)", true);
-      setTimeout(()=>setStatus("", false), 3000);
-      return;
-    }
-    
-    const oLat = Number(locA.lat), oLon = Number(locA.lon);
-    const dLat = Number(locB.lat), dLon = Number(locB.lon);
-    
-    document.getElementById('origin').dataset.lat = oLat;
-    document.getElementById('origin').dataset.lon = oLon;
-    document.getElementById('dest').dataset.lat = dLat;
-    document.getElementById('dest').dataset.lon = dLon;
-    
-    setStatus("Calculating loaded route…", true);
-    
-    try {
-      const loaded = await osrmRouteMilesGeo(oLon,oLat,dLon,dLat);
-      document.getElementById('mi_load').value = loaded.miles;
-      
-      const wk = getCurrentWeek();
-      if (wk.lastDropCoords?.lat && wk.lastDropCoords?.lon){
-        setStatus("Calculating deadhead…", true);
-        const dh = await osrmRouteMilesGeo(
-          wk.lastDropCoords.lon, 
-          wk.lastDropCoords.lat, 
-          oLon, 
-          oLat
-        );
-        document.getElementById('mi_dh').value = dh.miles;
-      } else {
-        document.getElementById('mi_dh').value = 0;
-      }
-      
-      document.getElementById('origin').dataset.routeGeo = JSON.stringify(loaded.geo || null);
-      setStatus("", false);
-      preview();
-    } catch(routeError) {
-      // Routing failed - offer manual entry
-      console.error("Routing error:", routeError);
-      
-      // Calculate straight-line distance as estimate
-      const R = 3959; // Earth radius in miles
-      const lat1 = oLat * Math.PI / 180;
-      const lat2 = dLat * Math.PI / 180;
-      const dLat_rad = (dLat - oLat) * Math.PI / 180;
-      const dLon_rad = (dLon - oLon) * Math.PI / 180;
-      
-      const a = Math.sin(dLat_rad/2) * Math.sin(dLat_rad/2) +
-                Math.cos(lat1) * Math.cos(lat2) *
-                Math.sin(dLon_rad/2) * Math.sin(dLon_rad/2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-      const straightLine = Math.round(R * c);
-      const estimate = Math.round(straightLine * 1.25); // Add 25% for roads
-      
-      setStatus("", false);
-      
-      const userMiles = prompt(
-        `⚠️ Auto-routing unavailable (network restriction)\n\n` +
-        `Estimated distance: ${estimate} miles\n` +
-        `(Straight-line: ${straightLine} mi × 1.25 for roads)\n\n` +
-        `Enter actual loaded miles (or click Cancel to use estimate):`,
-        estimate
-      );
-      
-      if (userMiles !== null) {
-        const miles = parseInt(userMiles, 10);
-        if (miles > 0) {
-          document.getElementById('mi_load').value = miles;
-          
-          const wk = getCurrentWeek();
-          if (wk.lastDropCoords?.lat && wk.lastDropCoords?.lon) {
-            // Also estimate deadhead
-            const dhLat1 = wk.lastDropCoords.lat * Math.PI / 180;
-            const dhLat2 = oLat * Math.PI / 180;
-            const dhDLat = (oLat - wk.lastDropCoords.lat) * Math.PI / 180;
-            const dhDLon = (oLon - wk.lastDropCoords.lon) * Math.PI / 180;
-            
-            const dhA = Math.sin(dhDLat/2) * Math.sin(dhDLat/2) +
-                        Math.cos(dhLat1) * Math.cos(dhLat2) *
-                        Math.sin(dhDLon/2) * Math.sin(dhDLon/2);
-            const dhC = 2 * Math.atan2(Math.sqrt(dhA), Math.sqrt(1-dhA));
-            const dhStraight = Math.round(R * dhC);
-            const dhEstimate = Math.round(dhStraight * 1.25);
-            
-            const userDH = prompt(
-              `Enter deadhead miles from last drop:\n` +
-              `Estimated: ${dhEstimate} miles\n` +
-              `(or enter 0 if no deadhead)`,
-              dhEstimate
-            );
-            
-            if (userDH !== null) {
-              document.getElementById('mi_dh').value = parseInt(userDH, 10) || 0;
-            } else {
-              document.getElementById('mi_dh').value = dhEstimate;
-            }
-          } else {
-            document.getElementById('mi_dh').value = 0;
-          }
-          
-          alert("✅ Manual entry saved. Miles may be approximate - verify with mapping tool.");
-          preview();
-        }
-      }
-    }
-  } catch(e){
-    console.error(e);
-    setStatus("Error: " + e.message, true);
-    setTimeout(()=>setStatus("", false), 3500);
-  }
-}
 
 /************************* 
  * TOOLS 
@@ -9043,6 +9025,168 @@ if (CONFIG.DEBUG) {
 }
 
 /***********************************************
+ * GOOGLE MAPS INTEGRATION
+ ***********************************************/
+const GMAPS_KEY_STORAGE = 'gmaps_api_key_v1';
+
+function gmapsGetKey() {
+  return localStorage.getItem(GMAPS_KEY_STORAGE) || '';
+}
+
+function gmapsSaveKey() {
+  const key = document.getElementById('gmapsApiKey')?.value.trim();
+  if (!key) { gmapsSetStatus('⚠️ Enter a key first', 'var(--warning)'); return; }
+  localStorage.setItem(GMAPS_KEY_STORAGE, key);
+  gmapsSetStatus('✅ Key saved', 'var(--success)');
+}
+
+function gmapsSavePending() {
+  gmapsSetStatus('Unsaved — click Save Key', 'var(--text-muted)');
+}
+
+function gmapsSetStatus(msg, color) {
+  const el = document.getElementById('gmapsStatus');
+  if (el) { el.textContent = msg; el.style.color = color || 'var(--text-muted)'; }
+}
+
+async function gmapsTestKey() {
+  const key = document.getElementById('gmapsApiKey')?.value.trim() || gmapsGetKey();
+  if (!key) { gmapsSetStatus('⚠️ No key entered', 'var(--warning)'); return; }
+  gmapsSetStatus('⏳ Testing…', 'var(--text-muted)');
+  try {
+    const miles = await gmapsGetMiles('Chicago, IL', 'Dallas, TX', key);
+    if (miles) {
+      gmapsSetStatus(`✅ Connected — test route Chicago→Dallas: ${miles.toLocaleString()} mi`, 'var(--success)');
+    } else {
+      gmapsSetStatus('⚠️ Got a response but no distance — check API restrictions', 'var(--warning)');
+    }
+  } catch(e) {
+    gmapsSetStatus('❌ ' + e.message, 'var(--danger)');
+  }
+}
+
+// Geocode a city/state string to lat/lng
+async function gmapsGeocode(place, key) {
+  const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(place)}&key=${key}`;
+  const res = await fetch(url);
+  const data = await res.json();
+  if (data.status !== 'OK' || !data.results[0]) throw new Error(`Geocode failed for "${place}": ${data.status}`);
+  const loc = data.results[0].geometry.location;
+  return { lat: loc.lat, lng: loc.lng };
+}
+
+// Get driving miles between two places using Routes API
+async function gmapsGetMiles(origin, destination, key) {
+  key = key || gmapsGetKey();
+  if (!key) throw new Error('No Google Maps API key saved — add it in Settings');
+
+  // Geocode both ends
+  const [oCoord, dCoord] = await Promise.all([
+    gmapsGeocode(origin, key),
+    gmapsGeocode(destination, key)
+  ]);
+
+  // Routes API
+  const res = await fetch(`https://routes.googleapis.com/directions/v2:computeRoutes?key=${key}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Goog-FieldMask': 'routes.distanceMeters,routes.duration'
+    },
+    body: JSON.stringify({
+      origin:      { location: { latLng: { latitude: oCoord.lat, longitude: oCoord.lng } } },
+      destination: { location: { latLng: { latitude: dCoord.lat, longitude: dCoord.lng } } },
+      travelMode:  'DRIVE',
+      routingPreference: 'TRAFFIC_UNAWARE'
+    })
+  });
+
+  const data = await res.json();
+  if (!data.routes?.[0]?.distanceMeters) {
+    throw new Error(data.error?.message || 'No route returned — check key permissions');
+  }
+  const meters = data.routes[0].distanceMeters;
+  return Math.round(meters / 1609.34); // convert to miles
+}
+
+// Auto-fill miles in the main load entry form
+window.gmapsAutoFillLoadMiles = async function() {
+  const origin = document.getElementById('origin')?.value?.trim();
+  const dest   = document.getElementById('dest')?.value?.trim();
+  const miLoad = document.getElementById('mi_load');
+
+  if (!origin || !dest || !miLoad) return;
+  if (!gmapsGetKey()) {
+    alert('Add your Google Maps API key in Settings → Google Maps API first.');
+    return;
+  }
+
+  const btn = document.getElementById('gmapsCalcBtn');
+  if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
+
+  try {
+    const miles = await gmapsGetMiles(origin, dest);
+    miLoad.value = miles;
+    miLoad.dispatchEvent(new Event('input')); // trigger preview recalc
+    if (btn) { btn.textContent = '✅ ' + miles.toLocaleString() + ' mi'; }
+    setTimeout(() => { if (btn) { btn.textContent = '🗺️ Get Miles'; btn.disabled = false; } }, 2500);
+  } catch(e) {
+    if (btn) { btn.textContent = '❌ Error'; btn.disabled = false; }
+    alert('Google Maps error: ' + e.message);
+  }
+};
+
+// Auto-fill miles in the Load Simulator
+window.gmapsAutoFillSimMiles = async function(originVal, destVal) {
+  const key = gmapsGetKey();
+  if (!key) {
+    alert('Add your Google Maps API key in Settings → Google Maps API first.');
+    return;
+  }
+
+  const btn = document.getElementById('sim_gmaps_btn');
+  if (btn) { btn.textContent = '⏳ Calculating…'; btn.disabled = true; }
+
+  try {
+    const origin = originVal || document.getElementById('sim_origin')?.value?.trim();
+    const dest   = destVal   || document.getElementById('sim_dest')?.value?.trim();
+
+    if (!origin || !dest) throw new Error('Enter origin and destination first');
+
+    const loadMiles = await gmapsGetMiles(origin, dest);
+    const miLoadEl = document.getElementById('sim_mi_load');
+    if (miLoadEl) { miLoadEl.value = loadMiles; }
+
+    // Also try deadhead from driver's last known city
+    const dhOrigin = document.getElementById('sim_dh_from')?.value?.trim();
+    if (dhOrigin && origin) {
+      try {
+        const dhMiles = await gmapsGetMiles(dhOrigin, origin);
+        const dhEl = document.getElementById('sim_mi_dh');
+        if (dhEl) { dhEl.value = dhMiles; }
+      } catch(e) {} // dh is optional, fail silently
+    }
+
+    if (btn) { btn.textContent = '✅ ' + loadMiles.toLocaleString() + ' mi'; btn.disabled = false; }
+    window._simRecalc?.();
+    setTimeout(() => { if (btn) { btn.textContent = '🗺️ Calculate Miles'; btn.disabled = false; } }, 2500);
+  } catch(e) {
+    if (btn) { btn.textContent = '❌ Error'; btn.disabled = false; }
+    alert('Google Maps error: ' + e.message);
+  }
+};
+
+// Load saved key on page load
+window.addEventListener('load', function() {
+  const saved = gmapsGetKey();
+  const keyInput = document.getElementById('gmapsApiKey');
+  if (keyInput && saved) {
+    keyInput.value = saved;
+    gmapsSetStatus('✅ Key loaded', 'var(--success)');
+  }
+});
+
+/***********************************************
  * LOAD SIMULATOR
  ***********************************************/
 window.showLoadSimulator = function(driverId) {
@@ -9262,6 +9406,34 @@ window.showLoadSimulator = function(driverId) {
 
         <!-- Inputs -->
         <div style="padding:20px 24px;border-bottom:1px solid var(--border-subtle);">
+
+          <!-- Origin / Destination row with Maps button -->
+          <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:10px;margin-bottom:12px;align-items:flex-end;">
+            <div>
+              <label style="font-size:11px;font-weight:700;color:var(--text-muted);display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:1px;">Pickup City</label>
+              <input id="sim_origin" type="text" placeholder="e.g. Chicago, IL"
+                style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--border-medium);border-radius:8px;color:var(--text-primary);font-size:13px;box-sizing:border-box;">
+            </div>
+            <div>
+              <label style="font-size:11px;font-weight:700;color:var(--text-muted);display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:1px;">Delivery City</label>
+              <input id="sim_dest" type="text" placeholder="e.g. Dallas, TX"
+                style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--border-medium);border-radius:8px;color:var(--text-primary);font-size:13px;box-sizing:border-box;">
+            </div>
+            <div>
+              <button id="sim_gmaps_btn" onclick="gmapsAutoFillSimMiles()"
+                style="padding:10px 14px;background:var(--accent-cyan);color:#000;border:none;border-radius:8px;font-weight:800;cursor:pointer;font-size:12px;white-space:nowrap;">
+                🗺️ Calculate Miles
+              </button>
+            </div>
+          </div>
+
+          <!-- Deadhead from -->
+          <div style="margin-bottom:12px;">
+            <label style="font-size:11px;font-weight:700;color:var(--text-muted);display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:1px;">Deadhead From <span style="opacity:0.6;font-weight:400;">(driver's current city — auto-fills DH miles)</span></label>
+            <input id="sim_dh_from" type="text" placeholder="e.g. Memphis, TN — leave blank to enter DH miles manually"
+              style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--border-medium);border-radius:8px;color:var(--text-primary);font-size:13px;box-sizing:border-box;">
+          </div>
+
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;">
             <div>
               <label style="font-size:11px;font-weight:700;color:var(--text-muted);display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:1px;">Gross Rate ($)</label>
@@ -9271,13 +9443,13 @@ window.showLoadSimulator = function(driverId) {
             </div>
             <div>
               <label style="font-size:11px;font-weight:700;color:var(--text-muted);display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:1px;">Loaded Miles</label>
-              <input id="sim_mi_load" type="number" inputmode="numeric" min="0" step="1" placeholder="e.g. 800"
+              <input id="sim_mi_load" type="number" inputmode="numeric" min="0" step="1" placeholder="or use 🗺️ above"
                 style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--border-medium);border-radius:8px;color:var(--text-primary);font-size:14px;font-weight:700;box-sizing:border-box;"
                 oninput="window._simRecalc()">
             </div>
             <div>
               <label style="font-size:11px;font-weight:700;color:var(--text-muted);display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:1px;">Deadhead Miles</label>
-              <input id="sim_mi_dh" type="number" inputmode="numeric" min="0" step="1" placeholder="e.g. 50"
+              <input id="sim_mi_dh" type="number" inputmode="numeric" min="0" step="1" placeholder="auto or manual"
                 style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--border-medium);border-radius:8px;color:var(--text-primary);font-size:14px;font-weight:700;box-sizing:border-box;"
                 oninput="window._simRecalc()">
             </div>
