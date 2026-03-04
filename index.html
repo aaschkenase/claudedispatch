@@ -6487,6 +6487,7 @@ function renderDispatchView(){
         
         <div class="driver-actions">
           <button class="action-btn" onclick="showDriverDetailModal('${id}')">View Details</button>
+          <button class="action-btn" style="background:linear-gradient(135deg,rgba(0,255,136,0.18),rgba(0,180,255,0.18));border-color:var(--accent-cyan);color:var(--accent-cyan);font-weight:800;" onclick="showLoadSimulator('${id}')">⚡ Eval Load</button>
           <button class="action-btn" onclick="copyDriverSummary('${id}')">Copy Summary</button>
         </div>
       </div>
@@ -9040,6 +9041,280 @@ if (CONFIG.DEBUG) {
   dbg('✅ Dispatch V2-FIXED loaded successfully (getTargetNet bug fixed)');
   dbg('✅ showDriverDetailModal function:', typeof showDriverDetailModal);
 }
+
+/***********************************************
+ * LOAD SIMULATOR
+ ***********************************************/
+window.showLoadSimulator = function(driverId) {
+  const d = state.drivers[driverId];
+  if (!d) return;
+
+  const s         = getSpecs();
+  const wk        = d.weeks[d.currentWeekId] || { loads: [] };
+  const t         = computeWeekTotals(wk, d);
+  const targetNet = getDriverTargetNet(d);
+  const isCompany = d.driverType === 'company';
+  const split     = getDriverSplit(d);
+
+  // Get linked Samsara HOS data for this driver
+  function getSamHOS() {
+    try {
+      const links = JSON.parse(localStorage.getItem('samsara_driver_links_v1') || '{}');
+      // links = { samId: appId } — find samId that maps to this driverId
+      const samId = Object.keys(links).find(k => links[k] === driverId);
+      if (!samId || !window._sam?.hos?.length) return null;
+      const samDriver = window._sam.hos.find(sd => sd.id === samId);
+      if (!samDriver) return null;
+      const hos = samDriver.currentHosStatus || {};
+      return {
+        driveMs:  hos.remainingDrivingTimeMs ?? null,
+        cycleMs:  hos.hosCycle?.remainingMs   ?? null,
+        status:   hos.currentDutyStatus       ?? 'unknown',
+        name:     samDriver.name
+      };
+    } catch(e) { return null; }
+  }
+
+  const hos = getSamHOS();
+
+  // ── recalc helper ──
+  function recalc() {
+    const gross       = parseFloat(document.getElementById('sim_gross')?.value)     || 0;
+    const loadedMiles = parseFloat(document.getElementById('sim_mi_load')?.value)   || 0;
+    const dhMiles     = parseFloat(document.getElementById('sim_mi_dh')?.value)     || 0;
+    const tolls       = parseFloat(document.getElementById('sim_tolls')?.value)     || 0;
+    const detention   = parseFloat(document.getElementById('sim_detention')?.value) || 0;
+    const miles       = loadedMiles + dhMiles;
+
+    if (gross === 0 || miles === 0) {
+      document.getElementById('sim_results').innerHTML =
+        '<div style="text-align:center;color:var(--text-muted);padding:32px;font-size:13px;">Enter a load above to see the full breakdown ↑</div>';
+      return;
+    }
+
+    const calc   = calcLoadNet(d, s, { gross, miles, tolls, detention, accessorials: 0 });
+    const rpm    = miles > 0 ? gross / miles : 0;
+    const netRpm = miles > 0 ? calc.net / miles : 0;
+
+    // Week impact
+    const newWeekNet    = t.net + calc.net;
+    const newWeekGross  = t.gross + gross;
+    const gapBefore     = targetNet - t.net;
+    const gapAfter      = targetNet - newWeekNet;
+    const targetPctNow  = targetNet > 0 ? Math.min(100, t.net     / targetNet * 100) : 0;
+    const targetPctNew  = targetNet > 0 ? Math.min(100, newWeekNet / targetNet * 100) : 0;
+    const weekNetColor  = newWeekNet >= targetNet ? 'var(--success)' : newWeekNet >= targetNet * 0.85 ? 'var(--warning)' : 'var(--danger)';
+
+    // HOS check
+    const AVG_MPH    = 55;
+    const estHours   = miles / AVG_MPH;
+    let hosHtml = '';
+    if (hos) {
+      const driveHrsLeft  = hos.driveMs != null ? hos.driveMs / 3600000 : null;
+      const cycleHrsLeft  = hos.cycleMs != null ? hos.cycleMs / 3600000 : null;
+      const hosOk         = driveHrsLeft == null || driveHrsLeft >= estHours;
+      const hosColor      = hosOk ? 'var(--success)' : 'var(--danger)';
+      const hosIcon       = hosOk ? '✅' : '⚠️';
+      hosHtml = `
+        <div style="background:rgba(0,0,0,0.2);border:1px solid ${hosColor}44;border-radius:10px;padding:14px 16px;margin-bottom:14px;">
+          <div style="font-size:11px;font-weight:800;letter-spacing:1px;color:var(--text-muted);text-transform:uppercase;margin-bottom:10px;">🕐 HOS Check (Samsara Live)</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">
+            <div style="text-align:center;">
+              <div style="font-size:10px;color:var(--text-muted);">Est. Drive Time</div>
+              <div style="font-size:16px;font-weight:800;color:var(--accent-cyan);">${estHours.toFixed(1)}h</div>
+              <div style="font-size:10px;color:var(--text-muted);">${miles.toLocaleString()} mi @ ${AVG_MPH}mph</div>
+            </div>
+            <div style="text-align:center;">
+              <div style="font-size:10px;color:var(--text-muted);">Drive Hours Left</div>
+              <div style="font-size:16px;font-weight:800;color:${driveHrsLeft==null?'var(--text-muted)':driveHrsLeft<estHours?'var(--danger)':driveHrsLeft<estHours*1.25?'var(--warning)':'var(--success)'};">
+                ${driveHrsLeft != null ? driveHrsLeft.toFixed(1)+'h' : '—'}
+              </div>
+              <div style="font-size:10px;color:var(--text-muted);">remaining</div>
+            </div>
+            <div style="text-align:center;">
+              <div style="font-size:10px;color:var(--text-muted);">Cycle Hours Left</div>
+              <div style="font-size:16px;font-weight:800;color:var(--text-primary);">
+                ${cycleHrsLeft != null ? cycleHrsLeft.toFixed(0)+'h' : '—'}
+              </div>
+              <div style="font-size:10px;color:var(--text-muted);">cycle remaining</div>
+            </div>
+          </div>
+          ${!hosOk ? `<div style="margin-top:10px;font-size:12px;font-weight:700;color:var(--danger);text-align:center;">⚠️ Driver may not have enough hours — consider a team or split</div>` : ''}
+          ${hosOk && driveHrsLeft != null && driveHrsLeft < estHours * 1.25 ? `<div style="margin-top:10px;font-size:12px;font-weight:700;color:var(--warning);text-align:center;">⚠️ Tight on hours — driver will need to plan stops carefully</div>` : ''}
+        </div>`;
+    } else {
+      hosHtml = `<div style="background:rgba(0,0,0,0.15);border:1px solid var(--border-subtle);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-muted);">
+        🕐 HOS data not available — sync Samsara & link this driver to see hours check
+      </div>`;
+    }
+
+    // Verdict
+    const rpmThreshold = s.targetRpm || 2.0;
+    let verdictScore = 0;
+    let verdictItems = [];
+    if (rpm >= rpmThreshold * 1.1)   { verdictScore += 2; verdictItems.push({c:'var(--success)', t:`✅ Strong RPM ($${rpm.toFixed(2)}/mi)`}); }
+    else if (rpm >= rpmThreshold)    { verdictScore += 1; verdictItems.push({c:'var(--warning)', t:`🟡 Acceptable RPM ($${rpm.toFixed(2)}/mi)`}); }
+    else                             { verdictScore -= 1; verdictItems.push({c:'var(--danger)',  t:`⚠️ Low RPM ($${rpm.toFixed(2)}/mi)`}); }
+
+    if (calc.net > 0)                { verdictScore += 2; verdictItems.push({c:'var(--success)', t:`✅ Profitable (${money(calc.net)} net)`}); }
+    else                             { verdictScore -= 2; verdictItems.push({c:'var(--danger)',  t:`❌ Unprofitable (${money(calc.net)} net)`}); }
+
+    if (gapAfter <= 0)               { verdictScore += 2; verdictItems.push({c:'var(--success)', t:`✅ Hits weekly target`}); }
+    else if (gapAfter < gapBefore * 0.5) { verdictScore += 1; verdictItems.push({c:'var(--warning)', t:`🟡 Closes ${((1-gapAfter/Math.max(gapBefore,1))*100).toFixed(0)}% of weekly gap`}); }
+    else                             { verdictItems.push({c:'var(--text-muted)', t:`ℹ️ Still ${money(gapAfter)} short of target after this load`}); }
+
+    const dhRatio = miles > 0 ? dhMiles / miles : 0;
+    if (dhRatio > 0.25)              { verdictScore -= 1; verdictItems.push({c:'var(--danger)', t:`⚠️ High deadhead (${(dhRatio*100).toFixed(0)}% of miles)`}); }
+    else if (dhRatio < 0.1)         { verdictScore += 1; verdictItems.push({c:'var(--success)', t:`✅ Low deadhead (${(dhRatio*100).toFixed(0)}%)`}); }
+
+    if (hos && hos.driveMs != null && hos.driveMs / 3600000 < miles / AVG_MPH)
+                                     { verdictScore -= 2; verdictItems.push({c:'var(--danger)', t:`❌ Insufficient HOS hours`}); }
+
+    const [verdictLabel, verdictColor, verdictBg] =
+      verdictScore >= 4  ? ['BOOK IT',        'var(--success)', 'rgba(0,255,136,0.12)'] :
+      verdictScore >= 2  ? ['LOOKS GOOD',     'var(--success)', 'rgba(0,255,136,0.08)'] :
+      verdictScore >= 0  ? ['ACCEPTABLE',     'var(--warning)', 'rgba(255,184,0,0.1)']  :
+      verdictScore >= -1 ? ['THINK TWICE',    'var(--warning)', 'rgba(255,184,0,0.1)']  :
+                           ['PASS ON THIS',   'var(--danger)',  'rgba(255,59,59,0.1)'];
+
+    document.getElementById('sim_results').innerHTML = `
+      <!-- VERDICT -->
+      <div style="background:${verdictBg};border:2px solid ${verdictColor};border-radius:12px;padding:16px 20px;margin-bottom:14px;text-align:center;">
+        <div style="font-size:22px;font-weight:900;letter-spacing:2px;color:${verdictColor};">${verdictLabel}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:10px;">
+          ${verdictItems.map(v=>`<span style="font-size:12px;color:${v.c};background:rgba(0,0,0,0.2);padding:3px 10px;border-radius:20px;">${v.t}</span>`).join('')}
+        </div>
+      </div>
+
+      <!-- P&L -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
+        ${[
+          ['Freight Revenue', money(gross),       'var(--success)'],
+          ['Fuel Cost',       '('+money(calc.fuel)+')',  'var(--danger)'],
+          ['Maintenance',     '('+money(calc.maint)+')', 'var(--danger)'],
+          ['Fixed (alloc)',   '('+money(calc.fixed)+')', '#8b5cf6'],
+          ...(tolls>0    ? [['Tolls',       '('+money(tolls)+')',       'var(--danger)']] : []),
+          ...(detention>0? [['Detention',   '+'+money(detention),       'var(--success)']] : []),
+          ...(isCompany && calc.driverPay>0 ? [['Driver Pay', '('+money(calc.driverPay)+')', '#06b6d4']] : []),
+        ].map(([lbl,val,col])=>`
+          <div style="background:rgba(0,0,0,0.2);border-radius:8px;padding:10px 12px;border:1px solid var(--border-subtle);">
+            <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px;">${lbl}</div>
+            <div style="font-size:15px;font-weight:800;color:${col};">${val}</div>
+          </div>`).join('')}
+        <div style="background:rgba(0,0,0,0.3);border-radius:8px;padding:10px 12px;border:2px solid ${calc.net>=0?'var(--success)':'var(--danger)'};">
+          <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px;">THIS LOAD NET</div>
+          <div style="font-size:18px;font-weight:900;color:${calc.net>=0?'var(--success)':'var(--danger)'};">${money(calc.net)}</div>
+        </div>
+        <div style="background:rgba(0,0,0,0.2);border-radius:8px;padding:10px 12px;border:1px solid var(--border-subtle);">
+          <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px;">RPM / Net/Mi</div>
+          <div style="font-size:15px;font-weight:800;color:var(--accent-cyan);">$${rpm.toFixed(2)} / $${netRpm.toFixed(2)}</div>
+        </div>
+      </div>
+
+      <!-- HOS -->
+      ${hosHtml}
+
+      <!-- WEEK IMPACT -->
+      <div style="background:rgba(0,0,0,0.2);border:1px solid var(--border-subtle);border-radius:10px;padding:14px 16px;">
+        <div style="font-size:11px;font-weight:800;letter-spacing:1px;color:var(--text-muted);text-transform:uppercase;margin-bottom:12px;">📈 Week Impact</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px;">
+          <div style="text-align:center;">
+            <div style="font-size:10px;color:var(--text-muted);">Week Net Now</div>
+            <div style="font-size:15px;font-weight:800;color:${t.net>=0?'var(--success)':'var(--danger)'};">${money(t.net)}</div>
+          </div>
+          <div style="text-align:center;font-size:20px;color:var(--text-muted);padding-top:10px;">→</div>
+          <div style="text-align:center;">
+            <div style="font-size:10px;color:var(--text-muted);">Week Net After</div>
+            <div style="font-size:15px;font-weight:800;color:${weekNetColor};">${money(newWeekNet)}</div>
+          </div>
+        </div>
+        <div style="margin-bottom:6px;display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);">
+          <span>Target Progress</span>
+          <span>${targetPctNew.toFixed(0)}% of ${money(targetNet)}</span>
+        </div>
+        <div style="height:10px;background:var(--border-subtle);border-radius:5px;overflow:hidden;position:relative;">
+          <div style="position:absolute;height:100%;width:${targetPctNow}%;background:rgba(255,255,255,0.15);border-radius:5px;"></div>
+          <div style="height:100%;width:${targetPctNew}%;background:${weekNetColor};border-radius:5px;transition:width 0.4s;"></div>
+        </div>
+        <div style="margin-top:8px;font-size:12px;font-weight:700;color:${weekNetColor};">
+          ${gapAfter <= 0 ? `🎉 Target hit with this load!` : `${money(gapAfter)} remaining to hit target after this load`}
+        </div>
+        ${!isCompany ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Owner-op ${(split*100).toFixed(0)}% split · driver earns ${money(calc.cut)} from this load</div>` : ''}
+      </div>
+    `;
+  }
+
+  // ── Build modal ──
+  const modalHtml = `
+    <div id="loadSimOverlay" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.88);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;" onclick="if(event.target===this)this.remove()">
+      <div style="background:var(--bg-elevated);border:1px solid var(--border-medium);border-radius:16px;width:100%;max-width:680px;max-height:92vh;overflow-y:auto;box-shadow:0 12px 48px rgba(0,0,0,0.6);">
+
+        <!-- Header -->
+        <div style="background:linear-gradient(135deg,rgba(0,255,136,0.15),rgba(0,180,255,0.12));padding:18px 24px;border-bottom:1px solid var(--border-medium);position:sticky;top:0;z-index:5;">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div>
+              <div style="font-size:18px;font-weight:900;color:var(--text-primary);">⚡ Load Simulator</div>
+              <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${escapeHtml(d.name)} &nbsp;·&nbsp; Week net so far: <strong style="color:${t.net>=0?'var(--success)':'var(--danger)'};">${money(t.net)}</strong> &nbsp;·&nbsp; Target: <strong style="color:var(--accent-cyan);">${money(targetNet)}</strong></div>
+            </div>
+            <button onclick="document.getElementById('loadSimOverlay').remove()" style="background:none;border:none;color:var(--text-muted);font-size:26px;cursor:pointer;line-height:1;padding:0;">×</button>
+          </div>
+        </div>
+
+        <!-- Inputs -->
+        <div style="padding:20px 24px;border-bottom:1px solid var(--border-subtle);">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;">
+            <div>
+              <label style="font-size:11px;font-weight:700;color:var(--text-muted);display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:1px;">Gross Rate ($)</label>
+              <input id="sim_gross" type="number" inputmode="decimal" min="0" step="0.01" placeholder="e.g. 2800"
+                style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--border-medium);border-radius:8px;color:var(--text-primary);font-size:14px;font-weight:700;box-sizing:border-box;"
+                oninput="window._simRecalc()">
+            </div>
+            <div>
+              <label style="font-size:11px;font-weight:700;color:var(--text-muted);display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:1px;">Loaded Miles</label>
+              <input id="sim_mi_load" type="number" inputmode="numeric" min="0" step="1" placeholder="e.g. 800"
+                style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--border-medium);border-radius:8px;color:var(--text-primary);font-size:14px;font-weight:700;box-sizing:border-box;"
+                oninput="window._simRecalc()">
+            </div>
+            <div>
+              <label style="font-size:11px;font-weight:700;color:var(--text-muted);display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:1px;">Deadhead Miles</label>
+              <input id="sim_mi_dh" type="number" inputmode="numeric" min="0" step="1" placeholder="e.g. 50"
+                style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--border-medium);border-radius:8px;color:var(--text-primary);font-size:14px;font-weight:700;box-sizing:border-box;"
+                oninput="window._simRecalc()">
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div>
+              <label style="font-size:11px;font-weight:700;color:var(--text-muted);display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:1px;">Tolls ($) <span style="opacity:0.6;">optional</span></label>
+              <input id="sim_tolls" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0.00"
+                style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--border-medium);border-radius:8px;color:var(--text-primary);font-size:14px;box-sizing:border-box;"
+                oninput="window._simRecalc()">
+            </div>
+            <div>
+              <label style="font-size:11px;font-weight:700;color:var(--text-muted);display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:1px;">Detention ($) <span style="opacity:0.6;">optional</span></label>
+              <input id="sim_detention" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0.00"
+                style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--border-medium);border-radius:8px;color:var(--text-primary);font-size:14px;box-sizing:border-box;"
+                oninput="window._simRecalc()">
+            </div>
+          </div>
+        </div>
+
+        <!-- Results -->
+        <div style="padding:20px 24px;" id="sim_results">
+          <div style="text-align:center;color:var(--text-muted);padding:32px;font-size:13px;">Enter a load above to see the full breakdown ↑</div>
+        </div>
+
+        <!-- Footer -->
+        <div style="padding:14px 24px;border-top:1px solid var(--border-medium);display:flex;gap:10px;">
+          <button onclick="document.getElementById('loadSimOverlay').remove()" style="flex:1;padding:10px;background:var(--bg-primary);color:var(--text-muted);border:1px solid var(--border-subtle);border-radius:8px;font-weight:600;cursor:pointer;font-size:13px;">Close</button>
+        </div>
+      </div>
+    </div>`;
+
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+  window._simRecalc = recalc;
+  // Focus gross field
+  setTimeout(() => document.getElementById('sim_gross')?.focus(), 100);
+};
 
 /***********************************************
  * FLEET OVERVIEW MODAL
