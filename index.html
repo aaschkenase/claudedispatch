@@ -1646,7 +1646,8 @@ td {
       <button class="fleet-sort-btn" onclick="setFleetSort('net', this)">Net ↓</button>
       <button class="fleet-sort-btn" onclick="setFleetSort('rpm', this)">RPM ↓</button>
       <button class="fleet-sort-btn" onclick="setFleetSort('loads', this)">Loads ↓</button>
-      <button id="samLiveRefreshBtn" onclick="samRefreshLive(this)" style="margin-left:auto;padding:6px 14px;background:rgba(0,255,136,0.1);border:1px solid rgba(0,255,136,0.4);color:var(--success);border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">🛰️ Refresh Live</button>
+      <span id="samLastSyncedLabel" style="margin-left:auto;font-size:11px;color:var(--text-muted);align-self:center;white-space:nowrap;"></span>
+      <button id="samLiveRefreshBtn" onclick="samRefreshLive(this)" style="padding:6px 14px;background:rgba(0,255,136,0.1);border:1px solid rgba(0,255,136,0.4);color:var(--success);border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">🛰️ Refresh Live</button>
     </div>
     <div class="fleet-cards-grid" id="fleetCardsGrid"></div>
   </div>
@@ -2198,6 +2199,7 @@ td {
                 <option value="">-- Select a recent route --</option>
               </select>
             </div>
+
 
             <div class="input-row">
               <div class="input-group">
@@ -5924,6 +5926,7 @@ function fillFromRecentLoad(){
   sel.value = "";
 }
 
+
 /************************* 
  * LOAD CRUD 
  *************************/
@@ -9216,6 +9219,204 @@ if (CONFIG.DEBUG) {
 /***********************************************
  * GOOGLE MAPS INTEGRATION
  ***********************************************/
+
+// ══════════════════════════════════════════════════════
+// CITY AUTOCOMPLETE — Uses Places Autocomplete REST API
+// No JS library, no referrer issues, works everywhere
+// ══════════════════════════════════════════════════════
+
+(function() {
+  // Inject dropdown styles once
+  const style = document.createElement('style');
+  style.textContent = `
+    .city-ac-dropdown {
+      position: absolute; z-index: 99999;
+      background: #1e293b;
+      border: 1px solid rgba(0,180,255,0.45);
+      border-radius: 8px;
+      margin-top: 2px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.7);
+      min-width: 260px;
+      max-width: 400px;
+      overflow: hidden;
+      font-family: 'Rajdhani', sans-serif;
+    }
+    .city-ac-item {
+      padding: 9px 14px;
+      font-size: 14px;
+      color: #e2e8f0;
+      cursor: pointer;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      line-height: 1.3;
+    }
+    .city-ac-item:last-child { border-bottom: none; }
+    .city-ac-item:hover, .city-ac-item.active {
+      background: rgba(0,180,255,0.18);
+      color: #fff;
+    }
+    .city-ac-main { font-weight: 700; color: #38bdf8; }
+    .city-ac-sub  { font-size: 11px; color: #94a3b8; margin-top: 1px; }
+  `;
+  document.head.appendChild(style);
+
+  const CITY_INPUT_IDS = ['origin', 'dest', 'sim_origin', 'sim_dest', 'sim_dh_from'];
+  let _activeDropdown = null;
+  let _debounceTimer  = null;
+
+  function closeAllDropdowns() {
+    if (_activeDropdown) { _activeDropdown.remove(); _activeDropdown = null; }
+  }
+
+  function attachCityAC(input) {
+    if (!input || input._cityAcAttached) return;
+    input._cityAcAttached = true;
+
+    input.addEventListener('input', () => {
+      clearTimeout(_debounceTimer);
+      if (input._skipAC) { input._skipAC = false; return; }
+      const val = input.value.trim();
+      if (val.length < 2) { closeAllDropdowns(); return; }
+      _debounceTimer = setTimeout(() => fetchSuggestions(input, val), 220);
+    });
+
+    input.addEventListener('keydown', e => {
+      if (!_activeDropdown) return;
+      const items = _activeDropdown.querySelectorAll('.city-ac-item');
+      const current = _activeDropdown.querySelector('.city-ac-item.active');
+      let idx = current ? [...items].indexOf(current) : -1;
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (current) current.classList.remove('active');
+        items[Math.min(idx + 1, items.length - 1)]?.classList.add('active');
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (current) current.classList.remove('active');
+        items[Math.max(idx - 1, 0)]?.classList.add('active');
+      } else if (e.key === 'Enter' || e.key === 'Tab') {
+        const active = _activeDropdown.querySelector('.city-ac-item.active');
+        if (active) { e.preventDefault(); active.click(); }
+        else closeAllDropdowns();
+      } else if (e.key === 'Escape') {
+        closeAllDropdowns();
+      }
+    });
+
+    input.addEventListener('blur', () => setTimeout(closeAllDropdowns, 180));
+  }
+
+  async function fetchSuggestions(input, query) {
+    const key = (typeof gmapsGetKey === 'function') ? gmapsGetKey() : '';
+    if (!key) return;
+
+    try {
+      // New Places API (v1) — POST request, key in header, no CORS issues
+      const res = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': key,
+          'X-Goog-FieldMask': 'suggestions.placePrediction.text,suggestions.placePrediction.structuredFormat,suggestions.placePrediction.place'
+        },
+        body: JSON.stringify({
+          input: query,
+          includedPrimaryTypes: ['locality', 'sublocality'],
+          includedRegionCodes: ['us'],
+          languageCode: 'en'
+        })
+      });
+
+      const data = await res.json();
+
+      if (data.error) {
+        console.warn('Places API error:', data.error.message, '— Make sure Places API (New) is enabled in Google Cloud Console');
+        return;
+      }
+
+      const suggestions = (data.suggestions || []).slice(0, 6);
+      if (!suggestions.length) return;
+
+      // Normalize to same shape showDropdown expects
+      const predictions = suggestions.map(s => {
+        const p = s.placePrediction;
+        const main = p.structuredFormat?.mainText?.text || p.text?.text || '';
+        const secondary = p.structuredFormat?.secondaryText?.text || '';
+        // Build "City, ST" from description
+        const full = p.text?.text || (main + (secondary ? ', ' + secondary : ''));
+        return { description: full, structured_formatting: { main_text: main, secondary_text: secondary } };
+      });
+
+      showDropdown(input, predictions);
+    } catch(e) {
+      console.warn('City autocomplete error:', e.message);
+    }
+  }
+
+  function showDropdown(input, predictions) {
+    closeAllDropdowns();
+    if (!predictions.length) return;
+
+    const rect  = input.getBoundingClientRect();
+    const drop  = document.createElement('div');
+    drop.className = 'city-ac-dropdown';
+    drop.style.left  = (rect.left + window.scrollX) + 'px';
+    drop.style.top   = (rect.bottom + window.scrollY) + 'px';
+    drop.style.width = Math.max(rect.width, 260) + 'px';
+
+    predictions.forEach((p, i) => {
+      const item   = document.createElement('div');
+      item.className = 'city-ac-item' + (i === 0 ? ' active' : '');
+
+      // Split into main city name and state/country suffix
+      const main = p.structured_formatting?.main_text   || p.description;
+      const sub  = p.structured_formatting?.secondary_text || '';
+
+      item.innerHTML = `<div class="city-ac-main">${escHtml(main)}</div>${sub ? `<div class="city-ac-sub">${escHtml(sub)}</div>` : ''}`;
+
+      item.addEventListener('mousedown', e => {
+        e.preventDefault();
+        // Format as "City, ST"
+        const parts = p.description.split(',').map(s => s.trim());
+        let city = parts[0] || main;
+        let state = parts[1] || '';
+        // state might be "IL" or "Illinois" — keep as-is, routing handles both
+        input.value = state ? city + ', ' + state : city;
+        input._skipAC = true;
+        input.dispatchEvent(new Event('input',  { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        closeAllDropdowns();
+        input.blur();
+      });
+
+      drop.appendChild(item);
+    });
+
+    document.body.appendChild(drop);
+    _activeDropdown = drop;
+  }
+
+  function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // Public: attach to all known city inputs
+  window.cityAutocompleteInit = function() {
+    CITY_INPUT_IDS.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) attachCityAC(el);
+    });
+  };
+
+  // Also expose so dynamically added inputs can be hooked up
+  window.attachCityAC = attachCityAC;
+
+  // Close on scroll/resize so dropdown doesn't float away
+  document.addEventListener('scroll', closeAllDropdowns, true);
+  window.addEventListener('resize', closeAllDropdowns);
+
+  // Init on page load if key is already saved
+  window.addEventListener('load', () => setTimeout(window.cityAutocompleteInit, 400));
+})();
+
 const GMAPS_KEY_STORAGE = 'gmaps_api_key_v1';
 
 function gmapsGetKey() {
@@ -9227,6 +9428,7 @@ function gmapsSaveKey() {
   if (!key) { gmapsSetStatus('⚠️ Enter a key first', 'var(--warning)'); return; }
   localStorage.setItem(GMAPS_KEY_STORAGE, key);
   gmapsSetStatus('✅ Key saved', 'var(--success)');
+  cityAutocompleteInit();
 }
 
 function gmapsSavePending() {
@@ -11027,22 +11229,46 @@ document.addEventListener('keydown', function(e) {
     } else {
       samSetStatus(`✅ Full sync complete in ${elapsed}s`, 'ok');
     }
+    const _lbl = document.getElementById('samLastSyncedLabel');
+    if (_lbl) { const _t = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); _lbl.textContent = errors.length ? '⚠️ Sync error ' + _t : '🛰️ Synced · ' + _t; }
     if (typeof updateUI === 'function') updateUI(); // refresh dashboard GPS + HOS
   };
 
   // Quick refresh of GPS + HOS only — for use in fleet modal
   window.samRefreshLive = async function(btn) {
     if (!samGetKey()) {
-      alert('Connect Samsara first (Samsara tab → enter API key → Test Connection)');
+      if (btn) alert('Connect Samsara first (Samsara tab → enter API key → Test Connection)');
       return;
     }
     if (btn) { btn.textContent = '⏳ Loading…'; btn.disabled = true; }
     let errors = [];
     await samLoadVehicles().catch(e => errors.push(e.message));
     await samLoadHOS().catch(e => errors.push(e.message));
-    if (btn) { btn.textContent = errors.length ? '⚠️ Error' : '✅ Live'; btn.disabled = false; setTimeout(() => { btn.textContent = '🛰️ Refresh Live'; }, 3000); }
-    renderFleetCards(); // re-render fleet cards with fresh data
-    if (typeof updateUI === 'function') updateUI(); // refresh dashboard GPS + HOS
+    if (btn) { btn.textContent = errors.length ? '⚠️ Error' : '✅ Live'; btn.disabled = false; setTimeout(() => { btn.textContent = '🛰️ Refresh Live'; }, 2000); }
+    // Update last-synced timestamp
+    const now = new Date();
+    const t = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const lbl = document.getElementById('samLastSyncedLabel');
+    if (lbl) lbl.textContent = errors.length ? '⚠️ Sync error ' + t : '🛰️ Live · ' + t;
+    renderFleetCards();
+    if (typeof updateUI === 'function') updateUI();
+  };
+
+  // ── Auto-sync every 15 minutes if Samsara key is configured ──
+  let _samAutoSyncInterval = null;
+  window.samStartAutoSync = function() {
+    if (_samAutoSyncInterval) clearInterval(_samAutoSyncInterval);
+    if (!samGetKey()) return;
+    // Initial sync on login (delay 3s so UI settles first)
+    setTimeout(() => window.samSyncAll(), 3000);
+    // Then every 15 minutes
+    _samAutoSyncInterval = setInterval(() => {
+      if (samGetKey()) window.samSyncAll();
+    }, 15 * 60 * 1000);
+    console.log('🛰️ Samsara auto-sync started (every 15 min)');
+  };
+  window.samStopAutoSync = function() {
+    if (_samAutoSyncInterval) { clearInterval(_samAutoSyncInterval); _samAutoSyncInterval = null; }
   };
 
   // ── Init: load saved key on page load ──
@@ -11588,9 +11814,12 @@ document.addEventListener('keydown', function(e) {
       } catch(e) {}
       // Hide the auth wall
       wall.classList.add('gone');
+      // Start Samsara auto-sync
+      if (typeof samStartAutoSync === 'function') samStartAutoSync();
     } else {
       fbUser = null;
       wall.classList.remove('gone');
+      if (typeof samStopAutoSync === 'function') samStopAutoSync();
     }
   });
 
