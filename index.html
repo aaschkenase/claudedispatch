@@ -1646,6 +1646,7 @@ td {
       <button class="fleet-sort-btn" onclick="setFleetSort('net', this)">Net ↓</button>
       <button class="fleet-sort-btn" onclick="setFleetSort('rpm', this)">RPM ↓</button>
       <button class="fleet-sort-btn" onclick="setFleetSort('loads', this)">Loads ↓</button>
+      <button id="samLiveRefreshBtn" onclick="samRefreshLive(this)" style="margin-left:auto;padding:6px 14px;background:rgba(0,255,136,0.1);border:1px solid rgba(0,255,136,0.4);color:var(--success);border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">🛰️ Refresh Live</button>
     </div>
     <div class="fleet-cards-grid" id="fleetCardsGrid"></div>
   </div>
@@ -2055,6 +2056,42 @@ td {
       </div>
 </div>
 
+    <!-- NEXT DESTINATION + ETA TILE -->
+    <div id="nextDestTile" style="display:none;background:linear-gradient(135deg,rgba(255,184,0,0.08),rgba(0,180,255,0.08));border:1px solid rgba(255,184,0,0.35);border-radius:10px;padding:14px 20px;margin-bottom:16px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+        <div style="display:flex;align-items:center;gap:14px;">
+          <div style="font-size:26px;">🎯</div>
+          <div>
+            <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);font-weight:700;">Next Destination</div>
+            <div id="nextDestCity" style="font-size:17px;font-weight:900;color:var(--text-primary);margin-top:2px;">—</div>
+            <div id="nextDestOriginLabel" style="font-size:11px;color:var(--text-muted);margin-top:2px;"></div>
+          </div>
+        </div>
+        <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:center;">
+          <div style="text-align:center;">
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);font-weight:700;">HOS Drive Left</div>
+            <div id="nextDestHosLeft" style="font-size:18px;font-weight:900;">—</div>
+          </div>
+          <div style="text-align:center;">
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);font-weight:700;">Distance</div>
+            <div id="nextDestMiles" style="font-size:18px;font-weight:900;color:var(--accent-cyan);">—</div>
+          </div>
+          <div style="text-align:center;">
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);font-weight:700;">Drive Time</div>
+            <div id="nextDestDriveTime" style="font-size:18px;font-weight:900;color:var(--text-primary);">—</div>
+          </div>
+          <div style="text-align:center;">
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);font-weight:700;">Est. Arrival</div>
+            <div id="nextDestETA" style="font-size:18px;font-weight:900;color:var(--warning);">—</div>
+          </div>
+          <button id="nextDestCalcBtn" onclick="calcNextDestRoute()" style="background:linear-gradient(135deg,var(--accent-cyan),var(--success));color:#000;border:none;border-radius:8px;padding:10px 16px;font-family:'Rajdhani',sans-serif;font-size:13px;font-weight:900;cursor:pointer;white-space:nowrap;">
+            🗺️ Calculate
+          </button>
+        </div>
+      </div>
+      <div id="nextDestHosWarning" style="display:none;margin-top:10px;padding:8px 12px;background:rgba(255,59,59,0.1);border:1px solid rgba(255,59,59,0.4);border-radius:8px;font-size:12px;font-weight:700;color:var(--danger);"></div>
+    </div>
+
     <!-- DRIVER STICKY NOTES -->
     <div id="driverStickyWrap" style="margin-bottom: 16px; display:flex; gap:12px; align-items:stretch;">
       <div style="flex: 1; background: rgba(255,184,0,0.06); border: 1px solid rgba(255,184,0,0.22); border-radius: 12px; padding: 14px;">
@@ -2254,11 +2291,11 @@ td {
               </div>
             </div>
             <div style="margin:-4px 0 12px;">
-              <button id="gmapsCalcBtn" onclick="gmapsAutoFillLoadMiles()" type="button"
+              <button id="gmapsCalcBtn" onclick="calcRoute()" type="button"
                 style="padding:7px 14px;background:rgba(0,180,255,0.12);border:1px solid var(--accent-cyan);color:var(--accent-cyan);border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;">
                 🗺️ Get Miles from Origin → Destination
               </button>
-              <span style="font-size:11px;color:var(--text-muted);margin-left:8px;">Auto-fills Loaded Miles using Google Maps</span>
+              <span style="font-size:11px;color:var(--text-muted);margin-left:8px;">Shows fastest + toll-free options via Google Maps</span>
             </div>
 
             <div class="input-row">
@@ -5664,59 +5701,196 @@ function saveRecentLoad(origin, dest){
  *************************/
 function updateCurrentLocation(loads) {
   const locationTextEl = document.getElementById('currentLocationText');
-  const timeEl = document.getElementById('lastDeliveryTime');
-  
+  const timeEl         = document.getElementById('lastDeliveryTime');
+
   if (!loads || loads.length === 0) {
     locationTextEl.innerText = 'No loads yet';
+    locationTextEl.style.color = 'var(--text-muted)';
+    timeEl.innerText = '';
     const p = document.getElementById('reloadSuggestionsPanel');
     if (p) p.style.display = 'none';
     const sw = document.getElementById('setupMarketWrap');
     if (sw) sw.style.display = 'none';
-    locationTextEl.style.color = 'var(--text-muted)';
-    timeEl.innerText = '';
+    updateNextDestTile(null, null);
     return;
   }
-  
-  // Get the most recent load (last in array)
+
   const lastLoad = loads[loads.length - 1];
-  
-  // Determine current location
-  let currentLocation = '';
-  let timestamp = '';
-  
-  if (lastLoad.deliversNextWeek) {
-    // Load hasn't been delivered yet - still at origin or in transit
-    currentLocation = `In transit: ${lastLoad.origin} → ${lastLoad.dest}`;
-    locationTextEl.style.color = 'var(--warning)';
-  } else if (lastLoad.fromPreviousWeek) {
-    // Just delivered from previous week
-    currentLocation = lastLoad.dest;
-    locationTextEl.style.color = 'var(--success)';
+
+  // ── Live GPS from Samsara ──
+  const appId    = state.currentDriverId;
+  const liveData = window.samGetLiveDataForDriver ? window.samGetLiveDataForDriver(appId) : null;
+
+  if (liveData?.gpsCity) {
+    // Real GPS — show it
+    locationTextEl.innerHTML =
+      `${escapeHtml(liveData.gpsCity)} <span style="font-size:11px;background:rgba(0,255,136,0.15);color:var(--success);padding:2px 8px;border-radius:10px;font-weight:700;vertical-align:middle;">● LIVE</span>`;
+    locationTextEl.style.color = 'var(--accent-cyan)';
   } else {
-    // Normal delivery
-    currentLocation = lastLoad.dest;
-    locationTextEl.style.color = 'var(--success)';
+    // No Samsara — fall back to last known city from loads
+    locationTextEl.innerText = lastLoad.dest || 'Unknown';
+    locationTextEl.style.color = lastLoad.deliversNextWeek ? 'var(--warning)' : 'var(--success)';
   }
-  
-  locationTextEl.innerText = currentLocation;
-  
-  // Show delivery info if available
+
+  // Delivery time line
   if (lastLoad.deliveryDay) {
-    if (lastLoad.deliversNextWeek) {
-      timeEl.innerText = `Delivers next ${lastLoad.deliveryDay}`;
-    } else {
-      timeEl.innerText = `Last delivery: ${lastLoad.deliveryDay}`;
-    }
+    timeEl.innerText = lastLoad.deliversNextWeek
+      ? `Delivers next ${lastLoad.deliveryDay}`
+      : `Last delivery: ${lastLoad.deliveryDay}`;
   } else {
     timeEl.innerText = '';
   }
 
-  // Update setup-market suggestions inline based on current location
-  const _locText = (lastLoad && lastLoad.deliversNextWeek) ? lastLoad.dest : (lastLoad ? lastLoad.dest : "");
-  const _parsedLoc = parseCityStateFromTextReload(_locText);
+  // Setup market suggestions (based on dest city)
+  const _parsedLoc = parseCityStateFromTextReload(lastLoad.dest || '');
   renderSetupMarketsInline(_parsedLoc.city, _parsedLoc.state);
-  const p = document.getElementById("reloadSuggestionsPanel");
-  if (p) p.style.display = "none";
+  const p = document.getElementById('reloadSuggestionsPanel');
+  if (p) p.style.display = 'none';
+
+  // Next destination tile — last load is always the active load
+  updateNextDestTile(lastLoad, liveData);
+}
+
+// ── Next Destination tile — shows dest + HOS immediately, route on button press ──
+function updateNextDestTile(activeLoad, liveData) {
+  const tile = document.getElementById('nextDestTile');
+  if (!tile) return;
+  if (!activeLoad) { tile.style.display = 'none'; return; }
+
+  tile.style.display = 'block';
+
+  // Store on tile for calcNextDestRoute() to use
+  tile.dataset.dest      = activeLoad.dest || '';
+  tile.dataset.liveGps   = liveData?.gpsCity || '';
+  tile.dataset.origin    = activeLoad.origin || '';
+
+  document.getElementById('nextDestCity').textContent = activeLoad.dest || '—';
+
+  // Show origin label — live GPS if available, else load origin
+  const originLabel = document.getElementById('nextDestOriginLabel');
+  if (liveData?.gpsCity) {
+    originLabel.innerHTML = `From <span style="color:var(--accent-cyan);font-weight:700;">${escapeHtml(liveData.gpsCity)}</span> <span style="font-size:10px;color:var(--success);">● LIVE</span>`;
+  } else if (activeLoad.origin) {
+    originLabel.textContent = `From ${activeLoad.origin}`;
+  } else {
+    originLabel.textContent = '';
+  }
+
+  // HOS drive left — show immediately
+  const hos      = liveData?.hos || null;
+  const driveMs  = hos?.driveMs ?? null;
+  const driveHrs = driveMs != null ? driveMs / 3600000 : null;
+  const hosEl    = document.getElementById('nextDestHosLeft');
+  if (driveHrs != null) {
+    const h = Math.floor(driveHrs), m = Math.round((driveHrs - h) * 60);
+    hosEl.textContent = `${h}h ${m}m`;
+    hosEl.style.color = driveHrs <= 2 ? 'var(--danger)' : driveHrs <= 4 ? 'var(--warning)' : 'var(--success)';
+  } else {
+    hosEl.textContent = '—';
+    hosEl.style.color = 'var(--text-muted)';
+  }
+
+  // Reset route fields — user must hit Calculate
+  document.getElementById('nextDestMiles').textContent    = '—';
+  document.getElementById('nextDestDriveTime').textContent = '—';
+  document.getElementById('nextDestETA').textContent       = '—';
+  document.getElementById('nextDestHosWarning').style.display = 'none';
+
+  // Store driveHrs for when calculate runs
+  tile.dataset.driveHrs = driveHrs != null ? driveHrs : '';
+}
+
+// ── Called by Calculate button ──
+window.calcNextDestRoute = async function() {
+  const tile   = document.getElementById('nextDestTile');
+  const btn    = document.getElementById('nextDestCalcBtn');
+  const origin = tile.dataset.liveGps || tile.dataset.origin;
+  const dest   = tile.dataset.dest;
+  const driveHrs = tile.dataset.driveHrs !== '' ? Number(tile.dataset.driveHrs) : null;
+
+  if (!origin || !dest) {
+    alert('No origin or destination available. Make sure Samsara is synced or a load is entered.');
+    return;
+  }
+
+  btn.textContent = '⏳ Calculating...';
+  btn.disabled    = true;
+
+  try {
+    let key = '';
+    try { key = window.gmapsGetKey ? window.gmapsGetKey() : ''; } catch(e) {}
+
+    if (!key) {
+      // Rough estimate — no Maps key
+      const loadMiles = Number(document.getElementById('nextDestMiles').textContent) || 500;
+      document.getElementById('nextDestDriveTime').textContent = _fmtDriveTime(loadMiles);
+      _updateETA(loadMiles, driveHrs, null, null);
+      btn.textContent = '🗺️ Calculate';
+      btn.disabled    = false;
+      return;
+    }
+
+    const route = await gmapsRoute(origin, dest, { avoidTolls: false });
+    document.getElementById('nextDestMiles').textContent     = route.miles.toLocaleString() + ' mi';
+    document.getElementById('nextDestDriveTime').textContent = _fmtDriveTime(route.miles, route.durationMin);
+    _updateETA(route.miles, driveHrs, null, route.durationMin);
+
+    // Update origin label to confirm what was used
+    const originLabel = document.getElementById('nextDestOriginLabel');
+    originLabel.innerHTML = `From <span style="color:var(--accent-cyan);font-weight:700;">${escapeHtml(origin)}</span> → <span style="color:var(--text-primary);">${escapeHtml(dest)}</span>`;
+
+    btn.textContent = '✅ Updated';
+    setTimeout(() => { btn.textContent = '🗺️ Calculate'; btn.disabled = false; }, 2000);
+  } catch(e) {
+    btn.textContent = '❌ Error';
+    btn.disabled    = false;
+    setTimeout(() => { btn.textContent = '🗺️ Calculate'; }, 2000);
+    console.warn('calcNextDestRoute error:', e);
+  }
+};
+
+function _fmtDriveTime(miles, durationMin) {
+  if (durationMin != null) {
+    const h = Math.floor(durationMin / 60), m = durationMin % 60;
+    return `${h}h ${m}m`;
+  }
+  // Estimate: average 55 mph
+  const hrs = miles / 55;
+  const h = Math.floor(hrs), m = Math.round((hrs - h) * 60);
+  return `${h}h ${m}m`;
+}
+
+function _updateETA(miles, driveHrsLeft, deliveryDay, durationMin) {
+  const etaEl      = document.getElementById('nextDestETA');
+  const warnEl     = document.getElementById('nextDestHosWarning');
+  const driveNeededHrs = durationMin != null ? durationMin / 60 : miles / 55;
+
+  // ETA from now
+  const now    = new Date();
+  const etaMs  = now.getTime() + driveNeededHrs * 3600000;
+  const eta    = new Date(etaMs);
+  const days   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const isToday    = eta.toDateString() === now.toDateString();
+  const isTomorrow = eta.toDateString() === new Date(now.getTime() + 86400000).toDateString();
+  const hh = eta.getHours() % 12 || 12;
+  const mm = String(eta.getMinutes()).padStart(2, '0');
+  const ampm = eta.getHours() >= 12 ? 'PM' : 'AM';
+  const timeStr = `${hh}:${mm} ${ampm}`;
+
+  if (isToday)         etaEl.textContent = `Today ${timeStr}`;
+  else if (isTomorrow) etaEl.textContent = `Tomorrow ${timeStr}`;
+  else                 etaEl.textContent = `${days[eta.getDay()]} ${months[eta.getMonth()]} ${eta.getDate()}, ${timeStr}`;
+
+  // HOS warning
+  if (driveHrsLeft != null && driveNeededHrs > driveHrsLeft) {
+    const shortfall = driveNeededHrs - driveHrsLeft;
+    const sh = Math.floor(shortfall), sm = Math.round((shortfall - sh) * 60);
+    warnEl.style.display = 'block';
+    warnEl.textContent   = `⚠️ HOS SHORT — Driver needs ${_fmtDriveTime(0, Math.round(driveNeededHrs * 60))} but only has ${_fmtDriveTime(0, Math.round(driveHrsLeft * 60))} left. Will need a ${sh}h ${sm}m break before arriving.`;
+  } else {
+    warnEl.style.display = 'none';
+  }
 }
 
 function renderRecentLoads(){
@@ -6659,63 +6833,36 @@ async function calcRoute(){
   const d = document.getElementById('dest').value.trim();
   if (!o || !d) return alert("Enter origin and destination cities first");
 
-  const btn = document.querySelector('button[onclick="calcRoute()"]');
-  if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
-
   const key = gmapsGetKey();
 
-  try {
-    setStatus("Calculating route…", true);
-
-    if (key) {
-      // ── Google Maps path ──
-      const loadMiles = await gmapsGetMiles(o, d, key);
-      document.getElementById('mi_load').value = loadMiles;
-
-      // Deadhead from last drop if available
-      const wk = getCurrentWeek();
-      const lastLoad = wk.loads?.length ? wk.loads[wk.loads.length - 1] : null;
-      const lastCity = lastLoad?.dest || '';
-      if (lastCity && lastCity !== o) {
-        try {
-          const dhMiles = await gmapsGetMiles(lastCity, o, key);
-          document.getElementById('mi_dh').value = dhMiles;
-        } catch(e) {
-          document.getElementById('mi_dh').value = 0;
-        }
-      } else {
-        document.getElementById('mi_dh').value = 0;
-      }
-
-      setStatus("", false);
-      if (btn) { btn.textContent = '📡 Get Miles'; btn.disabled = false; }
-      preview();
-
-    } else {
-      // ── No key: straight-line estimate fallback ──
+  if (!key) {
+    // ── No key: straight-line estimate fallback ──
+    try {
       setStatus("No Google Maps key — estimating…", true);
       const locA = await getLoc(o);
       const locB = await getLoc(d);
-
       if (!locA || !locB) {
         setStatus("City not found — enter miles manually", true);
         setTimeout(() => setStatus("", false), 3000);
-        if (btn) { btn.textContent = '📡 Get Miles'; btn.disabled = false; }
         return;
       }
+      // Save coords to dataset so map still works
+      const originEl = document.getElementById('origin');
+      const destEl   = document.getElementById('dest');
+      originEl.dataset.lat = Number(locA.lat);
+      originEl.dataset.lon = Number(locA.lon);
+      destEl.dataset.lat   = Number(locB.lat);
+      destEl.dataset.lon   = Number(locB.lon);
 
       const R = 3959;
       const lat1 = Number(locA.lat) * Math.PI / 180;
       const lat2 = Number(locB.lat) * Math.PI / 180;
       const dLat = (Number(locB.lat) - Number(locA.lat)) * Math.PI / 180;
       const dLon = (Number(locB.lon) - Number(locA.lon)) * Math.PI / 180;
-      const a = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
+      const a    = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
       const estimate = Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)) * 1.25);
-
       const userMiles = prompt(
-        `⚠️ No Google Maps key saved (Settings → Google Maps API)\n\n` +
-        `Straight-line estimate: ~${estimate} mi (×1.25 for roads)\n\n` +
-        `Enter actual loaded miles or click OK to use estimate:`,
+        `⚠️ No Google Maps key saved (Settings → Google Maps API)\n\nEstimate: ~${estimate} mi\n\nEnter actual miles or OK to use estimate:`,
         estimate
       );
       if (userMiles !== null) {
@@ -6724,14 +6871,56 @@ async function calcRoute(){
         preview();
       }
       setStatus("", false);
-      if (btn) { btn.textContent = '📡 Get Miles'; btn.disabled = false; }
+    } catch(e) {
+      setStatus("", false);
+      alert("Error: " + e.message);
     }
-  } catch(e) {
-    console.error("Route error:", e);
-    setStatus("", false);
-    if (btn) { btn.textContent = '📡 Get Miles'; btn.disabled = false; }
-    alert("Routing error: " + e.message + "\n\nEnter miles manually.");
+    return;
   }
+
+  // ── Google Maps: show route options modal ──
+  await gmapsShowRouteOptions(o, d, {
+    onSelect: async (route, avoidTolls) => {
+      // Save miles
+      document.getElementById('mi_load').value = route.miles;
+
+      // Save coords + polyline to dataset so map renders the real route
+      const originEl = document.getElementById('origin');
+      const destEl   = document.getElementById('dest');
+      originEl.dataset.lat = route.originCoord.lat;
+      originEl.dataset.lon = route.originCoord.lng;
+      destEl.dataset.lat   = route.destCoord.lat;
+      destEl.dataset.lon   = route.destCoord.lng;
+
+      // Store polyline as GeoJSON for Leaflet
+      if (route.polylineLatLngs?.length) {
+        const geo = {
+          type: 'LineString',
+          coordinates: route.polylineLatLngs.map(([lat, lng]) => [lng, lat])
+        };
+        originEl.dataset.routeGeo = JSON.stringify(geo);
+      } else {
+        originEl.dataset.routeGeo = '';
+      }
+
+      // Auto-deadhead from driver's last drop city
+      const wk = getCurrentWeek();
+      const lastCity = wk.loads?.length ? wk.loads[wk.loads.length - 1].dest : '';
+      if (lastCity && lastCity.toLowerCase() !== o.toLowerCase()) {
+        try {
+          const dh = await gmapsRoute(lastCity, o, { avoidTolls });
+          document.getElementById('mi_dh').value = dh.miles;
+        } catch(e) {
+          document.getElementById('mi_dh').value = 0;
+        }
+      } else {
+        document.getElementById('mi_dh').value = 0;
+      }
+
+      setStatus("", false);
+      preview();
+    }
+  });
 }
 
 /************************* 
@@ -9054,126 +9243,198 @@ async function gmapsTestKey() {
   if (!key) { gmapsSetStatus('⚠️ No key entered', 'var(--warning)'); return; }
   gmapsSetStatus('⏳ Testing…', 'var(--text-muted)');
   try {
-    const miles = await gmapsGetMiles('Chicago, IL', 'Dallas, TX', key);
-    if (miles) {
-      gmapsSetStatus(`✅ Connected — test route Chicago→Dallas: ${miles.toLocaleString()} mi`, 'var(--success)');
+    const result = await gmapsRoute('Chicago, IL', 'Dallas, TX', { avoidTolls: false, key });
+    if (result) {
+      gmapsSetStatus(`✅ Connected — Chicago→Dallas: ${result.miles.toLocaleString()} mi`, 'var(--success)');
     } else {
-      gmapsSetStatus('⚠️ Got a response but no distance — check API restrictions', 'var(--warning)');
+      gmapsSetStatus('⚠️ Got response but no distance — check API restrictions', 'var(--warning)');
     }
   } catch(e) {
     gmapsSetStatus('❌ ' + e.message, 'var(--danger)');
   }
 }
 
-// Geocode a city/state string to lat/lng
-async function gmapsGeocode(place, key) {
-  const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(place)}&key=${key}`;
-  const res = await fetch(url);
-  const data = await res.json();
-  if (data.status !== 'OK' || !data.results[0]) throw new Error(`Geocode failed for "${place}": ${data.status}`);
-  const loc = data.results[0].geometry.location;
-  return { lat: loc.lat, lng: loc.lng };
+// Decode Google's encoded polyline format to [[lat,lng],...] for Leaflet
+function gmapsDecodePolyline(encoded) {
+  const pts = [];
+  let idx = 0, lat = 0, lng = 0;
+  while (idx < encoded.length) {
+    let b, shift = 0, result = 0;
+    do { b = encoded.charCodeAt(idx++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+    lat += result & 1 ? ~(result >> 1) : result >> 1;
+    shift = 0; result = 0;
+    do { b = encoded.charCodeAt(idx++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+    lng += result & 1 ? ~(result >> 1) : result >> 1;
+    pts.push([lat / 1e5, lng / 1e5]);
+  }
+  return pts;
 }
 
-// Get driving miles between two places using Routes API
-async function gmapsGetMiles(origin, destination, key) {
+// Core route function — returns { miles, durationMin, polylineLatLngs, originCoord, destCoord }
+async function gmapsRoute(origin, destination, { avoidTolls = false, key } = {}) {
   key = key || gmapsGetKey();
-  if (!key) throw new Error('No Google Maps API key saved — add it in Settings');
+  if (!key) throw new Error('No Google Maps API key — add it in Settings');
 
-  // Geocode both ends
-  const [oCoord, dCoord] = await Promise.all([
-    gmapsGeocode(origin, key),
-    gmapsGeocode(destination, key)
-  ]);
+  // Geocode
+  async function geocode(place) {
+    const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(place)}&key=${key}`);
+    const data = await res.json();
+    if (data.status !== 'OK' || !data.results[0]) throw new Error(`Geocode failed for "${place}": ${data.status}`);
+    const loc = data.results[0].geometry.location;
+    return { lat: loc.lat, lng: loc.lng };
+  }
 
-  // Routes API
+  const [oCoord, dCoord] = await Promise.all([geocode(origin), geocode(destination)]);
+
+  const body = {
+    origin:      { location: { latLng: { latitude: oCoord.lat, longitude: oCoord.lng } } },
+    destination: { location: { latLng: { latitude: dCoord.lat, longitude: dCoord.lng } } },
+    travelMode:  'DRIVE',
+    routingPreference: 'TRAFFIC_UNAWARE',
+    ...(avoidTolls ? { routeModifiers: { avoidTolls: true } } : {})
+  };
+
   const res = await fetch(`https://routes.googleapis.com/directions/v2:computeRoutes?key=${key}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-Goog-FieldMask': 'routes.distanceMeters,routes.duration'
+      'X-Goog-FieldMask': 'routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,routes.travelAdvisory'
     },
-    body: JSON.stringify({
-      origin:      { location: { latLng: { latitude: oCoord.lat, longitude: oCoord.lng } } },
-      destination: { location: { latLng: { latitude: dCoord.lat, longitude: dCoord.lng } } },
-      travelMode:  'DRIVE',
-      routingPreference: 'TRAFFIC_UNAWARE'
-    })
+    body: JSON.stringify(body)
   });
 
   const data = await res.json();
   if (!data.routes?.[0]?.distanceMeters) {
     throw new Error(data.error?.message || 'No route returned — check key permissions');
   }
-  const meters = data.routes[0].distanceMeters;
-  return Math.round(meters / 1609.34); // convert to miles
+
+  const route = data.routes[0];
+  const miles = Math.round(route.distanceMeters / 1609.34);
+  const durationMin = Math.round(parseInt(route.duration) / 60);
+  const polylineLatLngs = route.polyline?.encodedPolyline
+    ? gmapsDecodePolyline(route.polyline.encodedPolyline)
+    : null;
+
+  return { miles, durationMin, polylineLatLngs, originCoord: oCoord, destCoord: dCoord };
 }
 
-// Auto-fill miles in the main load entry form
-window.gmapsAutoFillLoadMiles = async function() {
-  const origin = document.getElementById('origin')?.value?.trim();
-  const dest   = document.getElementById('dest')?.value?.trim();
-  const miLoad = document.getElementById('mi_load');
+// Backward-compat wrapper used in simulator
+async function gmapsGetMiles(origin, destination, key) {
+  const result = await gmapsRoute(origin, destination, { avoidTolls: false, key });
+  return result.miles;
+}
 
-  if (!origin || !dest || !miLoad) return;
-  if (!gmapsGetKey()) {
-    alert('Add your Google Maps API key in Settings → Google Maps API first.');
-    return;
-  }
-
-  const btn = document.getElementById('gmapsCalcBtn');
-  if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
-
-  try {
-    const miles = await gmapsGetMiles(origin, dest);
-    miLoad.value = miles;
-    miLoad.dispatchEvent(new Event('input')); // trigger preview recalc
-    if (btn) { btn.textContent = '✅ ' + miles.toLocaleString() + ' mi'; }
-    setTimeout(() => { if (btn) { btn.textContent = '🗺️ Get Miles'; btn.disabled = false; } }, 2500);
-  } catch(e) {
-    if (btn) { btn.textContent = '❌ Error'; btn.disabled = false; }
-    alert('Google Maps error: ' + e.message);
-  }
-};
-
-// Auto-fill miles in the Load Simulator
-window.gmapsAutoFillSimMiles = async function(originVal, destVal) {
+// ── Toll comparison + route selection (used by calcRoute and simulator) ──
+async function gmapsShowRouteOptions(origin, dest, { onSelect } = {}) {
+  if (!origin || !dest) { alert('Enter origin and destination first'); return; }
   const key = gmapsGetKey();
-  if (!key) {
-    alert('Add your Google Maps API key in Settings → Google Maps API first.');
-    return;
-  }
+  if (!key) { alert('Add your Google Maps API key in Settings → Google Maps API first.'); return; }
 
-  const btn = document.getElementById('sim_gmaps_btn');
-  if (btn) { btn.textContent = '⏳ Calculating…'; btn.disabled = true; }
+  // Show loading overlay
+  const overlayId = 'routeOptionsOverlay';
+  document.getElementById(overlayId)?.remove();
+  document.body.insertAdjacentHTML('beforeend', `
+    <div id="${overlayId}" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:20000;display:flex;align-items:center;justify-content:center;padding:16px;" onclick="if(event.target===this)this.remove()">
+      <div style="background:var(--bg-elevated);border:1px solid var(--border-medium);border-radius:16px;width:100%;max-width:580px;box-shadow:0 12px 48px rgba(0,0,0,0.6);" onclick="event.stopPropagation()">
+        <div style="padding:20px 24px;border-bottom:1px solid var(--border-subtle);">
+          <div style="font-size:16px;font-weight:900;color:var(--text-primary);">🗺️ Route Options</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${escapeHtml(origin)} → ${escapeHtml(dest)}</div>
+        </div>
+        <div id="routeOptionsBody" style="padding:20px 24px;">
+          <div style="text-align:center;color:var(--text-muted);padding:24px;">⏳ Fetching both routes…</div>
+        </div>
+      </div>
+    </div>`);
 
   try {
-    const origin = originVal || document.getElementById('sim_origin')?.value?.trim();
-    const dest   = destVal   || document.getElementById('sim_dest')?.value?.trim();
+    const [fastest, noTolls] = await Promise.all([
+      gmapsRoute(origin, dest, { avoidTolls: false }),
+      gmapsRoute(origin, dest, { avoidTolls: true })
+    ]);
 
-    if (!origin || !dest) throw new Error('Enter origin and destination first');
+    const extraMiles = noTolls.miles - fastest.miles;
+    const extraMin   = noTolls.durationMin - fastest.durationMin;
+    const fuelPerMile = (() => { try { return (getSpecs().fuel / getSpecs().mpg) || 0.55; } catch(e) { return 0.55; } })();
+    const extraFuelCost = extraMiles * fuelPerMile;
 
-    const loadMiles = await gmapsGetMiles(origin, dest);
-    const miLoadEl = document.getElementById('sim_mi_load');
-    if (miLoadEl) { miLoadEl.value = loadMiles; }
-
-    // Also try deadhead from driver's last known city
-    const dhOrigin = document.getElementById('sim_dh_from')?.value?.trim();
-    if (dhOrigin && origin) {
-      try {
-        const dhMiles = await gmapsGetMiles(dhOrigin, origin);
-        const dhEl = document.getElementById('sim_mi_dh');
-        if (dhEl) { dhEl.value = dhMiles; }
-      } catch(e) {} // dh is optional, fail silently
+    function fmtTime(min) {
+      const h = Math.floor(min / 60), m = min % 60;
+      return h > 0 ? `${h}h ${m}m` : `${m}m`;
     }
 
-    if (btn) { btn.textContent = '✅ ' + loadMiles.toLocaleString() + ' mi'; btn.disabled = false; }
-    window._simRecalc?.();
-    setTimeout(() => { if (btn) { btn.textContent = '🗺️ Calculate Miles'; btn.disabled = false; } }, 2500);
+    function routeCard(label, route, color, badge, selectLabel, isTolls) {
+      const extraNote = isTolls && extraMiles > 0
+        ? `<div style="font-size:11px;color:var(--warning);margin-top:6px;">+${extraMiles} mi · +${fmtTime(extraMin)} · ~+$${extraFuelCost.toFixed(0)} fuel vs fastest</div>`
+        : (isTolls && extraMiles <= 0 ? `<div style="font-size:11px;color:var(--success);margin-top:6px;">✅ Same or shorter than fastest route</div>` : '');
+      return `
+        <div style="background:rgba(0,0,0,0.25);border:2px solid ${color}44;border-radius:12px;padding:16px 18px;flex:1;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+            <span style="font-size:13px;font-weight:900;color:${color};">${label}</span>
+            <span style="font-size:10px;padding:2px 8px;background:${color}22;color:${color};border-radius:10px;font-weight:700;">${badge}</span>
+          </div>
+          <div style="font-size:28px;font-weight:900;color:var(--text-primary);">${route.miles.toLocaleString()} <span style="font-size:14px;color:var(--text-muted);">mi</span></div>
+          <div style="font-size:13px;color:var(--text-muted);margin-top:4px;">~${fmtTime(route.durationMin)} drive time</div>
+          ${extraNote}
+          <button onclick="window._gmapsSelectRoute(${isTolls?1:0})"
+            style="width:100%;margin-top:14px;padding:10px;background:${color};color:#000;border:none;border-radius:8px;font-weight:800;font-size:13px;cursor:pointer;">
+            ${selectLabel}
+          </button>
+        </div>`;
+    }
+
+    document.getElementById('routeOptionsBody').innerHTML = `
+      <div style="display:flex;gap:12px;margin-bottom:16px;">
+        ${routeCard('⚡ Fastest', fastest, '#00b4ff', 'Recommended', 'Use Fastest Route', false)}
+        ${routeCard('🚫 No Tolls', noTolls, '#00ff88', 'Avoid Tolls', 'Use No-Toll Route', true)}
+      </div>
+      ${extraMiles > 0 ? `
+      <div style="background:rgba(255,184,0,0.08);border:1px solid rgba(255,184,0,0.3);border-radius:10px;padding:12px 14px;font-size:12px;color:var(--text-muted);">
+        ℹ️ The toll-free route adds <strong style="color:var(--warning);">${extraMiles} miles</strong> and ~<strong style="color:var(--warning);">${fmtTime(extraMin)}</strong>.
+        Extra fuel cost ~<strong style="color:var(--warning);">$${extraFuelCost.toFixed(0)}</strong> — weigh this against actual toll cost for this lane.
+      </div>` : `
+      <div style="background:rgba(0,255,136,0.08);border:1px solid rgba(0,255,136,0.3);border-radius:10px;padding:12px 14px;font-size:12px;color:var(--success);">
+        ✅ The toll-free route is the same distance — easy choice to avoid tolls at no extra cost.
+      </div>`}
+      <div style="margin-top:14px;text-align:right;">
+        <button onclick="document.getElementById('${overlayId}').remove()" style="padding:8px 16px;background:var(--bg-primary);border:1px solid var(--border-subtle);color:var(--text-muted);border-radius:8px;cursor:pointer;font-size:12px;">Cancel</button>
+      </div>`;
+
+    // Selection handler
+    window._gmapsSelectRoute = function(useTolls) {
+      const chosen = useTolls ? noTolls : fastest;
+      document.getElementById(overlayId)?.remove();
+      if (onSelect) onSelect(chosen, useTolls);
+    };
+
   } catch(e) {
-    if (btn) { btn.textContent = '❌ Error'; btn.disabled = false; }
-    alert('Google Maps error: ' + e.message);
+    document.getElementById('routeOptionsBody').innerHTML = `<div style="padding:16px;color:var(--danger);">❌ ${escapeHtml(e.message)}</div>`;
   }
+}
+
+// Auto-fill simulator miles via route options modal
+window.gmapsAutoFillSimMiles = async function() {
+  const origin = document.getElementById('sim_origin')?.value?.trim();
+  const dest   = document.getElementById('sim_dest')?.value?.trim();
+  if (!origin || !dest) { alert('Enter Pickup City and Delivery City first'); return; }
+
+  const dhFrom = document.getElementById('sim_dh_from')?.value?.trim();
+
+  await gmapsShowRouteOptions(origin, dest, {
+    onSelect: async (route, avoidTolls) => {
+      const miLoadEl = document.getElementById('sim_mi_load');
+      if (miLoadEl) { miLoadEl.value = route.miles; }
+
+      // Deadhead
+      if (dhFrom) {
+        try {
+          const dh = await gmapsRoute(dhFrom, origin, { avoidTolls });
+          const dhEl = document.getElementById('sim_mi_dh');
+          if (dhEl) dhEl.value = dh.miles;
+        } catch(e) {}
+      }
+      window._simRecalc?.();
+    }
+  });
 };
 
 // Load saved key on page load
@@ -9204,18 +9465,17 @@ window.showLoadSimulator = function(driverId) {
   function getSamHOS() {
     try {
       const links = JSON.parse(localStorage.getItem('samsara_driver_links_v1') || '{}');
-      // links = { samId: appId } — find samId that maps to this driverId
       const samId = Object.keys(links).find(k => links[k] === driverId);
-      if (!samId || !window._sam?.hos?.length) return null;
-      const samDriver = window._sam.hos.find(sd => sd.id === samId);
-      if (!samDriver) return null;
-      const hos = samDriver.currentHosStatus || {};
-      return {
-        driveMs:  hos.remainingDrivingTimeMs ?? null,
-        cycleMs:  hos.hosCycle?.remainingMs   ?? null,
-        status:   hos.currentDutyStatus       ?? 'unknown',
-        name:     samDriver.name
-      };
+      if (!samId) return null;
+      // Try hosById (fast lookup) first, then scan hos array
+      const c = window._sam?.hosById?.[samId]
+             || (window._sam?.hos || []).find(sd => sd.driver?.id === samId || sd.id === samId);
+      if (!c) return null;
+      // Support both new /fleet/hos/clocks format and old drivers format
+      const driveMs = c.clocks?.drive?.driveRemainingDurationMs ?? c.currentHosStatus?.remainingDrivingTimeMs ?? null;
+      const cycleMs = c.clocks?.cycle?.cycleRemainingDurationMs ?? c.currentHosStatus?.hosCycle?.remainingMs  ?? null;
+      const status  = c.currentDutyStatus?.hosStatusType        ?? c.currentHosStatus?.currentDutyStatus      ?? 'unknown';
+      return { driveMs, cycleMs, status, name: c.driver?.name || c.name };
     } catch(e) { return null; }
   }
 
@@ -9564,6 +9824,9 @@ function renderFleetCards(){
     const pauseReason = d.pauseReason || '';
     const pauseNote = d.pauseNote || '';
     
+    // Live Samsara GPS + HOS (if synced)
+    const liveData = window.samGetLiveDataForDriver ? window.samGetLiveDataForDriver(id) : null;
+
     return {
       id,
       name: d.name || 'Unnamed',
@@ -9583,7 +9846,9 @@ function renderFleetCards(){
       isPaused,
       pauseReason,
       pauseNote,
-      progressPct: targetNet > 0 ? Math.min(100, (net / targetNet) * 100) : 0
+      progressPct: targetNet > 0 ? Math.min(100, (net / targetNet) * 100) : 0,
+      liveGps: liveData?.gpsCity || null,
+      liveHos: liveData?.hos || null,
     };
   });
   
@@ -9664,7 +9929,22 @@ function renderFleetCards(){
           </div>
         </div>
         
-        <div class="fc-location">📍 ${escapeHtml(d.lastLocation)}</div>
+        <div class="fc-location">📍 ${d.liveGps ? `<span style="color:var(--accent-cyan);font-weight:700;">${escapeHtml(d.liveGps)}</span> <span style="font-size:10px;color:var(--success);font-weight:700;">● LIVE</span>` : escapeHtml(d.lastLocation)}</div>
+
+        ${d.liveHos ? (() => {
+          const h = d.liveHos;
+          const driveHrs  = h.driveMs != null ? h.driveMs / 3600000 : null;
+          const cycleHrs  = h.cycleMs != null ? h.cycleMs / 3600000 : null;
+          const driveColor = driveHrs == null ? 'var(--text-muted)' : driveHrs <= 2 ? 'var(--danger)' : driveHrs <= 4 ? 'var(--warning)' : 'var(--success)';
+          const statusLabels = { driving:'🚛 Driving', onDuty:'🔧 On Duty', sleeper:'😴 Sleeper', offDuty:'⭕ Off Duty', yardMove:'🔄 Yard Move', personalConveyance:'🚗 PC' };
+          const statusLabel = statusLabels[h.status] || h.status;
+          const fmtHrs = ms => { if (ms == null) return '—'; const h2 = Math.floor(ms/3600000), m = Math.floor((ms%3600000)/60000); return h2 > 0 ? `${h2}h ${m}m` : `${m}m`; };
+          return `<div style="display:flex;gap:6px;align-items:center;margin:5px 0;flex-wrap:wrap;">
+            <span style="font-size:10px;padding:2px 7px;border-radius:10px;background:rgba(0,0,0,0.3);border:1px solid var(--border-subtle);color:var(--text-muted);font-weight:600;">${statusLabel}</span>
+            <span style="font-size:10px;padding:2px 7px;border-radius:10px;background:rgba(0,0,0,0.3);border:1px solid ${driveColor}55;color:${driveColor};font-weight:700;">🕐 ${fmtHrs(h.driveMs)} drive left</span>
+            ${cycleHrs != null ? `<span style="font-size:10px;padding:2px 7px;border-radius:10px;background:rgba(0,0,0,0.3);border:1px solid var(--border-subtle);color:var(--text-muted);font-weight:600;">🔄 ${fmtHrs(h.cycleMs)} cycle</span>` : ''}
+          </div>`;
+        })() : ''}
         
         <div class="fc-stats">
           <div class="fc-stat">
@@ -9964,11 +10244,8 @@ document.addEventListener('keydown', function(e) {
             let truckAssigns = {};
             try { truckAssigns = JSON.parse(localStorage.getItem(SAM_TRUCK_STORAGE) || '{}'); } catch(e) {}
             const assignedTruckId = truckAssigns[d.id] || '';
-            const truckOptions = (window._sam.vehicles || [])
-              .filter(v => !v.name?.toLowerCase().includes('trailer') && v.vehicleType !== 'trailer')
-              .map(v => `<option value="${escapeHtml(v.id)}" ${v.id === assignedTruckId ? 'selected' : ''}>${escapeHtml(v.name || v.id)}</option>`)
-              .join('');
-            return `<tr style="cursor:pointer;" onclick="if(!event.target.closest('select'))samOpenDriverProfile(${idx})">
+            const pickerId = 'truckpicker_' + d.id.replace(/[^a-zA-Z0-9]/g,'_');
+            return `<tr style="cursor:pointer;" onclick="if(!event.target.closest('.truck-picker-cell'))samOpenDriverProfile(${idx})">
               <td>
                 <div style="font-weight:700;color:var(--accent-cyan);text-decoration:underline dotted;">${escapeHtml(d.name || 'Unknown')}</div>
                 <div style="font-size:11px;color:var(--text-muted);">${escapeHtml(d.username || d.id)}</div>
@@ -9981,17 +10258,108 @@ document.addEventListener('keydown', function(e) {
                   ${appDriverOptions.replace(`value="${linked}"`, `value="${linked}" selected`)}
                 </select>
               </td>
-              <td>
-                <select class="sam-link-select" data-samid="${escapeHtml(d.id)}" onchange="samAssignTruck(this.dataset.samid, this.value)" style="min-width:150px;">
-                  <option value="">-- No truck --</option>
-                  ${truckOptions}
-                </select>
+              <td class="truck-picker-cell" onclick="event.stopPropagation()" style="min-width:200px;">
+                <div id="${pickerId}"></div>
               </td>
             </tr>`;
           }).join('')}
         </tbody>
       </table>`;
+
+    // Initialize searchable truck pickers now that DOM is updated
+    setTimeout(() => {
+      drivers.forEach(d => {
+        let truckAssigns = {};
+        try { truckAssigns = JSON.parse(localStorage.getItem(SAM_TRUCK_STORAGE) || '{}'); } catch(e) {}
+        const assignedTruckId = truckAssigns[d.id] || '';
+        const pickerId = 'truckpicker_' + d.id.replace(/[^a-zA-Z0-9]/g,'_');
+        if (document.getElementById(pickerId)) {
+          window.samRenderTruckPicker(pickerId, d.id, assignedTruckId);
+        }
+      });
+    }, 0);
   }
+
+  // ── Searchable truck picker ──
+  // Renders a search input + dropdown list instead of a plain <select>
+  window.samRenderTruckPicker = function(containerId, samDriverId, currentVehicleId) {
+    const trucks = (window._sam.vehicles || [])
+      .filter(v => !v.name?.toLowerCase().includes('trailer') && v.vehicleType !== 'trailer')
+      .sort((a,b) => (a.name||'').localeCompare(b.name||''));
+
+    const current = trucks.find(v => v.id === currentVehicleId);
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    container.innerHTML = `
+      <div style="position:relative;">
+        <input type="text" id="${containerId}_search" autocomplete="off" placeholder="Search trucks…"
+          value="${current ? escapeHtml(current.name) : ''}"
+          style="width:100%;padding:8px 10px;background:var(--bg-primary);border:1px solid var(--border-medium);border-radius:8px;color:var(--text-primary);font-size:13px;box-sizing:border-box;"
+          oninput="samFilterTrucks('${containerId}','${escapeHtml(samDriverId)}')"
+          onfocus="samFilterTrucks('${containerId}','${escapeHtml(samDriverId)}')"
+          onclick="event.stopPropagation()">
+        <div id="${containerId}_list" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:9999;background:var(--bg-elevated);border:1px solid var(--border-medium);border-radius:8px;max-height:200px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,0.5);margin-top:2px;"></div>
+        <div id="${containerId}_status" style="font-size:11px;margin-top:5px;min-height:16px;color:var(--success);font-weight:700;"></div>
+      </div>`;
+
+    // store trucks list on element for filtering
+    container._trucks    = trucks;
+    container._samDriver = samDriverId;
+  };
+
+  window.samFilterTrucks = function(containerId, samDriverId) {
+    const container  = document.getElementById(containerId);
+    const input      = document.getElementById(containerId + '_search');
+    const list       = document.getElementById(containerId + '_list');
+    if (!container || !input || !list) return;
+
+    const q      = (input.value || '').toLowerCase();
+    const trucks = container._trucks || [];
+    const filtered = trucks.filter(v => !q || (v.name||'').toLowerCase().includes(q) || (v.id||'').toLowerCase().includes(q));
+
+    list.style.display = filtered.length ? 'block' : 'none';
+    list.innerHTML = filtered.length
+      ? filtered.map(v => `
+          <div onclick="samPickTruck('${containerId}','${escapeHtml(samDriverId)}','${escapeHtml(v.id)}','${escapeHtml(v.name||v.id)}')"
+            style="padding:9px 12px;cursor:pointer;font-size:13px;color:var(--text-primary);border-bottom:1px solid var(--border-subtle);"
+            onmouseover="this.style.background='rgba(0,180,255,0.1)'" onmouseout="this.style.background=''">
+            🚛 ${escapeHtml(v.name||v.id)}
+          </div>`).join('')
+      : `<div style="padding:10px 12px;color:var(--text-muted);font-size:12px;">No trucks found</div>`;
+
+    // Close list when clicking elsewhere
+    setTimeout(() => {
+      const closer = (e) => {
+        if (!list.contains(e.target) && e.target !== input) {
+          list.style.display = 'none';
+          document.removeEventListener('click', closer);
+        }
+      };
+      document.addEventListener('click', closer);
+    }, 0);
+  };
+
+  window.samPickTruck = function(containerId, samDriverId, vehicleId, vehicleName) {
+    const list   = document.getElementById(containerId + '_list');
+    const input  = document.getElementById(containerId + '_search');
+    const status = document.getElementById(containerId + '_status');
+    if (list)   list.style.display = 'none';
+    if (input)  input.value = vehicleName;
+
+    // Save
+    try {
+      const assigns = JSON.parse(localStorage.getItem(SAM_TRUCK_STORAGE) || '{}');
+      if (vehicleId) assigns[samDriverId] = vehicleId;
+      else delete assigns[samDriverId];
+      localStorage.setItem(SAM_TRUCK_STORAGE, JSON.stringify(assigns));
+      if (status) { status.textContent = vehicleId ? `✅ Saved — ${vehicleName}` : '✅ Cleared'; status.style.color = 'var(--success)'; }
+      samSetStatus(`🚛 ${vehicleName} assigned to driver`, 'ok');
+    } catch(e) {
+      if (status) { status.textContent = '❌ Save failed'; status.style.color = 'var(--danger)'; }
+      console.error('samPickTruck error:', e);
+    }
+  };
 
   window.samAssignTruck = function(samDriverId, samVehicleId) {
     try {
@@ -10035,8 +10403,44 @@ document.addEventListener('keydown', function(e) {
           types: 'fuelPercent,obdOdometerMeters,gps',
           decorations: 'driver'
         });
-        (statsRes.data || []).forEach(v => { statsMap[v.id] = v; });
-      } catch(e) { /* stats optional */ }
+        (statsRes.data || []).forEach(v => {
+          // Samsara wraps each stat value: v.gps = { value: { latitude, longitude, reverseGeo } }
+          // Normalize so downstream code can always use vstats.gps.latitude etc.
+          const entry = { id: v.id };
+          if (v.fuelPercent)        entry.fuelPercent        = v.fuelPercent;
+          if (v.obdOdometerMeters)  entry.obdOdometerMeters  = v.obdOdometerMeters;
+          if (v.driver)             entry.driver             = v.driver;
+          // GPS may be nested under .value
+          if (v.gps) {
+            const g = v.gps.value ?? v.gps;
+            entry.gps = g; // normalized
+          }
+          statsMap[v.id] = entry;
+        });
+        window._sam._vehicleStats = statsMap;
+      } catch(e) {
+        samSetStatus(`⚠️ Vehicle stats failed (GPS unavailable): ${e.message}`, 'error');
+      }
+
+      // Fallback: try /fleet/vehicles/locations if stats had no GPS
+      const missingGps = vehicles.filter(v => !statsMap[v.id]?.gps);
+      if (missingGps.length > 0) {
+        try {
+          const locRes = await samFetch('/fleet/vehicles/locations', { limit: 512 });
+          (locRes.data || []).forEach(loc => {
+            if (!statsMap[loc.id]) statsMap[loc.id] = { id: loc.id };
+            if (loc.location) {
+              statsMap[loc.id].gps = {
+                latitude:   loc.location.latitude,
+                longitude:  loc.location.longitude,
+                reverseGeo: loc.location.reverseGeo || null,
+                formattedLocation: loc.location.reverseGeo?.formattedLocation || null
+              };
+            }
+          });
+          window._sam._vehicleStats = statsMap;
+        } catch(e) { /* locations endpoint optional */ }
+      }
 
       samRenderVehicles(statsMap);
       samSetStatus(`✅ Loaded ${vehicles.length} vehicles from Samsara`, 'ok');
@@ -10442,21 +10846,26 @@ document.addEventListener('keydown', function(e) {
     const hosEl = document.getElementById('samHOSContent');
     hosEl.innerHTML = '<div class="sam-loading">🕐 Fetching HOS data...</div>';
     try {
-      const data = await samFetch('/fleet/hos/currentViolations', { limit: 512 });
-      const violations = data.data || [];
+      // Correct endpoint: GET /fleet/hos/clocks
+      // Response per driver: { driver:{id,name}, currentDutyStatus:{hosStatusType}, clocks:{drive:{driveRemainingDurationMs}, shift:{shiftRemainingDurationMs}, cycle:{cycleRemainingDurationMs}} }
+      const clockRes = await samFetch('/fleet/hos/clocks', { limit: 512 });
+      const clocks   = clockRes.data || [];
 
-      // Also get current duty statuses
-      let dutyCurrent = [];
+      // Violations are a separate endpoint
+      let violations = [];
       try {
-        const dutyRes = await samFetch('/fleet/drivers', { limit: 512 });
-        dutyCurrent = dutyRes.data || [];
+        const vioRes = await samFetch('/fleet/hos/violations', { limit: 512 });
+        violations = vioRes.data || [];
       } catch(e) {}
 
-      window._sam.hos = dutyCurrent;
-      samRenderHOS(dutyCurrent, violations);
-      samSetStatus(`✅ HOS data loaded for ${dutyCurrent.length} drivers`, 'ok');
+      window._sam.hos     = clocks;
+      window._sam.hosById = {};
+      clocks.forEach(c => { if (c.driver?.id) window._sam.hosById[c.driver.id] = c; });
+
+      samRenderHOS(clocks, violations);
+      samSetStatus(`✅ HOS loaded for ${clocks.length} drivers`, 'ok');
     } catch(e) {
-      samSetStatus('❌ ' + e.message, 'error');
+      samSetStatus('❌ HOS: ' + e.message, 'error');
       hosEl.innerHTML = `<div class="sam-empty" style="color:var(--danger)">❌ ${e.message}</div>`;
     }
   };
@@ -10465,7 +10874,7 @@ document.addEventListener('keydown', function(e) {
     const el = document.getElementById('samHOSContent');
 
     const countEl = document.getElementById('samHOSCount');
-    const active  = drivers.filter(d => !d.isDeactivated);
+    const active  = drivers; // /fleet/hos/clocks only returns active drivers
     if (countEl) countEl.textContent = active.length ? `(${active.length} active)` : '';
     const body = document.getElementById('samHOSBody');
     const chev = document.getElementById('samHOSChevron');
@@ -10486,15 +10895,17 @@ document.addEventListener('keydown', function(e) {
 
     el.innerHTML = `<div class="sam-grid">
       ${active.map(d => {
-        const hos        = d.currentHosStatus || {};
-        const dutyStatus = hos.currentDutyStatus || 'unknown';
+        // /fleet/hos/clocks structure: d.currentDutyStatus.hosStatusType, d.clocks.drive.driveRemainingDurationMs
+        const dutyStatus = d.currentDutyStatus?.hosStatusType || 'unknown';
         const statusInfo = hosStatusMap[dutyStatus] || { label: dutyStatus || 'Unknown', badge: 'gray' };
-        const hasVio     = violationDriverIds.has(d.id);
-        const driveLeft  = hos.remainingDrivingTimeMs ? Math.floor(hos.remainingDrivingTimeMs / 3600000) + 'h ' + Math.floor((hos.remainingDrivingTimeMs % 3600000) / 60000) + 'm' : null;
-        const cycleLeft  = hos.hosCycle?.remainingMs  ? Math.floor(hos.hosCycle.remainingMs  / 3600000) + 'h' : null;
+        const hasVio     = violationDriverIds.has(d.driver?.id || d.id);
+        const driveMs    = d.clocks?.drive?.driveRemainingDurationMs;
+        const cycleMs    = d.clocks?.cycle?.cycleRemainingDurationMs;
+        const driveLeft  = driveMs != null ? Math.floor(driveMs / 3600000) + 'h ' + Math.floor((driveMs % 3600000) / 60000) + 'm' : null;
+        const cycleLeft  = cycleMs != null ? Math.floor(cycleMs / 3600000) + 'h' : null;
         return `<div class="sam-card" style="${hasVio ? 'border-color:var(--danger);' : ''}">
-          <div class="sam-card-title">${escapeHtml(d.name || 'Unknown')} ${hasVio ? '<span class="sam-badge red">⚠️ Violation</span>' : ''}</div>
-          <div class="sam-card-sub">${escapeHtml(d.username || '—')}</div>
+          <div class="sam-card-title">${escapeHtml(d.driver?.name || d.name || 'Unknown')} ${hasVio ? '<span class="sam-badge red">⚠️ Violation</span>' : ''}</div>
+          <div class="sam-card-sub">${escapeHtml(d.driver?.id || '—')}</div>
           <div style="margin-bottom:8px;"><span class="sam-badge ${statusInfo.badge}" style="font-size:12px;padding:4px 10px;">${statusInfo.label}</span></div>
           ${driveLeft ? `<div class="sam-stat-row"><span class="sam-stat-label">Drive Left</span><span class="sam-stat-value" style="color:${parseInt(driveLeft)<=2?'var(--danger)':parseInt(driveLeft)<=4?'var(--warning)':'var(--success)'};">${driveLeft}</span></div>` : ''}
           ${cycleLeft ? `<div class="sam-stat-row"><span class="sam-stat-label">Cycle Left</span><span class="sam-stat-value">${cycleLeft}</span></div>` : ''}
@@ -10505,6 +10916,101 @@ document.addEventListener('keydown', function(e) {
   }
 
   // ── Sync All ──
+  // ── Live GPS + HOS lookup for a given app driver ID ──
+  window.samGetLiveDataForDriver = function(appDriverId) {
+    try {
+      const links        = JSON.parse(localStorage.getItem(SAM_LINK_STORAGE) || '{}');
+      const truckAssigns = JSON.parse(localStorage.getItem(SAM_TRUCK_STORAGE) || '{}');
+
+      // Reverse lookup: find samId whose value === appDriverId
+      const samId = Object.keys(links).find(k => links[k] === appDriverId);
+      if (!samId) return null;
+
+      // HOS: from _sam.hosById (keyed by samsara driver id) — populated by samLoadHOS
+      // Fallback: scan _sam.hos array, then _sam.drivers (older format)
+      let clockEntry = window._sam.hosById?.[samId] || (window._sam.hos || []).find(c => c.driver?.id === samId);
+      // Final fallback: old drivers array format
+      if (!clockEntry) clockEntry = (window._sam.drivers || []).find(d => d.id === samId);
+
+      let hos = null;
+      if (clockEntry) {
+        // New /fleet/hos/clocks format
+        const dutyStatus = clockEntry.currentDutyStatus?.hosStatusType
+                        || clockEntry.currentHosStatus?.currentDutyStatus
+                        || 'unknown';
+        const driveMs = clockEntry.clocks?.drive?.driveRemainingDurationMs
+                     ?? clockEntry.currentHosStatus?.remainingDrivingTimeMs
+                     ?? null;
+        const shiftMs = clockEntry.clocks?.shift?.shiftRemainingDurationMs
+                     ?? clockEntry.currentHosStatus?.remainingOnDutyTimeMs
+                     ?? null;
+        const cycleMs = clockEntry.clocks?.cycle?.cycleRemainingDurationMs
+                     ?? clockEntry.currentHosStatus?.hosCycle?.remainingMs
+                     ?? null;
+        hos = { status: dutyStatus, driveMs, shiftMs, cycleMs };
+      }
+
+      // GPS: from vehicle stats via truck assignment
+      let gpsCity = null;
+      const samVehicleId = truckAssigns[samId];
+      if (samVehicleId && window._sam._vehicleStats) {
+        const vstats = window._sam._vehicleStats[samVehicleId];
+        if (vstats?.gps) {
+          const g = vstats.gps;
+          // Try all known field paths Samsara uses
+          gpsCity = g.formattedLocation
+                 || g.reverseGeo?.formattedLocation
+                 || g.name
+                 || null;
+          if (!gpsCity && (g.latitude || g.lat)) {
+            const lat = g.latitude ?? g.lat;
+            const lng = g.longitude ?? g.lng ?? g.lon;
+            gpsCity = `${Number(lat).toFixed(2)}°, ${Number(lng).toFixed(2)}°`;
+          }
+        }
+      }
+
+      return { samId, hos, gpsCity, hasTruck: !!samVehicleId };
+    } catch(e) {
+      console.warn('samGetLiveDataForDriver error:', e);
+      return null;
+    }
+  };
+
+  // Debug helper — call samDebugDriver('Jayden') from browser console
+  window.samDebugDriver = function(nameSearch) {
+    console.group('🔍 Samsara Debug for: ' + nameSearch);
+    const links        = JSON.parse(localStorage.getItem(SAM_LINK_STORAGE) || '{}');
+    const truckAssigns = JSON.parse(localStorage.getItem(SAM_TRUCK_STORAGE) || '{}');
+
+    // Find app driver
+    const appEntry = Object.entries(state.drivers || {}).find(([id, d]) =>
+      d.name?.toLowerCase().includes(nameSearch.toLowerCase()));
+    console.log('App driver:', appEntry ? appEntry[1].name + ' (id: ' + appEntry[0] + ')' : 'NOT FOUND');
+
+    if (appEntry) {
+      const appId = appEntry[0];
+      const samId = Object.keys(links).find(k => links[k] === appId);
+      console.log('Linked Samsara ID:', samId || 'NOT LINKED');
+      if (samId) {
+        console.log('Truck assigned:', truckAssigns[samId] || 'NO TRUCK ASSIGNED');
+        const hosDriver = (window._sam.hos || window._sam.drivers || []).find(d => d.id === samId);
+        console.log('HOS driver found in _sam.hos/_sam.drivers:', !!hosDriver, hosDriver?.currentHosStatus);
+        const vstats = window._sam._vehicleStats?.[truckAssigns[samId]];
+        console.log('Vehicle stats:', vstats);
+        console.log('GPS data:', vstats?.gps);
+      }
+    }
+
+    console.log('--- Raw state ---');
+    console.log('_sam.hos length:', window._sam.hos?.length);
+    console.log('_sam.drivers length:', window._sam.drivers?.length);
+    console.log('_sam._vehicleStats keys:', Object.keys(window._sam._vehicleStats || {}));
+    console.log('links:', links);
+    console.log('truckAssigns:', truckAssigns);
+    console.groupEnd();
+  };
+
   window.samSyncAll = async function() {
     samSetStatus('⏳ Syncing all Samsara data...', 'loading');
     const start = Date.now();
@@ -10521,6 +11027,22 @@ document.addEventListener('keydown', function(e) {
     } else {
       samSetStatus(`✅ Full sync complete in ${elapsed}s`, 'ok');
     }
+    if (typeof updateUI === 'function') updateUI(); // refresh dashboard GPS + HOS
+  };
+
+  // Quick refresh of GPS + HOS only — for use in fleet modal
+  window.samRefreshLive = async function(btn) {
+    if (!samGetKey()) {
+      alert('Connect Samsara first (Samsara tab → enter API key → Test Connection)');
+      return;
+    }
+    if (btn) { btn.textContent = '⏳ Loading…'; btn.disabled = true; }
+    let errors = [];
+    await samLoadVehicles().catch(e => errors.push(e.message));
+    await samLoadHOS().catch(e => errors.push(e.message));
+    if (btn) { btn.textContent = errors.length ? '⚠️ Error' : '✅ Live'; btn.disabled = false; setTimeout(() => { btn.textContent = '🛰️ Refresh Live'; }, 3000); }
+    renderFleetCards(); // re-render fleet cards with fresh data
+    if (typeof updateUI === 'function') updateUI(); // refresh dashboard GPS + HOS
   };
 
   // ── Init: load saved key on page load ──
@@ -10614,14 +11136,8 @@ document.addEventListener('keydown', function(e) {
 
       <!-- Truck Assignment -->
       <div style="background:var(--bg-secondary);border:1px solid var(--border-medium);border-radius:12px;padding:16px;margin-bottom:20px;">
-        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--accent-cyan);font-weight:700;margin-bottom:10px;">🚛 Assigned Truck</div>
-        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-          <select class="sam-link-select" onchange="samAssignTruck('${escapeHtml(d.id)}', this.value)" style="min-width:200px;flex:1;">
-            <option value="">-- No truck assigned --</option>
-            ${truckOptions}
-          </select>
-          ${assignedTruck ? `<span style="font-size:13px;color:var(--success);">✅ ${escapeHtml(assignedTruck.name)}</span>` : ''}
-        </div>
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--accent-cyan);font-weight:700;margin-bottom:10px;">🚛 Assign Truck</div>
+        <div id="profileTruckPicker_${escapeHtml(d.id).replace(/[^a-zA-Z0-9]/g,'_')}"></div>
       </div>
 
       ${fuelRow ? `
@@ -10644,6 +11160,14 @@ document.addEventListener('keydown', function(e) {
         ${samRenderHOSInline(d)}
       </div>
     `);
+
+    // Initialize searchable truck picker in modal
+    const profilePickerId = 'profileTruckPicker_' + d.id.replace(/[^a-zA-Z0-9]/g,'_');
+    setTimeout(() => {
+      let ta = {};
+      try { ta = JSON.parse(localStorage.getItem(SAM_TRUCK_STORAGE) || '{}'); } catch(e) {}
+      window.samRenderTruckPicker(profilePickerId, d.id, ta[d.id] || '');
+    }, 0);
   };
 
   // ── Open Vehicle Profile ──
@@ -10785,12 +11309,16 @@ document.addEventListener('keydown', function(e) {
 
 
   function samRenderHOSInline(d) {
-    const hos = d.currentHosStatus || {};
-    const status = hos.currentDutyStatus || 'unknown';
+    // Support new /fleet/hos/clocks format (c.currentDutyStatus.hosStatusType) and old format
+    const hosClockEntry = window._sam?.hosById?.[d._samId] || null;
+    const hosOld = d.currentHosStatus || {};
+    const status = hosClockEntry?.currentDutyStatus?.hosStatusType || hosOld.currentDutyStatus || 'unknown';
     const labels = { driving:'Driving', onDuty:'On Duty', sleeper:'Sleeper', offDuty:'Off Duty', yardMove:'Yard Move', personalConveyance:'PC' };
     const label  = labels[status] || status;
-    const driveLeft = hos.remainingDrivingTimeMs ? Math.floor(hos.remainingDrivingTimeMs/3600000) + 'h ' + Math.floor((hos.remainingDrivingTimeMs%3600000)/60000) + 'm' : null;
-    const cycleLeft = hos.hosCycle?.remainingMs  ? Math.floor(hos.hosCycle.remainingMs/3600000) + 'h' : null;
+    const driveMs2  = hosClockEntry?.clocks?.drive?.driveRemainingDurationMs ?? hosOld.remainingDrivingTimeMs ?? null;
+    const cycleMs2  = hosClockEntry?.clocks?.cycle?.cycleRemainingDurationMs ?? hosOld.hosCycle?.remainingMs  ?? null;
+    const driveLeft = driveMs2 != null ? Math.floor(driveMs2/3600000) + 'h ' + Math.floor((driveMs2%3600000)/60000) + 'm' : null;
+    const cycleLeft = cycleMs2 != null ? Math.floor(cycleMs2/3600000) + 'h' : null;
     return `
       <div style="display:flex;gap:12px;flex-wrap:wrap;">
         <span class="sam-badge ${status==='driving'?'green':status==='onDuty'?'blue':'gray'}" style="font-size:13px;padding:5px 12px;">${label}</span>
