@@ -2883,6 +2883,25 @@ td {
           <div><span class="s-field-label">Maintenance ($/mi)</span><input id="s_maint" type="number" inputmode="decimal" min="0" step="0.01" class="s-field-input"></div>
         </div>
         <div class="s-field-row cols2">
+          <div>
+            <span class="s-field-label">Default Tolls ($/mi) <span style="font-size:10px;color:var(--text-muted);">— auto-applies when no manual toll is entered</span></span>
+            <input id="s_tolls_per_mile" type="number" inputmode="decimal" min="0" step="0.01" class="s-field-input" placeholder="0.10" oninput="var p=document.getElementById('tolls_per_mile_preview');if(p){var v=parseFloat(this.value);p.textContent='$'+(isNaN(v)?'0.00':v.toFixed(2))+'/mi';}">
+          </div>
+          <div style="display:flex;align-items:flex-end;padding-bottom:4px;">
+            <span style="font-size:11px;color:var(--text-muted);line-height:1.5;">Leave at <strong>0</strong> to disable. When set, applies to loaded + deadhead miles on loads with no manual toll entry. Current rate: <strong id="tolls_per_mile_preview">$0.10/mi</strong></span>
+          </div>
+        </div>
+        <div class="s-field-row cols2">
+          <div>
+            <span class="s-field-label">Default Insurance ($/mi) <span style="font-size:10px;color:var(--text-muted);">— global default for per-mile drivers</span></span>
+            <input id="s_ins_per_mile" type="number" inputmode="decimal" min="0" step="0.001" class="s-field-input" placeholder="0.07"
+              oninput="var p=document.getElementById('ins_per_mile_preview');if(p){var v=parseFloat(this.value);p.textContent='$'+(isNaN(v)?'0.07':v.toFixed(3))+'/mi';}">
+          </div>
+          <div style="display:flex;align-items:flex-end;padding-bottom:4px;">
+            <span style="font-size:11px;color:var(--text-muted);line-height:1.5;">Used when a driver is set to <strong>per-mile insurance</strong> and has no personal override. Current rate: <strong id="ins_per_mile_preview">$0.07/mi</strong></span>
+          </div>
+        </div>
+        <div class="s-field-row cols2">
           <div><span class="s-field-label">Loads per Week</span><input id="s_loads_per_week" type="number" inputmode="numeric" min="1" step="1" class="s-field-input"></div>
           <div><span class="s-field-label">Tax Rate (0.25)</span><input id="s_tax" type="number" inputmode="decimal" min="0" max="1" step="0.01" class="s-field-input"></div>
         </div>
@@ -2919,12 +2938,49 @@ td {
           <div><span class="s-field-label">Trailer Payment</span><input id="f_trailer" type="number" inputmode="decimal" min="0" step="0.01" oninput="this.dataset.dirty='true'" class="s-field-input"></div>
         </div>
         <div class="s-field-row cols2">
-          <div><span class="s-field-label">Insurance</span><input id="f_ins" type="number" inputmode="decimal" min="0" step="0.01" oninput="this.dataset.dirty='true'" class="s-field-input"></div>
+          <div>
+            <span class="s-field-label">Insurance Type — this driver</span>
+            <select id="f_ins_type" oninput="this.dataset.dirty='true'; toggleInsFields();" class="s-field-select">
+              <option value="flat">Flat weekly (split across loads)</option>
+              <option value="per_mile">Per mile driven</option>
+            </select>
+          </div>
+          <div id="f_ins_flat_wrap">
+            <span class="s-field-label">Insurance ($/week flat)</span>
+            <input id="f_ins" type="number" inputmode="decimal" min="0" step="0.01" oninput="this.dataset.dirty='true'" class="s-field-input">
+          </div>
+          <div id="f_ins_pm_wrap" style="display:none;">
+            <span class="s-field-label">Insurance ($/mi override)</span>
+            <input id="f_ins_pm" type="number" inputmode="decimal" min="0" step="0.001" oninput="this.dataset.dirty='true'" class="s-field-input" placeholder="blank = use global default">
+          </div>
+        </div>
+        <div class="s-field-row cols2">
           <div><span class="s-field-label">Advances</span><input id="f_adv" type="number" inputmode="decimal" min="0" step="0.01" oninput="this.dataset.dirty='true'" class="s-field-input"></div>
+          <div></div>
         </div>
         <div class="s-field-row cols2">
           <div><span class="s-field-label">Food / Personal</span><input id="f_food" type="number" inputmode="decimal" min="0" step="0.01" oninput="this.dataset.dirty='true'" class="s-field-input"></div>
           <div><span class="s-field-label">Repairs (Actual)</span><input id="f_rep" type="number" inputmode="decimal" min="0" step="0.01" oninput="this.dataset.dirty='true'" class="s-field-input"></div>
+        </div>
+        <div class="s-field-row cols2">
+          <div>
+            <span class="s-field-label">Tolls ($/mi) — per driver override</span>
+            <input id="f_tolls_pm" type="number" inputmode="decimal" min="0" step="0.01" oninput="this.dataset.dirty='true'" class="s-field-input" placeholder="leave blank = use global default">
+          </div>
+          <div style="display:flex;align-items:flex-end;padding-bottom:4px;">
+            <span style="font-size:11px;color:var(--text-muted);line-height:1.6;">Override the global <strong>$0.10/mi</strong> default for this driver only. Leave blank to use the global default. Applied when no manual toll is entered on a load.</span>
+          </div>
+        </div>
+        <div class="spane-sub" style="margin-top:14px;">Per-Driver Fuel Overrides — leave blank to use global defaults.</div>
+        <div class="s-field-row cols2">
+          <div>
+            <span class="s-field-label">MPG — this driver</span>
+            <input id="f_mpg" type="number" inputmode="decimal" min="0.1" step="0.1" oninput="this.dataset.dirty='true'" class="s-field-input" placeholder="e.g. 6.5">
+          </div>
+          <div>
+            <span class="s-field-label">Fuel Price ($/gal) — this driver</span>
+            <input id="f_fuel" type="number" inputmode="decimal" min="0" step="0.01" oninput="this.dataset.dirty='true'" class="s-field-input" placeholder="e.g. 3.25">
+          </div>
         </div>
         <div class="spane-save-row">
           <button class="spane-save-btn no-print" onclick="saveSettings()">Save Fixed Costs</button>
@@ -3068,7 +3124,9 @@ const defaultSettings = {
   s_maint: 0.17,
   s_loads_per_week: 5,
   s_target_net: 1500,
-  s_tax: 0.25
+  s_tax: 0.25,
+  s_tolls_per_mile: 0.10,
+  s_ins_per_mile: 0.07
 };
 
 /*******************************************************
@@ -3901,15 +3959,18 @@ function getDriverFixedWeekly(driver){
   
   // If driver has custom fixed costs, use those
   if (fixedCosts) {
-    return (fixedCosts.truck || 0) + 
-           (fixedCosts.trailer || 0) + 
-           (fixedCosts.ins || 0) + 
-           (fixedCosts.adv || 0) + 
-           (fixedCosts.food || 0) + 
+    // Exclude insurance from fixed weekly when driver uses per-mile insurance
+    // (it gets calculated separately in calcLoadNet based on miles)
+    const insWeekly = (fixedCosts.insType === 'per_mile') ? 0 : (fixedCosts.ins || 0);
+    return (fixedCosts.truck || 0) +
+           (fixedCosts.trailer || 0) +
+           insWeekly +
+           (fixedCosts.adv || 0) +
+           (fixedCosts.food || 0) +
            (fixedCosts.rep || 0);
   }
   
-  // Otherwise use default values for new drivers
+  // Otherwise use default values for new drivers (flat insurance by default)
   return 800 + 400 + 350; // truck + trailer + insurance defaults
 }
 
@@ -3940,13 +4001,31 @@ function getWeeklyDriverPay(driver, weekTotals) {
 function calcLoadNet(driver, specs, { gross, miles, tolls, detention, accessorials }) {
   detention = detention || 0;
   accessorials = accessorials || 0;
-  tolls = tolls || 0;
+  // If no manual toll entered, apply per-driver override or global default tolls-per-mile
+  const manualTolls = tolls || 0;
+  const driverTollsPerMile = driver?.fixedCosts?.tollsPerMile;
+  const tollsPerMile = (driverTollsPerMile !== undefined)
+    ? driverTollsPerMile
+    : (specs.tollsPerMile !== undefined ? specs.tollsPerMile : (settings?.s_tolls_per_mile ?? 0.10));
+  tolls = manualTolls > 0 ? manualTolls : (miles * tollsPerMile);
 
   const driverFixedWeekly = getDriverFixedWeekly(driver);
   const fixedPerLoad = driverFixedWeekly / specs.loadsPerWeek;
-  const fuel = (miles / specs.mpg) * specs.fuel;
+  // Per-driver mpg/fuel overrides take priority over global specs
+  const effectiveMpg  = (driver?.fixedCosts?.mpg       > 0)  ? driver.fixedCosts.mpg       : specs.mpg;
+  const effectiveFuel = (driver?.fixedCosts?.fuelPrice  >= 0 && driver?.fixedCosts?.fuelPrice != null)
+                          ? driver.fixedCosts.fuelPrice : specs.fuel;
+  const fuel = (miles / effectiveMpg) * effectiveFuel;
   const maint = miles * specs.maint;
-  const fixed = fixedPerLoad;
+  // Per-mile insurance: add to fixed if driver uses per-mile mode
+  const insPerMileCost = (() => {
+    if (driver?.fixedCosts?.insType !== 'per_mile') return 0;
+    const driverIpm = driver.fixedCosts.insPerMile;
+    const globalIpm = settings?.s_ins_per_mile ?? 0.07;
+    const ipm = (driverIpm !== undefined) ? driverIpm : globalIpm;
+    return miles * ipm;
+  })();
+  const fixed = fixedPerLoad + insPerMileCost;
   const totalRevenue = gross + detention + accessorials;
 
   const isCompany = driver.driverType === 'company';
@@ -4558,7 +4637,12 @@ function getSpecs(){
     loadsPerWeek,
     fixedPerLoad: fixedWeekly / loadsPerWeek,
     targetNet: Number.isFinite(targetNet) ? targetNet : 1500,
-    taxRate: Number.isFinite(taxRate) ? taxRate : 0.25
+    taxRate: Number.isFinite(taxRate) ? taxRate : 0.25,
+    tollsPerMile: (() => {
+      const el = document.getElementById('s_tolls_per_mile');
+      const v = el ? parseFloat(el.value) : NaN;
+      return Number.isFinite(v) ? v : (settings?.s_tolls_per_mile ?? 0.10);
+    })()
   };
 }
 
@@ -4583,6 +4667,31 @@ function bindSettingsToInputs(){
   if (fAdv && fAdv.dataset.dirty !== 'true') fAdv.value = fixedCosts.adv !== undefined ? fixedCosts.adv : s.f_adv;
   if (fFood && fFood.dataset.dirty !== 'true') fFood.value = fixedCosts.food !== undefined ? fixedCosts.food : s.f_food;
   if (fRep && fRep.dataset.dirty !== 'true') fRep.value = fixedCosts.rep !== undefined ? fixedCosts.rep : s.f_rep;
+  const fTollsPm = document.getElementById('f_tolls_pm');
+  if (fTollsPm && fTollsPm.dataset.dirty !== 'true') {
+    fTollsPm.value = fixedCosts.tollsPerMile !== undefined ? fixedCosts.tollsPerMile : '';
+    fTollsPm.placeholder = 'global default: $' + (s.s_tolls_per_mile !== undefined ? s.s_tolls_per_mile : 0.10).toFixed(2) + '/mi';
+  }
+  const fInsType = document.getElementById('f_ins_type');
+  if (fInsType && fInsType.dataset.dirty !== 'true') {
+    fInsType.value = fixedCosts.insType || 'flat';
+    toggleInsFields();
+  }
+  const fInsPm = document.getElementById('f_ins_pm');
+  if (fInsPm && fInsPm.dataset.dirty !== 'true') {
+    fInsPm.value = fixedCosts.insPerMile !== undefined ? fixedCosts.insPerMile : '';
+    fInsPm.placeholder = 'global: $' + (s.s_ins_per_mile !== undefined ? s.s_ins_per_mile : 0.07).toFixed(3) + '/mi';
+  }
+  const fMpg = document.getElementById('f_mpg');
+  if (fMpg && fMpg.dataset.dirty !== 'true') {
+    fMpg.value = fixedCosts.mpg !== undefined ? fixedCosts.mpg : '';
+    fMpg.placeholder = 'global default: ' + (s.s_mpg || 6.5);
+  }
+  const fFuel = document.getElementById('f_fuel');
+  if (fFuel && fFuel.dataset.dirty !== 'true') {
+    fFuel.value = fixedCosts.fuelPrice !== undefined ? fixedCosts.fuelPrice : '';
+    fFuel.placeholder = 'global default: $' + (s.s_fuel || 3.25).toFixed(2) + '/gal';
+  }
   
   // Other settings remain global
   document.getElementById('s_split').value = s.s_split;
@@ -4592,6 +4701,14 @@ function bindSettingsToInputs(){
   document.getElementById('s_loads_per_week').value = s.s_loads_per_week;
   document.getElementById('s_target_net').value = s.s_target_net;
   document.getElementById('s_tax').value = s.s_tax;
+  const tpmEl = document.getElementById('s_tolls_per_mile');
+  if (tpmEl) tpmEl.value = s.s_tolls_per_mile !== undefined ? s.s_tolls_per_mile : 0.10;
+  const tpmPrev = document.getElementById('tolls_per_mile_preview');
+  if (tpmPrev) tpmPrev.textContent = '$' + (s.s_tolls_per_mile !== undefined ? s.s_tolls_per_mile : 0.10).toFixed(2) + '/mi';
+  const ipmEl = document.getElementById('s_ins_per_mile');
+  if (ipmEl) ipmEl.value = s.s_ins_per_mile !== undefined ? s.s_ins_per_mile : 0.07;
+  const ipmPrev = document.getElementById('ins_per_mile_preview');
+  if (ipmPrev) ipmPrev.textContent = '$' + (s.s_ins_per_mile !== undefined ? s.s_ins_per_mile : 0.07).toFixed(3) + '/mi';
 }
 
 // Initialize event listeners once on page load
@@ -4612,13 +4729,24 @@ function saveSettings(){
   const d = getDriver();
   
   // Save fixed costs to current driver
+  const rawTollsPm = document.getElementById('f_tolls_pm')?.value;
   d.fixedCosts = {
     truck: parseFloat(document.getElementById('f_truck').value) || 0,
     trailer: parseFloat(document.getElementById('f_trailer').value) || 0,
     ins: parseFloat(document.getElementById('f_ins').value) || 0,
     adv: parseFloat(document.getElementById('f_adv').value) || 0,
     food: parseFloat(document.getElementById('f_food').value) || 0,
-    rep: parseFloat(document.getElementById('f_rep').value) || 0
+    rep: parseFloat(document.getElementById('f_rep').value) || 0,
+    tollsPerMile: (rawTollsPm !== '' && rawTollsPm != null && !isNaN(parseFloat(rawTollsPm)))
+                    ? parseFloat(rawTollsPm)
+                    : undefined,  // undefined = use global default
+    insType: document.getElementById('f_ins_type')?.value || 'flat',
+    insPerMile: (() => {
+      const v = document.getElementById('f_ins_pm')?.value;
+      return (v !== '' && v != null && !isNaN(parseFloat(v))) ? parseFloat(v) : undefined;
+    })(),
+    mpg: (() => { const v = document.getElementById('f_mpg')?.value; return (v !== '' && v != null && !isNaN(parseFloat(v)) && parseFloat(v) > 0) ? parseFloat(v) : undefined; })(),
+    fuelPrice: (() => { const v = document.getElementById('f_fuel')?.value; return (v !== '' && v != null && !isNaN(parseFloat(v))) ? parseFloat(v) : undefined; })()
   };
   
   // Save other settings globally
@@ -4633,6 +4761,8 @@ function saveSettings(){
     s_fuel: parseFloat(document.getElementById('s_fuel').value) || 3.25,
     s_mpg: parseFloat(document.getElementById('s_mpg').value) || 6.5,
     s_maint: parseFloat(document.getElementById('s_maint').value) || 0.17,
+    s_tolls_per_mile: parseFloat(document.getElementById('s_tolls_per_mile').value) || 0,
+    s_ins_per_mile: parseFloat(document.getElementById('s_ins_per_mile').value) || 0.07,
     s_loads_per_week: Math.max(1, parseInt(document.getElementById('s_loads_per_week').value || "5", 10)),
     s_target_net: parseFloat(document.getElementById('s_target_net').value) || 1500,
     s_tax: parseFloat(document.getElementById('s_tax').value) || 0.25
@@ -4643,13 +4773,228 @@ function saveSettings(){
   saveState(); // Save driver data with fixed costs
   
   // Clear dirty flags so values reload properly on driver switch
-  ['f_truck', 'f_trailer', 'f_ins', 'f_adv', 'f_food', 'f_rep'].forEach(id => {
+  ['f_truck', 'f_trailer', 'f_ins', 'f_ins_type', 'f_ins_pm', 'f_adv', 'f_food', 'f_rep', 'f_tolls_pm', 'f_mpg', 'f_fuel'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.dataset.dirty = 'false';
   });
   
+  // Recalculate only the saved driver's open weeks — never touch other drivers
+  recalcOpenWeeks(d);
+  recalcDriverFuelOpenWeeks(d);
+  recalcDriverInsOpenWeeks(d);
   alert(`Fixed costs saved for ${d.name}. Other settings saved globally.`);
   updateUI();
+}
+
+function toggleInsFields() {
+  const insType = document.getElementById('f_ins_type')?.value || 'flat';
+  const flatWrap = document.getElementById('f_ins_flat_wrap');
+  const pmWrap   = document.getElementById('f_ins_pm_wrap');
+  if (flatWrap) flatWrap.style.display = insType === 'flat'     ? '' : 'none';
+  if (pmWrap)   pmWrap.style.display   = insType === 'per_mile' ? '' : 'none';
+}
+
+function recalcDriverInsOpenWeeks(driver) {
+  // Recalcs insurance cost (stored inside load.details.fixed) and net for open weeks only.
+  // Only adjusts the insurance portion of fixed — never touches fuel, maint, tolls.
+  if (!driver || !driver.weeks) return;
+  const specs = getSpecs();
+  const isPerMile = driver.fixedCosts?.insType === 'per_mile';
+  const globalIpm = settings?.s_ins_per_mile ?? 0.07;
+  const driverIpm = driver.fixedCosts?.insPerMile;
+  const ipm = (driverIpm !== undefined) ? driverIpm : globalIpm;
+  const flatWeeklyIns = isPerMile ? 0 : (driver.fixedCosts?.ins || 0);
+  const insPerLoad = flatWeeklyIns / specs.loadsPerWeek; // used when flat mode
+  let changed = 0;
+
+  Object.entries(driver.weeks).forEach(function([wkId, wk]) {
+    if (!wk || wk.closed) return;
+    if (!wk.loads || wk.loads.length === 0) return;
+
+    wk.loads.forEach(function(load) {
+      if (!load || !load.gross || !load.details) return;
+      const miles = load.miles || 0;
+
+      // Compute what insurance cost WAS baked into fixed
+      // We stored it as: fixed = (nonInsFixed/loadsPerWeek) + insCost
+      // We know nonInsFixed = truck+trailer+adv+food+rep per load
+      const nonInsFixedWeekly = (driver.fixedCosts?.truck    || 0)
+                               + (driver.fixedCosts?.trailer  || 0)
+                               + (driver.fixedCosts?.adv      || 0)
+                               + (driver.fixedCosts?.food     || 0)
+                               + (driver.fixedCosts?.rep      || 0);
+      const nonInsPerLoad = nonInsFixedWeekly / specs.loadsPerWeek;
+      const oldFixed = load.details.fixed || 0;
+      const oldInsCost = oldFixed - nonInsPerLoad; // what insurance was contributing
+
+      // New insurance cost
+      const newInsCost = isPerMile ? (miles * ipm) : insPerLoad;
+      const newFixed   = nonInsPerLoad + newInsCost;
+      const fixedDiff  = newFixed - oldFixed;
+
+      if (Math.abs(fixedDiff) < 0.005) return; // no meaningful change
+
+      load.details.fixed = Math.round(newFixed * 100) / 100;
+      load.net = Math.round(((load.net || 0) - fixedDiff) * 100) / 100;
+      changed++;
+    });
+  });
+
+  if (changed > 0) {
+    saveState();
+    console.log('[recalcDriverInsOpenWeeks] Updated ' + changed + ' loads for ' + driver.name);
+  }
+}
+
+function recalcDriverFuelOpenWeeks(driver) {
+  // Recalcs fuel cost and net on open weeks for a SINGLE driver.
+  // Respects Samsara fuelOverride: if load.details.samsaraFuel is set, skip that load's fuel.
+  // Never touches maint or fixed.
+  if (!driver || !driver.weeks) return;
+  const specs = getSpecs();
+  const effectiveMpg  = (driver.fixedCosts?.mpg > 0) ? driver.fixedCosts.mpg : specs.mpg;
+  const effectiveFuel = (driver.fixedCosts?.fuelPrice >= 0 && driver.fixedCosts?.fuelPrice != null)
+                          ? driver.fixedCosts.fuelPrice : specs.fuel;
+  const driverTpm     = driver.fixedCosts?.tollsPerMile;
+  const globalTpm     = settings?.s_tolls_per_mile ?? 0.10;
+  const tpm           = (driverTpm !== undefined) ? driverTpm : globalTpm;
+  let changed = 0;
+
+  Object.entries(driver.weeks).forEach(function([wkId, wk]) {
+    if (!wk || wk.closed) return;
+    if (!wk.loads || wk.loads.length === 0) return;
+
+    wk.loads.forEach(function(load) {
+      if (!load || !load.gross || !load.details) return;
+
+      const miles = load.miles || 0;
+      const hasSamsaraFuel = load.details.samsaraFuel != null; // Samsara sets this flag
+
+      const newFuel  = hasSamsaraFuel ? load.details.fuel  // leave Samsara value alone
+                                      : Math.round((miles / effectiveMpg) * effectiveFuel * 100) / 100;
+      const oldFuel  = load.details.fuel || 0;
+      const fuelDiff = newFuel - oldFuel;
+      if (Math.abs(fuelDiff) < 0.005) return; // no meaningful change
+
+      // Recalculate tolls too in case tpm changed
+      const manualTolls = load.details.tollsWereManual ? load.details.tolls : 0;
+      const newTolls = manualTolls > 0 ? manualTolls : Math.round(miles * tpm * 100) / 100;
+      const oldTolls = load.details.tolls || 0;
+      const tollDiff = newTolls - oldTolls;
+
+      load.details.fuel  = newFuel;
+      load.details.tolls = newTolls;
+      load.net = Math.round(((load.net || 0) - fuelDiff - tollDiff) * 100) / 100;
+      changed++;
+    });
+  });
+
+  if (changed > 0) {
+    saveState();
+    console.log('[recalcDriverFuelOpenWeeks] Updated ' + changed + ' loads for ' + driver.name);
+  }
+}
+
+function recalcOpenWeeks(singleDriver) {
+  // TOLLS ONLY — never touches fuel, maint, or fixed.
+  // If singleDriver is passed, only recalcs that driver (used on per-driver save).
+  // Pass nothing to recalc all drivers (used when global toll rate changes).
+  if (!state || !state.drivers) return;
+  const globalTollsPerMile = settings?.s_tolls_per_mile ?? 0.10;
+
+  const driversToRecalc = singleDriver ? [singleDriver] : Object.values(state.drivers);
+  driversToRecalc.forEach(function(driver) {
+    if (!driver || !driver.weeks) return;
+    const driverTpm = driver.fixedCosts?.tollsPerMile;
+    const tpm = (driverTpm !== undefined) ? driverTpm : globalTollsPerMile;
+
+    Object.entries(driver.weeks).forEach(function([wkId, wk]) {
+      if (!wk || wk.closed) return; // never touch closed weeks
+      if (!wk.loads || wk.loads.length === 0) return;
+
+      wk.loads.forEach(function(load) {
+        if (!load || !load.gross) return;
+        if (!load.details) load.details = {};
+
+        const miles = load.miles || 0; // load.miles = total miles (loaded + DH)
+        const manualTolls = load._manualTolls != null ? load._manualTolls
+                          : (load.details.tollsWereManual ? load.details.tolls : 0);
+        const hasManualToll = manualTolls > 0;
+
+        const newTolls = hasManualToll ? manualTolls : (miles * tpm);
+        const oldTolls = load.details.tolls || 0;
+        const tollDiff = newTolls - oldTolls;
+
+        load.details.tolls = newTolls;
+        load.net = (load.net || 0) + tollDiff; // adjust net by difference only
+      });
+    });
+  });
+  saveState();
+}
+
+function revertFuelMaintDamage() {
+  // One-time migration: fixes the doubled fuel/maint caused by the miles-doubling bug.
+  // Checks a flag so it only runs once per browser session after this deploy.
+  const FLAG = 'tagdriverpro_fuelRevert_v1';
+  if (localStorage.getItem(FLAG)) return;
+
+  if (!state || !state.drivers) return;
+  const specs = getSpecs();
+  let fixed = 0;
+
+  Object.values(state.drivers).forEach(function(driver) {
+    if (!driver || !driver.weeks) return;
+    const driverTpm = driver.fixedCosts?.tollsPerMile;
+    const globalTpm = settings?.s_tolls_per_mile ?? 0.10;
+    const tpm = (driverTpm !== undefined) ? driverTpm : globalTpm;
+
+    Object.entries(driver.weeks).forEach(function([wkId, wk]) {
+      if (!wk || wk.closed) return;
+      if (!wk.loads || wk.loads.length === 0) return;
+
+      wk.loads.forEach(function(load) {
+        if (!load || !load.gross || !load.details) return;
+
+        const miles = load.miles || 0; // correct total miles
+        const mpg   = (driver.fixedCosts?.mpg > 0) ? driver.fixedCosts.mpg
+                     : (driver.realMpg && driver.realMpg > 0) ? driver.realMpg : specs.mpg;
+        const fuelPrice = (driver.fixedCosts?.fuelPrice >= 0 && driver.fixedCosts?.fuelPrice != null)
+                        ? driver.fixedCosts.fuelPrice : specs.fuel;
+        const correctFuel  = (miles / mpg) * fuelPrice;
+        const correctMaint = miles * specs.maint;
+        const correctFixed = getDriverFixedWeekly(driver) / specs.loadsPerWeek;
+        const manualTolls  = load.details.tollsWereManual ? load.details.tolls : 0;
+        const correctTolls = manualTolls > 0 ? manualTolls : (miles * tpm);
+
+        // Recalculate net from scratch with correct values
+        const totalRevenue = (load.gross || 0) + (load.details.detention || 0) + (load.details.accessorials || 0);
+        const isCompany = driver.driverType === 'company';
+        let net;
+        if (isCompany) {
+          const driverPay = load.details.driverPay || 0;
+          net = totalRevenue - driverPay - correctFuel - correctMaint - correctFixed - correctTolls;
+        } else {
+          const split = load.details.split || getDriverSplit(driver);
+          const cut = totalRevenue * split;
+          net = cut - correctFuel - correctMaint - correctFixed - correctTolls;
+        }
+
+        load.details.fuel  = Math.round(correctFuel  * 100) / 100;
+        load.details.maint = Math.round(correctMaint * 100) / 100;
+        load.details.fixed = Math.round(correctFixed * 100) / 100;
+        load.details.tolls = Math.round(correctTolls * 100) / 100;
+        load.net = Math.round(net * 100) / 100;
+        fixed++;
+      });
+    });
+  });
+
+  if (fixed > 0) {
+    saveState();
+    console.log('[revertFuelMaintDamage] Fixed ' + fixed + ' loads.');
+  }
+  localStorage.setItem(FLAG, '1');
 }
 
 function saveDriverFixedCosts(){
@@ -7754,8 +8099,26 @@ function wireEntryKeyNav(){
 
 // Variables declared here to avoid temporal dead zone (TDZ) when refreshAll() runs below
 var fleetSortBy = 'name';
+var multiStops = []; // Multi-stop load waypoints
+
+function openMultiStop() {
+  multiStops = [];
+  const sec = document.getElementById('multiStopSection');
+  if (sec) sec.style.display = 'block';
+  const btn = document.getElementById('multiStopBtn');
+  if (btn) btn.style.display = 'none';
+}
+
+function closeMultiStop() {
+  multiStops = [];
+  const sec = document.getElementById('multiStopSection');
+  if (sec) sec.style.display = 'none';
+  const btn = document.getElementById('multiStopBtn');
+  if (btn) btn.style.display = '';
+}
 
 resolveAllDriverWeeks();
+revertFuelMaintDamage(); // one-time fix for doubled fuel/maint bug
 bindSettingsToInputs();
 initSettingsListeners(); // Add event listeners once
 wireEntryKeyNav();
