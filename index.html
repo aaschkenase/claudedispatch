@@ -1575,7 +1575,79 @@ td {
 .flatpickr-prev-month svg, .flatpickr-next-month svg { fill: #8899aa !important; }
 .flatpickr-prev-month:hover svg, .flatpickr-next-month:hover svg { fill: #00c8ff !important; }
 .flatpickr-day.flatpickr-disabled, .flatpickr-day.prevMonthDay, .flatpickr-day.nextMonthDay { color: #3a4560 !important; }
+/* =========================================
+   PREMIUM UI/UX IMPROVEMENTS
+   ========================================= */
 
+/* 1. Better Label Typography & Legibility */
+label, .selector-label, .stat-label, .fc-stat-label, th {
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.5px !important;
+}
+
+/* Right-align financial and numerical columns in the load table */
+#loadList td:nth-child(2),
+#loadList td:nth-child(3),
+#loadList td:nth-child(4),
+#loadList td:nth-child(5),
+table thead tr th:nth-child(2),
+table thead tr th:nth-child(3),
+table thead tr th:nth-child(4),
+table thead tr th:nth-child(5) {
+  text-align: right;
+}
+
+/* Ensure the action buttons stay right-aligned too */
+#loadList td:last-child, table thead tr th:last-child {
+  text-align: right;
+}
+
+/* 2. Glassmorphism Overlays for a Modern App Feel */
+#overlay, .fleet-modal-overlay, #samProfileOverlay, #analyzerModal, #loadSimOverlay {
+  background: rgba(13, 17, 23, 0.5) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+}
+
+/* Refined Modal Box Shadow to pop against the glass */
+#modal, .fleet-modal, .analyzer-modal-box, #samProfileModal {
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255,255,255,0.1) !important;
+}
+
+.table-wrapper {
+  max-height: 600px;
+  overflow-y: auto;
+}
+thead th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-secondary) !important; 
+  z-index: 10;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+@media (min-width: 1201px) {
+  .dash-grid > div:first-child {
+    position: sticky;
+    top: 20px;
+    height: max-content;
+    z-index: 5;
+  }
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: none !important;
+  border-color: var(--accent-blue) !important;
+  box-shadow: 0 0 0 3px rgba(79, 158, 248, 0.15), inset 0 0 0 1px var(--accent-blue) !important;
+  transition: all 0.15s ease;
+}
+
+/* Softer button hovers (less aggressive jump) */
+.btn-icon:hover, .btn-tool:hover {
+  transform: translateY(-1px) !important; 
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2), 0 0 0 1px var(--accent-blue) !important;
+}
 </style>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.js"></script>
