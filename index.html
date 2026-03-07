@@ -1618,6 +1618,39 @@ td {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.js"></script>
 </head>
 <body>
+
+<!-- ⚡ Floating Load Simulator Button — always accessible -->
+<button id="floatSimBtn" onclick="showLoadSimulator(state && state.currentDriverId)"
+  title="Simulate a Load (⚡)"
+  style="
+    position:fixed;
+    bottom:28px;
+    right:28px;
+    z-index:9500;
+    width:58px;
+    height:58px;
+    border-radius:50%;
+    background:linear-gradient(135deg,#4f9ef8,#38bdf8);
+    border:none;
+    box-shadow:0 4px 20px rgba(79,158,248,0.55), 0 0 0 0 rgba(79,158,248,0.4);
+    cursor:pointer;
+    font-size:24px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    transition:transform 0.15s, box-shadow 0.15s;
+    animation:simBtnPulse 3s ease-in-out infinite;
+  "
+  onmouseover="this.style.transform='scale(1.12)';this.style.boxShadow='0 6px 28px rgba(79,158,248,0.75), 0 0 0 6px rgba(79,158,248,0.15)'"
+  onmouseout="this.style.transform='scale(1)';this.style.boxShadow='0 4px 20px rgba(79,158,248,0.55), 0 0 0 0 rgba(79,158,248,0.4)'"
+>⚡</button>
+<style>
+  @keyframes simBtnPulse {
+    0%,100% { box-shadow: 0 4px 20px rgba(79,158,248,0.55), 0 0 0 0 rgba(79,158,248,0.35); }
+    50%      { box-shadow: 0 4px 20px rgba(79,158,248,0.55), 0 0 0 10px rgba(79,158,248,0); }
+  }
+  #floatSimBtn:active { transform: scale(0.94) !important; }
+</style>
 <!-- Load Analyzer Modal -->
 <div id="analyzerModal">
   <div class="analyzer-modal-box">
@@ -1770,7 +1803,6 @@ td {
     <button class="nav-tab" onclick="showTab('settings', this)">Settings</button>
     <button class="nav-tab" onclick="showTab('samsara', this)" style="background:rgba(79,158,248,0.08);border:1px solid rgba(79,158,248,0.2);color:var(--success);">🛰️ Samsara</button>
     <button class="nav-tab fleet-btn" onclick="openFleetModal()">🚛 Fleet Overview</button>
-    <button class="nav-tab fleet-btn" onclick="showLoadSimulator(state.currentDriverId)" style="background:rgba(79,158,248,0.10);border:1px solid rgba(79,158,248,0.25);color:var(--accent-cyan);">⚡ Simulate Load</button>
   </nav>
 
   <!-- ═══════════════════════════════════════════════════
@@ -8772,6 +8804,65 @@ window.gmapsAutoFillSimMiles = async function() {
   });
 };
 
+// ── gmapsAutoFillCmpMiles: Get Miles for load compare modal ──
+// Uses shared driver's lastDropCoords as DH origin (same as dashboard calcRoute)
+window.gmapsAutoFillCmpMiles = async function(side) {
+  const origin = document.getElementById('cmp_' + side + '_origin')?.value?.trim();
+  const dest   = document.getElementById('cmp_' + side + '_dest')?.value?.trim();
+  if (!origin || !dest) { alert('Enter Pickup City and Delivery City first'); return; }
+
+  // Get DH-from: driver's last drop city
+  const drvId = document.getElementById('cmp_driver')?.value;
+  const drv   = drvId && state.drivers[drvId];
+  let dhFromStr = null;
+  if (drv) {
+    try {
+      const wk = drv.weeks && drv.weeks[getGlobalWeekId()];
+      if (wk && wk.lastDropCoords && wk.lastDropCoords.lat && wk.lastDropCoords.lon) {
+        const { lat, lon } = wk.lastDropCoords;
+        const data = await fetch(
+          'https://nominatim.openstreetmap.org/reverse?format=json&lat=' + lat + '&lon=' + lon,
+          { headers: { 'Accept-Language': 'en' } }
+        ).then(r => r.json());
+        const city   = data.address && (data.address.city || data.address.town || data.address.village || '');
+        const state2 = data.address && (data.address.state || '');
+        if (city) dhFromStr = city + (state2 ? ', ' + state2 : '');
+      }
+      if (!dhFromStr) {
+        const loads = (drv.weeks && drv.weeks[getGlobalWeekId()] && drv.weeks[getGlobalWeekId()].loads) || [];
+        if (loads.length > 0) {
+          dhFromStr = (loads[loads.length - 1].dest)
+                   || (loads[loads.length - 1].details && loads[loads.length - 1].details.dest) || null;
+        }
+      }
+    } catch(e) {}
+  }
+
+  // Show hint about DH source
+  const hint = document.getElementById('cmp_' + side + '_dh_hint');
+  if (hint && dhFromStr) hint.textContent = 'DH from: ' + dhFromStr;
+
+  await gmapsShowRouteOptions(origin, dest, {
+    onSelect: async function(route, avoidTolls) {
+      const miLoadEl = document.getElementById('cmp_' + side + '_miload');
+      if (miLoadEl) { miLoadEl.value = route.miles; miLoadEl.dispatchEvent(new Event('input')); }
+
+      if (dhFromStr && dhFromStr.toLowerCase() !== origin.toLowerCase()) {
+        try {
+          const dh = await gmapsRoute(dhFromStr, origin, { avoidTolls });
+          const dhEl = document.getElementById('cmp_' + side + '_midh');
+          if (dhEl && dh && dh.miles > 0) {
+            dhEl.value = dh.miles;
+            dhEl.dispatchEvent(new Event('input'));
+            if (hint) hint.textContent = 'DH ' + dh.miles + ' mi from ' + dhFromStr;
+          }
+        } catch(e) {}
+      }
+      if (typeof window._cmpRecalc === 'function') window._cmpRecalc();
+    }
+  });
+};
+
 // Load saved key on page load
 window.addEventListener('load', function() {
   const saved = gmapsGetKey();
@@ -8786,6 +8877,374 @@ window.addEventListener('load', function() {
  * LOAD SIMULATOR
  ***********************************************/
 /** Transfers current simulator inputs into the load entry form, then opens Dashboard */
+/** ─── LOAD COMPARE ─────────────────────────────────────────────────────────
+ * Opens a side-by-side comparison of two loads for any two drivers.
+ * Pre-fills Load A from the current simulator state if available.
+ */
+window.openLoadCompare = function(defaultDriverId) {
+  // Grab Load A values from simulator if open
+  function simVal(id) { return document.getElementById(id)?.value || ''; }
+  const preA = {
+    origin: simVal('sim_origin'), dest: simVal('sim_dest'),
+    gross:  simVal('sim_gross'),  miLoad: simVal('sim_mi_load'),
+    miDh:   simVal('sim_mi_dh'), tolls: simVal('sim_tolls'),
+    det:    simVal('sim_detention'), days: simVal('sim_days') || '1',
+  };
+
+  // Close single simulator
+  document.getElementById('loadSimOverlay')?.remove();
+
+  const driverOpts = Object.entries(state.drivers || {})
+    .map(([id, d]) => `<option value="${id}" ${id===defaultDriverId?'selected':''}>${escapeHtml(d.name)}</option>`)
+    .join('');
+
+  const inputStyle = 'width:100%;padding:8px 10px;background:var(--bg-primary);border:1px solid var(--border-medium);border-radius:7px;color:var(--text-primary);font-size:13px;font-weight:600;box-sizing:border-box;';
+  const labelStyle = 'font-size:10px;font-weight:700;color:var(--text-muted);display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:1px;';
+
+  function sideInputs(side, pre) {
+    return `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+        <div><label style="${labelStyle}">Pickup City</label>
+          <input id="cmp_${side}_origin" type="text" placeholder="e.g. Chicago, IL" value="${escapeHtml(pre.origin)}" style="${inputStyle}" oninput="window._cmpRecalc()"></div>
+        <div><label style="${labelStyle}">Delivery City</label>
+          <input id="cmp_${side}_dest" type="text" placeholder="e.g. Dallas, TX" value="${escapeHtml(pre.dest)}" style="${inputStyle}" oninput="window._cmpRecalc()"></div>
+      </div>
+      <div style="margin-bottom:10px;">
+        <button onclick="window.gmapsAutoFillCmpMiles('${side}')"
+          style="width:100%;padding:9px;background:var(--accent-cyan);color:#000;border:none;border-radius:8px;font-weight:800;cursor:pointer;font-size:12px;">
+          🗺️ Calculate Miles + DH from driver's last city
+        </button>
+        <div id="cmp_${side}_dh_hint" style="font-size:10px;color:var(--accent-cyan);margin-top:4px;padding-left:2px;opacity:0.8;"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px;">
+        <div><label style="${labelStyle}">Gross ($)</label>
+          <input id="cmp_${side}_gross" type="number" min="0" step="0.01" placeholder="2800" value="${pre.gross}" style="${inputStyle}" oninput="window._cmpRecalc()"></div>
+        <div><label style="${labelStyle}">Loaded Mi</label>
+          <input id="cmp_${side}_miload" type="number" min="0" step="1" placeholder="500" value="${pre.miLoad}" style="${inputStyle}" oninput="window._cmpRecalc()"></div>
+        <div><label style="${labelStyle}">DH Miles</label>
+          <input id="cmp_${side}_midh" type="number" min="0" step="1" placeholder="0" value="${pre.miDh}" style="${inputStyle}" oninput="window._cmpRecalc()"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+        <div><label style="${labelStyle}">Transit Days</label>
+          <input id="cmp_${side}_days" type="number" min="0.5" step="0.5" value="${pre.days||1}" style="${inputStyle}" oninput="window._cmpRecalc()"></div>
+        <div><label style="${labelStyle}">Tolls ($)</label>
+          <input id="cmp_${side}_tolls" type="number" min="0" step="0.01" placeholder="0" value="${pre.tolls}" style="${inputStyle}" oninput="window._cmpRecalc()"></div>
+        <div><label style="${labelStyle}">Detention ($)</label>
+          <input id="cmp_${side}_det" type="number" min="0" step="0.01" placeholder="0" value="${pre.det}" style="${inputStyle}" oninput="window._cmpRecalc()"></div>
+      </div>`;
+  }
+
+  const modalHtml = `
+    <div id="loadCmpOverlay" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.9);z-index:10100;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto;" onclick="if(event.target===this)this.remove()">
+      <div style="background:var(--bg-elevated);border:1px solid var(--border-medium);border-radius:16px;width:100%;max-width:1100px;box-shadow:0 16px 64px rgba(0,0,0,0.7);margin:auto;">
+
+        <!-- Header -->
+        <div style="background:linear-gradient(135deg,rgba(139,92,246,0.12),rgba(79,158,248,0.08));padding:18px 24px;border-bottom:1px solid var(--border-medium);display:flex;align-items:center;justify-content:space-between;gap:16px;">
+          <div>
+            <div style="font-size:18px;font-weight:900;color:var(--text-primary);">⚖️ Compare Loads</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">Two load offers, same driver — best option highlighted automatically</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;flex-shrink:0;">
+            <span style="font-size:12px;font-weight:700;color:var(--text-muted);">Driver:</span>
+            <select id="cmp_driver" onchange="window._cmpRecalc()" style="padding:7px 12px;background:var(--bg-primary);border:1px solid var(--border-medium);border-radius:8px;color:var(--text-primary);font-size:13px;font-weight:600;">${driverOpts}</select>
+          </div>
+          <button onclick="document.getElementById('loadCmpOverlay').remove()" style="background:none;border:none;color:var(--text-muted);font-size:26px;cursor:pointer;padding:0;flex-shrink:0;">×</button>
+        </div>
+
+        <!-- Input grid -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;border-bottom:1px solid var(--border-medium);">
+
+          <!-- Load A -->
+          <div style="padding:18px 20px;border-right:1px solid var(--border-medium);">
+            <div style="margin-bottom:12px;">
+              <div style="font-size:13px;font-weight:900;color:var(--accent-cyan);letter-spacing:1px;">LOAD A</div>
+            </div>
+            ${sideInputs('a', preA)}
+          </div>
+
+          <!-- Load B -->
+          <div style="padding:18px 20px;">
+            <div style="margin-bottom:12px;">
+              <div style="font-size:13px;font-weight:900;color:#a78bfa;letter-spacing:1px;">LOAD B</div>
+            </div>
+            ${sideInputs('b', {origin:'',dest:'',gross:'',miLoad:'',miDh:'',tolls:'',det:'',days:'1'})}
+          </div>
+        </div>
+
+        <!-- Results grid -->
+        <div id="cmp_results" style="padding:20px 24px;">
+          <div style="text-align:center;color:var(--text-muted);padding:24px;font-size:13px;">Fill in both loads above to compare ↑</div>
+        </div>
+
+        <!-- Footer -->
+        <div style="padding:14px 24px;border-top:1px solid var(--border-medium);display:flex;gap:10px;">
+          <button onclick="document.getElementById('loadCmpOverlay').remove()" style="flex:1;padding:10px;background:var(--bg-primary);color:var(--text-muted);border:1px solid var(--border-subtle);border-radius:8px;font-weight:600;cursor:pointer;font-size:13px;">Close</button>
+          <button id="cmp_book_a" onclick="window._cmpBook('a')" style="flex:2;padding:10px;background:rgba(79,158,248,0.15);color:var(--accent-cyan);border:1px solid rgba(79,158,248,0.3);border-radius:8px;font-weight:800;cursor:pointer;font-size:13px;opacity:0.5;" disabled>📋 Book Load A</button>
+          <button id="cmp_book_b" onclick="window._cmpBook('b')" style="flex:2;padding:10px;background:rgba(139,92,246,0.15);color:#a78bfa;border:1px solid rgba(139,92,246,0.3);border-radius:8px;font-weight:800;cursor:pointer;font-size:13px;opacity:0.5;" disabled>📋 Book Load B</button>
+        </div>
+      </div>
+    </div>`;
+
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+  // Wire city autocomplete
+  ['cmp_a_origin','cmp_a_dest','cmp_b_origin','cmp_b_dest'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el && window.attachCityAC) window.attachCityAC(el);
+  });
+
+  // ── Recalc ───────────────────────────────────────────────────────────────
+  function getCmpLoad(side) {
+    const v = id => parseFloat(document.getElementById(`cmp_${side}_${id}`)?.value) || 0;
+    const s = id => document.getElementById(`cmp_${side}_${id}`)?.value?.trim() || '';
+    const miLoad = v('miload'), miDh = v('midh');
+    return {
+      gross:    v('gross'),
+      miles:    miLoad + miDh,
+      loadedMiles: miLoad,
+      dhMiles:  miDh,
+      tolls:    v('tolls'),
+      det:      v('det'),
+      days:     Math.max(0.5, v('days') || 1),
+      origin:   s('origin'),
+      dest:     s('dest'),
+    };
+  }
+
+  function calcSide(load) {
+    if (!load.gross || !load.miles) return null;
+    const drvId = document.getElementById('cmp_driver')?.value || defaultDriverId;
+    const drv   = state.drivers[drvId];
+    if (!drv) return null;
+    const sp = getSpecs();
+    const calc = calcLoadNet(drv, sp, { gross: load.gross, miles: load.miles, tolls: load.tolls, detention: load.det, accessorials: 0 });
+    const allInRpm  = load.miles > 0      ? load.gross / load.miles      : 0;
+    const loadedRpm = load.loadedMiles > 0 ? load.gross / load.loadedMiles : 0;
+    const revPerDay = load.gross / load.days;
+    const netPerDay = calc.net   / load.days;
+    const dhRatio   = load.miles > 0 ? load.dhMiles / load.miles : 0;
+    const wk        = drv.weeks?.[getGlobalWeekId()] || { loads: [] };
+    const wkT       = computeWeekTotals(wk, drv);
+    const targetNet = getDriverTargetNet(drv);
+    const newWeekNet = wkT.net + calc.net;
+    const gapAfter  = targetNet - newWeekNet;
+    const targetPct = targetNet > 0 ? Math.min(100, newWeekNet / targetNet * 100) : 0;
+    return { calc, allInRpm, loadedRpm, revPerDay, netPerDay, dhRatio, targetPct, gapAfter, newWeekNet, targetNet, drv };
+  }
+
+  function metricRow(labelA, valA, winA, labelB, valB, winB, key) {
+    const highlight = (val, isWin) => isWin
+      ? `<span style="font-size:16px;font-weight:900;color:var(--success);">${val} ✓</span>`
+      : `<span style="font-size:16px;font-weight:700;color:var(--text-secondary);">${val}</span>`;
+    return `
+      <div style="display:contents;">
+        <div style="padding:10px 14px;border-bottom:1px solid var(--border-subtle);border-right:1px solid var(--border-subtle);">
+          <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.8px;">${labelA}</div>
+          ${highlight(valA, winA)}
+        </div>
+        <div style="padding:10px 14px;border-bottom:1px solid var(--border-subtle);">
+          <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.8px;">${labelB}</div>
+          ${highlight(valB, winB)}
+        </div>
+      </div>`;
+  }
+
+  function cmpRecalc() {
+    const la = getCmpLoad('a'), lb = getCmpLoad('b');
+    const ra = calcSide(la),    rb = calcSide(lb);
+    const bookA = document.getElementById('cmp_book_a');
+    const bookB = document.getElementById('cmp_book_b');
+    if (bookA) { bookA.disabled = !ra; bookA.style.opacity = ra ? '1' : '0.5'; }
+    if (bookB) { bookB.disabled = !rb; bookB.style.opacity = rb ? '1' : '0.5'; }
+
+    if (!ra && !rb) {
+      document.getElementById('cmp_results').innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:24px;font-size:13px;">Fill in both loads above to compare ↑</div>';
+      return;
+    }
+    if (!ra || !rb) {
+      document.getElementById('cmp_results').innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:24px;font-size:13px;">Fill in the second load to see comparison</div>';
+      return;
+    }
+
+    // ── Score each load (financial — sync; market — async) ──
+    let scoreA = 0, scoreB = 0;
+    const reasons = [];
+    function score(label, aWin, weight) {
+      weight = weight || 1;
+      if (aWin === 'a') { scoreA += weight; reasons.push({w:'a', text: label}); }
+      else if (aWin === 'b') { scoreB += weight; reasons.push({w:'b', text: label}); }
+    }
+
+    const netWin   = ra.calc.net  > rb.calc.net  ? 'a' : rb.calc.net  > ra.calc.net  ? 'b' : null;
+    const rpmWin   = ra.allInRpm  > rb.allInRpm  ? 'a' : rb.allInRpm  > ra.allInRpm  ? 'b' : null;
+    const rdayWin  = ra.revPerDay > rb.revPerDay ? 'a' : rb.revPerDay > ra.revPerDay ? 'b' : null;
+    const ndayWin  = ra.netPerDay > rb.netPerDay ? 'a' : rb.netPerDay > ra.netPerDay ? 'b' : null;
+    const dhWin    = ra.dhRatio   < rb.dhRatio   ? 'a' : rb.dhRatio   < ra.dhRatio   ? 'b' : null;
+    const tgtWin   = ra.gapAfter  < rb.gapAfter  ? 'a' : rb.gapAfter  < ra.gapAfter  ? 'b' : null;
+
+    score(`Higher net (${money(ra.calc.net)} vs ${money(rb.calc.net)})`,              netWin,  2);
+    score(`Better all-in RPM ($${ra.allInRpm.toFixed(2)} vs $${rb.allInRpm.toFixed(2)}/mi)`, rpmWin, 1);
+    score(`More revenue per day (${money(ra.revPerDay)} vs ${money(rb.revPerDay)})`,  rdayWin, 2);
+    score(`Less deadhead (${(ra.dhRatio*100).toFixed(0)}% vs ${(rb.dhRatio*100).toFixed(0)}%)`, dhWin, 1);
+    score(`Better weekly target progress`, tgtWin, 1);
+
+    const m = v => `$${Number(v).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})}`;
+
+    // ── Compact flatbed market card for compare panel ──
+    function buildMktCard(cityStr, intel) {
+      if (!cityStr) return `<div style="padding:14px;background:rgba(0,0,0,0.15);border-radius:10px;font-size:12px;color:var(--text-muted);height:100%;box-sizing:border-box;">No destination entered</div>`;
+      if (!intel)   return `<div style="padding:14px;background:rgba(0,0,0,0.15);border-radius:10px;font-size:12px;color:var(--text-muted);height:100%;box-sizing:border-box;">No flatbed market data within 100 mi of <strong>${escapeHtml(cityStr)}</strong></div>`;
+      const mkt = intel.primary;
+      const sc  = mkt.score;
+      const col = sc >= 8 ? 'var(--success)' : sc >= 6 ? 'var(--warning)' : 'var(--danger)';
+      const lbl = sc >= 8 ? 'STRONG' : sc >= 6 ? 'MODERATE' : 'WEAK';
+      const bg  = sc >= 8 ? 'rgba(79,158,248,0.08)' : sc >= 6 ? 'rgba(255,184,0,0.07)' : 'rgba(255,59,59,0.08)';
+      const dist = mkt.dist > 0 ? ` <span style="opacity:0.6;font-size:10px;">(${mkt.dist} mi away)</span>` : '';
+      const nearby = (intel.nearby||[]).slice(0,2).map(n => {
+        const nc = n.score>=8?'var(--success)':n.score>=6?'var(--warning)':'var(--danger)';
+        return `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
+          <span style="font-size:11px;color:var(--text-secondary);">${n.tag} ${n.label.split(',')[0]}</span>
+          <span style="font-size:11px;font-weight:700;color:${nc};">${n.score}/10 · ${n.dist}mi</span></div>`;
+      }).join('');
+      return `
+        <div style="background:${bg};border:1px solid ${col}55;border-radius:10px;padding:12px 14px;height:100%;box-sizing:border-box;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+            <span style="font-size:13px;font-weight:900;color:${col};">${lbl}</span>
+            <span style="font-size:18px;font-weight:900;color:${col};">${sc}/10</span>
+          </div>
+          <div style="font-size:12px;font-weight:700;color:var(--text-primary);margin-bottom:3px;">${mkt.tag} ${mkt.label}${dist}</div>
+          <div style="font-size:11px;color:var(--text-muted);line-height:1.4;margin-bottom:6px;">${mkt.note}</div>
+          ${nearby ? `<div style="border-top:1px solid var(--border-subtle);padding-top:7px;margin-top:3px;">
+            <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px;">ALSO WITHIN 100 MI:</div>${nearby}</div>` : ''}
+        </div>`;
+    }
+
+    // ── Render results: called twice — once with loading placeholders, once with market data ──
+    function renderResults(mktHtmlA, mktHtmlB, mktScoreA, mktScoreB) {
+      // Snapshot current financial score and apply market factor on top
+      let sA = scoreA, sB = scoreB;
+      const rs = reasons.slice();
+      const mktWin = (mktScoreA != null && mktScoreB != null)
+        ? (mktScoreA > mktScoreB + 1 ? 'a' : mktScoreB > mktScoreA + 1 ? 'b' : null)
+        : null;
+      if (mktWin) {
+        const diff = Math.abs((mktScoreA||0) - (mktScoreB||0));
+        const w = diff >= 3 ? 2 : 1;
+        if (mktWin === 'a') { sA += w; rs.push({w:'a', text:`Stronger reload market (${mktScoreA}/10 vs ${mktScoreB}/10)`}); }
+        else                { sB += w; rs.push({w:'b', text:`Stronger reload market (${mktScoreB}/10 vs ${mktScoreA}/10)`}); }
+      }
+
+      const winner   = sA > sB ? 'a' : sB > sA ? 'b' : null;
+      const winColor = winner === 'a' ? 'var(--accent-cyan)' : winner === 'b' ? '#a78bfa' : 'var(--warning)';
+      const winLabel = winner === 'a' ? '\u26a1 LOAD A WINS' : winner === 'b' ? '\u26a1 LOAD B WINS' : '\U0001f7e1 TOO CLOSE TO CALL';
+      const winReasons = rs.filter(r => r.w === winner).map(r => `<li style="margin-bottom:3px;">${r.text}</li>`).join('');
+
+      const el = document.getElementById('cmp_results');
+      if (!el) return;
+      el.innerHTML = `
+        <!-- Financial metrics grid -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;margin-bottom:14px;border:1px solid var(--border-subtle);border-radius:10px;overflow:hidden;">
+          <div style="padding:10px 14px;background:rgba(79,158,248,0.08);border-bottom:1px solid var(--border-subtle);border-right:1px solid var(--border-subtle);">
+            <span style="font-size:12px;font-weight:900;color:var(--accent-cyan);">LOAD A</span>
+            <span style="font-size:11px;color:var(--text-muted);margin-left:8px;">${escapeHtml(la.dest||'—')}</span>
+          </div>
+          <div style="padding:10px 14px;background:rgba(139,92,246,0.08);border-bottom:1px solid var(--border-subtle);">
+            <span style="font-size:12px;font-weight:900;color:#a78bfa;">LOAD B</span>
+            <span style="font-size:11px;color:var(--text-muted);margin-left:8px;">${escapeHtml(lb.dest||'—')}</span>
+          </div>
+          ${metricRow('Net Profit',        m(ra.calc.net),                   netWin==='a',            'Net Profit',        m(rb.calc.net),                   netWin==='b')}
+          ${metricRow('All-In RPM',        '$'+ra.allInRpm.toFixed(2)+'/mi', rpmWin==='a',            'All-In RPM',        '$'+rb.allInRpm.toFixed(2)+'/mi', rpmWin==='b')}
+          ${metricRow('Revenue / Day',     m(ra.revPerDay),                  rdayWin==='a',           'Revenue / Day',     m(rb.revPerDay),                  rdayWin==='b')}
+          ${metricRow('Net / Day',         m(ra.netPerDay),                  ndayWin==='a',           'Net / Day',         m(rb.netPerDay),                  ndayWin==='b')}
+          ${metricRow('Deadhead %',        (ra.dhRatio*100).toFixed(0)+'%',  dhWin==='a',             'Deadhead %',        (rb.dhRatio*100).toFixed(0)+'%',  dhWin==='b')}
+          ${metricRow('Week Target After', ra.targetPct.toFixed(0)+'%',      tgtWin==='a',            'Week Target After', rb.targetPct.toFixed(0)+'%',      tgtWin==='b')}
+          ${metricRow('Fuel Cost',         m(ra.calc.fuel),                  ra.calc.fuel<=rb.calc.fuel, 'Fuel Cost',      m(rb.calc.fuel),                  rb.calc.fuel<ra.calc.fuel)}
+          ${mktWin != null ? metricRow('Reload Market', (mktScoreA||'?')+'/10', mktWin==='a', 'Reload Market', (mktScoreB||'?')+'/10', mktWin==='b') : ''}
+        </div>
+
+        <!-- Flatbed Reload Market Intel — side by side -->
+        <div style="margin-bottom:14px;">
+          <div style="font-size:11px;font-weight:800;letter-spacing:1px;color:var(--text-muted);text-transform:uppercase;margin-bottom:8px;">\U0001f4cd Flatbed Reload Market</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div>${mktHtmlA}</div>
+            <div>${mktHtmlB}</div>
+          </div>
+        </div>
+
+        <!-- Verdict -->
+        <div style="background:${winColor}11;border:2px solid ${winColor}55;border-radius:12px;padding:16px 20px;">
+          <div style="font-size:20px;font-weight:900;color:${winColor};margin-bottom:10px;">${winLabel}</div>
+          ${winner
+            ? `<ul style="margin:0;padding-left:18px;font-size:13px;color:var(--text-secondary);line-height:1.7;">${winReasons}</ul>`
+            : `<div style="font-size:13px;color:var(--text-muted);">Financially close — check reload market above to make the call.</div>`
+          }
+        </div>`;
+    }
+
+    // Render immediately with loading placeholders
+    const loadCard = city => `<div style="padding:14px;background:rgba(0,0,0,0.15);border-radius:10px;font-size:12px;color:var(--text-muted);">\U0001f504 Loading flatbed market intel for ${escapeHtml(city||'—')}\u2026</div>`;
+    renderResults(loadCard(la.dest), loadCard(lb.dest), null, null);
+
+    // Fire async market lookups; re-render with full intel once both resolve
+    const _sA = scoreA, _sB = scoreB, _rs = reasons.slice();
+    Promise.all([
+      la.dest ? getMarketIntel(la.dest) : Promise.resolve(null),
+      lb.dest ? getMarketIntel(lb.dest) : Promise.resolve(null),
+    ]).then(([intelA, intelB]) => {
+      if (!document.getElementById('cmp_results')) return;
+      scoreA = _sA; scoreB = _sB;
+      reasons.length = 0; _rs.forEach(r => reasons.push(r));
+      renderResults(
+        buildMktCard(la.dest, intelA),
+        buildMktCard(lb.dest, intelB),
+        intelA?.primary?.score ?? null,
+        intelB?.primary?.score ?? null
+      );
+    });
+  }
+
+  window._cmpRecalc = cmpRecalc;
+  window._cmpBook = function(side) {
+    const la = getCmpLoad(side);
+    const drvId = document.getElementById('cmp_driver')?.value || defaultDriverId;
+    // Switch active driver if different
+    if (drvId && state.drivers[drvId]) {
+      state.currentDriverId = drvId;
+      const sel = document.getElementById('driverSelect');
+      if (sel) sel.value = drvId;
+      refreshAll({ settings: true });
+    }
+    document.getElementById('loadCmpOverlay')?.remove();
+    // Prefill form
+    setTimeout(() => {
+      const dashBtn = document.querySelector('.nav-tab[onclick*="dashboard"]');
+      if (dashBtn) dashBtn.click();
+      setTimeout(() => {
+        function setVal(id, val) {
+          const el = document.getElementById(id); if (!el||!val) return;
+          el.value = val;
+          el.dispatchEvent(new Event('input',{bubbles:true}));
+          el.dispatchEvent(new Event('change',{bubbles:true}));
+        }
+        setVal('origin',         la.origin);
+        setVal('dest',           la.dest);
+        setVal('pay_gross',      la.gross);
+        setVal('mi_load',        la.loadedMiles);
+        setVal('mi_dh',          la.dhMiles);
+        setVal('cost_tolls',     la.tolls);
+        setVal('cost_detention', la.det);
+        const form = document.getElementById('origin');
+        if (form) { form.scrollIntoView({behavior:'smooth',block:'center'}); form.focus(); }
+        if (typeof analyzeLoad === 'function') analyzeLoad();
+      }, 200);
+    }, 100);
+  };
+
+  // Auto-recalc if Load A was pre-filled
+  if (preA.gross && preA.miles) setTimeout(cmpRecalc, 100);
+};
+
+
 window.bookSimLoad = function() {
   const gross    = document.getElementById('sim_gross')?.value    || '';
   const miLoad   = document.getElementById('sim_mi_load')?.value  || '';
@@ -9497,6 +9956,7 @@ window.showLoadSimulator = function(driverId) {
         <!-- Footer -->
         <div style="padding:14px 24px;border-top:1px solid var(--border-medium);display:flex;gap:10px;">
           <button onclick="document.getElementById('loadSimOverlay').remove()" style="flex:1;padding:10px;background:var(--bg-primary);color:var(--text-muted);border:1px solid var(--border-subtle);border-radius:8px;font-weight:600;cursor:pointer;font-size:13px;">Close</button>
+          <button onclick="window.openLoadCompare('${driverId}')" style="flex:1;padding:10px;background:rgba(139,92,246,0.15);color:#a78bfa;border:1px solid rgba(139,92,246,0.35);border-radius:8px;font-weight:700;cursor:pointer;font-size:13px;">⚖️ Compare Loads</button>
           <button onclick="window.bookSimLoad()" style="flex:2;padding:10px;background:linear-gradient(135deg,var(--accent-cyan),var(--accent-blue));color:#000;border:none;border-radius:8px;font-weight:800;cursor:pointer;font-size:14px;letter-spacing:0.5px;">📋 Book This Load →</button>
         </div>
       </div>
@@ -9510,6 +9970,39 @@ window.showLoadSimulator = function(driverId) {
     const el = document.getElementById(id);
     if (el && window.attachCityAC) window.attachCityAC(el);
   });
+
+  // Auto-fill "Deadhead From" with driver's last known city (same logic as dashboard calcRoute)
+  (async function autoFillDhFrom() {
+    const dhEl = document.getElementById('sim_dh_from');
+    if (!dhEl || dhEl.value.trim()) return;
+    try {
+      const drv = state.drivers[driverId];
+      if (!drv) return;
+      const wk = drv.weeks?.[getGlobalWeekId()];
+      if (wk && wk.lastDropCoords && wk.lastDropCoords.lat && wk.lastDropCoords.lon) {
+        const { lat, lon } = wk.lastDropCoords;
+        const data = await fetch(
+          'https://nominatim.openstreetmap.org/reverse?format=json&lat=' + lat + '&lon=' + lon,
+          { headers: { 'Accept-Language': 'en' } }
+        ).then(r => r.json());
+        const city   = data.address && (data.address.city || data.address.town || data.address.village || '');
+        const state2 = data.address && (data.address.state || '');
+        if (city) {
+          dhEl.value = city + (state2 ? ', ' + state2 : '');
+          dhEl.style.color = 'var(--accent-cyan)';
+          return;
+        }
+      }
+      // Fallback: last load's dest text
+      const loads = (wk && wk.loads) || [];
+      if (loads.length > 0) {
+        const lastDest = (loads[loads.length - 1].dest)
+                      || (loads[loads.length - 1].details && loads[loads.length - 1].details.dest) || '';
+        if (lastDest) { dhEl.value = lastDest; dhEl.style.color = 'var(--accent-cyan)'; }
+      }
+    } catch(e) {}
+  })();
+
   // Focus gross field
   setTimeout(() => document.getElementById('sim_gross')?.focus(), 100);
 };
