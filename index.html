@@ -1770,6 +1770,7 @@ td {
     <button class="nav-tab" onclick="showTab('settings', this)">Settings</button>
     <button class="nav-tab" onclick="showTab('samsara', this)" style="background:rgba(79,158,248,0.08);border:1px solid rgba(79,158,248,0.2);color:var(--success);">🛰️ Samsara</button>
     <button class="nav-tab fleet-btn" onclick="openFleetModal()">🚛 Fleet Overview</button>
+    <button class="nav-tab fleet-btn" onclick="showLoadSimulator(state.currentDriverId)" style="background:rgba(79,158,248,0.10);border:1px solid rgba(79,158,248,0.25);color:var(--accent-cyan);">⚡ Simulate Load</button>
   </nav>
 
   <!-- ═══════════════════════════════════════════════════
@@ -4110,7 +4111,7 @@ function renderDriverSelect(){
 function onDriverChange(){
   const sel = document.getElementById("driverSelect");
   state.currentDriverId = sel.value;
-  calendarWeekStart = null; // Reset calendar to show new driver's current week
+  calendarWeekStart = null;
 
   // Reset settings dirty flags so new driver's values load
   ['d_driver_type','d_company_pay_type','d_company_pay_rate','d_split','d_target_net','d_miles_per_day','d_truck_number','d_trailer_number'].forEach(id => {
@@ -4118,35 +4119,22 @@ function onDriverChange(){
     if (el) { el.dataset.dirty = 'false'; el.dataset.editing = 'false'; }
   });
 
-  // Always default to the most recent open (non-closed) week when switching drivers.
-  // If the driver has NO open weeks (all closed), auto-create the current week for them.
+  // Ensure this driver has the globally selected week — never change the week when switching drivers
   const d = getDriver();
   if (d) {
-    let openWeekId = getMostRecentOpenWeekId(d);
-    if (!openWeekId || d.weeks[openWeekId]?.closed) {
-      // All weeks are closed — create the current Monday's week for this driver
-      const nowMonday = startOfWeekMonday(new Date());
-      const newId = isoDate(nowMonday);
-      if (!d.weeks[newId]) {
-        d.weeks[newId] = {
-          start: newId,
-          label: fmtWeekLabel(nowMonday),
-          loads: [],
-          lastDropCoords: null
-        };
-      }
-      openWeekId = newId;
+    const gw = getGlobalWeekId();
+    if (!d.weeks[gw]) {
+      const monday = new Date(gw + 'T00:00:00');
+      d.weeks[gw] = { start: gw, label: fmtWeekLabel(monday), loads: [], lastDropCoords: null };
     }
-    d.currentWeekId = openWeekId;
+    d.currentWeekId = gw;
   }
 
   saveState();
   renderWeekSelect();
-  ensureDriversOnActiveWeek();
-  renderWeekSelect();
   bindDriverOverridesToInputs();
   bindDriverStatusToInputs();
-  bindSettingsToInputs(); // Reload fixed costs for new driver
+  bindSettingsToInputs();
   updateUI();
   setTimeout(initMap, 150);
 }
@@ -4267,33 +4255,26 @@ function resolveWeekState(driver) {
   });
 
   // ── Pass 2: Resolve currentWeekId ──
-  const curId = driver.currentWeekId;
-  const curWeek = curId ? driver.weeks[curId] : null;
-  const needsResolve = !curWeek || curWeek.closed;
-
-  if (needsResolve) {
-    // Find best open week: prefer this week, then most recent open, then newest
-    if (driver.weeks[thisWeekId] && !driver.weeks[thisWeekId].closed) {
-      driver.currentWeekId = thisWeekId;
-    } else {
-      const ids = Object.keys(driver.weeks).sort().reverse();
-      const openId = ids.find(id => !driver.weeks[id].closed);
-      if (openId) {
-        driver.currentWeekId = openId;
-      } else {
-        // All weeks closed — create this week
-        driver.currentWeekId = thisWeekId;
-      }
+  // If a globalWeekId is set, always honour it — the global cursor is the authority.
+  if (globalWeekId) {
+    if (!driver.weeks[globalWeekId]) {
+      const monday = new Date(globalWeekId + 'T00:00:00');
+      driver.weeks[globalWeekId] = { start: globalWeekId, label: fmtWeekLabel(monday), loads: [], lastDropCoords: null };
     }
+    driver.currentWeekId = globalWeekId;
   } else {
-    // Snap-back: if driver is on a future empty week but has loads this week,
-    // bring them back to this week (fixes stale state from prior bugs)
-    const isFuture = curId > thisWeekId;
-    const curLoads = (curWeek?.loads || []).length;
-    const thisWeek = driver.weeks[thisWeekId];
-    const thisLoads = (thisWeek?.loads || []).length;
-    if (isFuture && curLoads === 0 && thisLoads > 0) {
-      driver.currentWeekId = thisWeekId;
+    const curId = driver.currentWeekId;
+    const curWeek = curId ? driver.weeks[curId] : null;
+    const needsResolve = !curWeek || curWeek.closed;
+
+    if (needsResolve) {
+      if (driver.weeks[thisWeekId] && !driver.weeks[thisWeekId].closed) {
+        driver.currentWeekId = thisWeekId;
+      } else {
+        const ids = Object.keys(driver.weeks).sort().reverse();
+        const openId = ids.find(id => !driver.weeks[id].closed);
+        driver.currentWeekId = openId || thisWeekId;
+      }
     }
   }
 
@@ -4338,10 +4319,35 @@ function getMostRecentOpenWeekId(d) {
   return anyOpen || ids[0] || null;
 }
 
+// ── Global week helpers ──────────────────────────────────────────────────────
+/** Returns the shared week cursor, defaulting to this calendar week. */
+function getGlobalWeekId() {
+  if (!globalWeekId) globalWeekId = isoDate(startOfWeekMonday(new Date()));
+  return globalWeekId;
+}
+/**
+ * Move ALL drivers to weekId simultaneously.
+ * Creates the week for any driver that doesn't have it yet.
+ */
+function syncAllDriversToWeek(weekId) {
+  if (!weekId) return;
+  globalWeekId = weekId;
+  Object.values(state.drivers || {}).forEach(d => {
+    if (!d || !d.weeks) return;
+    if (!d.weeks[weekId]) {
+      const monday = new Date(weekId + 'T00:00:00');
+      d.weeks[weekId] = { start: weekId, label: fmtWeekLabel(monday), loads: [], lastDropCoords: null };
+    }
+    d.currentWeekId = weekId;
+  });
+}
+// ────────────────────────────────────────────────────────────────────────────
+
 function renderWeekSelect(){
   const sel = document.getElementById("weekSelect");
   const d = getDriver();
-  
+  const gw = getGlobalWeekId();
+
   // Ensure future weeks exist
   ensureFutureWeeksExist();
   
@@ -4349,7 +4355,7 @@ function renderWeekSelect(){
   const ids = Object.keys(d.weeks).sort().reverse();
   sel.innerHTML = ids.map(id=>{
     const w = d.weeks[id];
-    const selected = (id === d.currentWeekId) ? "selected" : "";
+    const selected = (id === gw) ? "selected" : "";
     const loadCount = (w.loads || []).filter(l => !l.deliversNextWeek).length;
     const plannedCount = (w.loads || []).filter(l => l.status === 'planned').length;
     
@@ -4410,9 +4416,9 @@ function onWeekChange(){
   const id = sel.value;
   const d = getDriver();
   if (!d.weeks[id]) return;
-  
-  d.currentWeekId = id;
-  calendarWeekStart = null; // Reset calendar to show selected week
+  syncAllDriversToWeek(id);   // move ALL drivers to the chosen week at once
+  calendarWeekStart = null;
+  saveState();
   refreshAll();
 }
 
@@ -4471,9 +4477,10 @@ function ensureFutureWeeksExist(){
 function navWeekPrev(){
   const d = getDriver();
   const ids = Object.keys(d.weeks).sort();
-  const curIdx = ids.indexOf(d.currentWeekId);
+  const curIdx = ids.indexOf(getGlobalWeekId());
   if (curIdx > 0) {
-    d.currentWeekId = ids[curIdx - 1];
+    syncAllDriversToWeek(ids[curIdx - 1]);
+    saveState();
     refreshAll();
   }
 }
@@ -4482,40 +4489,26 @@ function navWeekNext(){
   const d = getDriver();
   ensureFutureWeeksExist();
   const ids = Object.keys(d.weeks).sort();
-  const curIdx = ids.indexOf(d.currentWeekId);
+  const curIdx = ids.indexOf(getGlobalWeekId());
+  let nextId;
   if (curIdx < ids.length - 1) {
-    d.currentWeekId = ids[curIdx + 1];
+    nextId = ids[curIdx + 1];
   } else {
     // Create a new future week beyond what exists
     const lastId = ids[ids.length - 1];
     const lastDate = new Date(lastId + "T00:00:00");
     lastDate.setDate(lastDate.getDate() + 7);
-    const newId = isoDate(lastDate);
-    d.weeks[newId] = {
-      start: newId,
-      label: fmtWeekLabel(lastDate),
-      loads: [],
-      lastDropCoords: null
-    };
-    d.currentWeekId = newId;
+    nextId = isoDate(lastDate);
   }
+  syncAllDriversToWeek(nextId);
+  saveState();
   refreshAll();
 }
 
 function navWeekCurrent(){
-  const d = getDriver();
   const thisWeekId = isoDate(startOfWeekMonday(new Date()));
-  ensureFutureWeeksExist();
-  if (!d.weeks[thisWeekId]) {
-    const dt = startOfWeekMonday(new Date());
-    d.weeks[thisWeekId] = {
-      start: thisWeekId,
-      label: fmtWeekLabel(dt),
-      loads: [],
-      lastDropCoords: null
-    };
-  }
-  d.currentWeekId = thisWeekId;
+  syncAllDriversToWeek(thisWeekId);
+  saveState();
   refreshAll();
 }
 
@@ -5433,68 +5426,69 @@ function checkPausedDriverWarning(){
  * CLOSE ALL WEEKS
  *************************/
 function closeAllWeeks(){
-  const confirmMsg = `Close week for ALL drivers?\n\nThis will:\n• Mark current week as CLOSED (read-only)\n• All data will be SAVED and preserved\n• Create new week starting next Monday\n• Make new week active for all drivers\n\nProceed?`;
-  
+  const weekToClose = getGlobalWeekId();
+  const wkSample = getDriver()?.weeks?.[weekToClose];
+  const weekLabel = wkSample?.label || weekToClose;
+
+  const confirmMsg = `Close week "${weekLabel}" for ALL drivers?\n\n• Marks that week CLOSED (read-only)\n• All load data is preserved\n• Creates next week and makes it active for everyone\n\nProceed?`;
   if (!confirm(confirmMsg)) return;
-  
+
   const drivers = Object.values(state.drivers);
   let closedCount = 0;
   const closedInfo = [];
-  
+
+  // Calculate next Monday from the week being closed
+  const closingDate = new Date(weekToClose + 'T00:00:00');
+  closingDate.setDate(closingDate.getDate() + 7);
+  const nextMonday = startOfWeekMonday(closingDate);
+  const nextId = isoDate(nextMonday);
+
   drivers.forEach(d => {
-    const wk = d.weeks[d.currentWeekId];
-    if (wk && !wk.closed) {
-      // Mark week as closed
-      wk.closed = true;
-      wk.closedAt = new Date().toISOString();
-      
-      // Calculate next Monday (7 days from current week start)
-      const currentWeekStart = new Date(wk.start + 'T00:00:00');
-      currentWeekStart.setDate(currentWeekStart.getDate() + 7);
-      const nextMonday = startOfWeekMonday(currentWeekStart);
-      const nextId = isoDate(nextMonday);
-      
-      // Find loads that deliver next week
-      const crossWeekLoads = wk.loads.filter(l => l.deliversNextWeek);
-      
-      // Copy cross-week loads to new week and mark them as from previous week
-      const carriedLoads = crossWeekLoads.map(load => ({
-        ...load,
-        deliversNextWeek: false, // No longer delivers next week
-        fromPreviousWeek: true, // Flag to show it was picked up previous week
-        originalPickupDay: load.pickupDay // Store original pickup day
-      }));
-      
-      // Create new week with carried-over loads
+    // Ensure driver has the week we're closing (create empty if needed)
+    if (!d.weeks[weekToClose]) {
+      d.weeks[weekToClose] = { start: weekToClose, label: weekLabel, loads: [], lastDropCoords: null };
+    }
+    const wk = d.weeks[weekToClose];
+    if (wk.closed) return; // Already closed — skip
+
+    wk.closed = true;
+    wk.closedAt = new Date().toISOString();
+
+    // Carry cross-week loads to next week
+    const crossWeekLoads = (wk.loads || []).filter(l => l.deliversNextWeek);
+    const carriedLoads = crossWeekLoads.map(load => ({
+      ...load,
+      deliversNextWeek: false,
+      fromPreviousWeek: true,
+      originalPickupDay: load.pickupDay
+    }));
+
+    // Create next week if it doesn't exist
+    if (!d.weeks[nextId]) {
       d.weeks[nextId] = {
         start: nextId,
         label: fmtWeekLabel(nextMonday),
         loads: carriedLoads,
         lastDropCoords: wk.lastDropCoords
       };
-      
-      // Store info for undo
-      closedInfo.push({
-        driverId: Object.keys(state.drivers).find(id => state.drivers[id] === d),
-        oldWeekId: d.currentWeekId,
-        newWeekId: nextId
-      });
-      
-      // Set new week as active
-      d.currentWeekId = nextId;
-      closedCount++;
+    } else if (carriedLoads.length > 0) {
+      d.weeks[nextId].loads = [...carriedLoads, ...(d.weeks[nextId].loads || [])];
     }
+
+    const driverId = Object.keys(state.drivers).find(id => state.drivers[id] === d);
+    closedInfo.push({ driverId, oldWeekId: weekToClose, newWeekId: nextId });
+    closedCount++;
   });
-  
+
   // Store undo info
-  state.lastCloseWeekAction = {
-    timestamp: new Date().toISOString(),
-    closedInfo: closedInfo
-  };
-  
+  state.lastCloseWeekAction = { timestamp: new Date().toISOString(), closedInfo };
+
+  // Advance ALL drivers to next week together
+  syncAllDriversToWeek(nextId);
+
   saveState();
-  calendarWeekStart = null; // Reset calendar to show new week
-  alert(`✅ Week closed for ${closedCount} driver(s).\n\nOld week data is SAVED.\nNew week is now active.\n\nTo undo: Analytics tab → "Undo Close Week"`);
+  calendarWeekStart = null;
+  alert(`✅ Week closed for ${closedCount} driver(s).\n\nAll drivers are now on: ${fmtWeekLabel(nextMonday)}\n\nTo undo: Analytics tab → "Undo Close Week"`);
   renderWeekSelect();
   updateUI();
 }
@@ -5523,11 +5517,12 @@ function undoCloseWeek(){
     
     // Delete the new week that was created
     delete driver.weeks[info.newWeekId];
-    
-    // Restore old week as active
-    driver.currentWeekId = info.oldWeekId;
   });
-  
+
+  // Restore global cursor to the week that was reopened
+  const restoredWeekId = closedInfo[0]?.oldWeekId;
+  if (restoredWeekId) syncAllDriversToWeek(restoredWeekId);
+
   delete state.lastCloseWeekAction;
   saveState();
   calendarWeekStart = null;
@@ -6777,6 +6772,9 @@ function closeModal(){
 // ── Calendar state ──
 let calendarWeekStart = null;
 let calCurrentView = 'week'; // 'week' | 'month'
+// ── Global week cursor ── all drivers always show the same selected week.
+// This eliminates the "each driver on a different week" bug.
+let globalWeekId = null; // set on first use via getGlobalWeekId()
 let calDetailLoad = null;
 let calDetailDriverId = null;
 
@@ -7817,8 +7815,9 @@ function updateUI(){
   const fwBanner = document.getElementById('futureWeekBanner');
   if (fwBanner) {
     const thisWeekId = isoDate(startOfWeekMonday(new Date()));
-    const isFuture = d.currentWeekId > thisWeekId;
-    const isPast = d.currentWeekId < thisWeekId;
+    const activeWk   = getGlobalWeekId();
+    const isFuture = activeWk > thisWeekId;
+    const isPast   = activeWk < thisWeekId;
     fwBanner.style.display = (isFuture || isPast) ? 'block' : 'none';
     const bannerText = document.getElementById('futureWeekBannerText');
     if (bannerText) {
@@ -8118,6 +8117,10 @@ function closeMultiStop() {
 }
 
 resolveAllDriverWeeks();
+// ── Initialize global week cursor to current calendar week ──
+// This must run AFTER resolveAllDriverWeeks so all drivers have their weeks set up.
+globalWeekId = isoDate(startOfWeekMonday(new Date()));
+syncAllDriversToWeek(globalWeekId);
 revertFuelMaintDamage(); // one-time fix for doubled fuel/maint bug
 bindSettingsToInputs();
 initSettingsListeners(); // Add event listeners once
@@ -8782,6 +8785,51 @@ window.addEventListener('load', function() {
 /***********************************************
  * LOAD SIMULATOR
  ***********************************************/
+/** Transfers current simulator inputs into the load entry form, then opens Dashboard */
+window.bookSimLoad = function() {
+  const gross    = document.getElementById('sim_gross')?.value    || '';
+  const miLoad   = document.getElementById('sim_mi_load')?.value  || '';
+  const miDh     = document.getElementById('sim_mi_dh')?.value    || '';
+  const tolls    = document.getElementById('sim_tolls')?.value    || '';
+  const det      = document.getElementById('sim_detention')?.value || '';
+  const origin   = document.getElementById('sim_origin')?.value   || '';
+  const dest     = document.getElementById('sim_dest')?.value     || '';
+
+  // Remove the simulator modal
+  document.getElementById('loadSimOverlay')?.remove();
+
+  // Switch to Dashboard tab
+  const dashBtn = document.querySelector('.nav-tab[onclick*="dashboard"]');
+  if (dashBtn) dashBtn.click();
+  else showTab('dashboard', null);
+
+  // Give the tab a moment to render, then prefill
+  setTimeout(() => {
+    function setVal(id, val) {
+      const el = document.getElementById(id);
+      if (!el || !val) return;
+      el.value = val;
+      el.dispatchEvent(new Event('input',  { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    setVal('origin',         origin);
+    setVal('dest',           dest);
+    setVal('pay_gross',      gross);
+    setVal('mi_load',        miLoad);
+    setVal('mi_dh',          miDh);
+    setVal('cost_tolls',     tolls);
+    setVal('cost_detention', det);
+
+    // Scroll to entry form
+    const form = document.getElementById('origin');
+    if (form) form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (form) form.focus();
+
+    // Trigger analysis refresh
+    if (typeof analyzeLoad === 'function') analyzeLoad();
+  }, 200);
+};
+
 window.showLoadSimulator = function(driverId) {
   const d = state.drivers[driverId];
   if (!d) return;
@@ -8793,17 +8841,244 @@ window.showLoadSimulator = function(driverId) {
   const isCompany = d.driverType === 'company';
   const split     = getDriverSplit(d);
 
-  // Get linked Samsara HOS data for this driver
+  // ── Flatbed Market Intelligence ──────────────────────────────────────────
+  // All data is FLATBED-specific: steel mills, manufacturing, construction,
+  // lumber corridors. Score 1–10 based on flatbed load-to-truck ratios and
+  // outbound rate strength. Uses coordinate proximity (100-mile radius) so
+  // small towns near major markets get correct intel — no exact-name matching.
+  //
+  // lat/lon are market center coords. Any destination geocoded within 100 miles
+  // of a market will match that market.
+  const FLATBED_MARKETS = [
+
+    // ── STEEL PRODUCTION HUBS (score 9–10) ──────────────────────────────
+    // Largest flatbed generators in the country — coils, structural, plate, pipe
+    { label:'Osceola/Blytheville, AR',  lat:35.84, lon:-89.95, score:10, ltt:'Exceptional',
+      tag:'🏭 Steel', note:'Nucor Steel + US Steel (Big River) — #1 flatbed origin for steel coil & structural. Extremely high outbound L/T ratio.' },
+    { label:'Gary/Hammond, IN',         lat:41.58, lon:-87.35, score:9,  ltt:'Very High',
+      tag:'🏭 Steel', note:'US Steel Gary Works + ArcelorMittal Burns Harbor — massive coil & plate outbound. Chicago metro steel corridor.' },
+    { label:'Cleveland/Lorain, OH',     lat:41.50, lon:-81.69, score:9,  ltt:'Very High',
+      tag:'🏭 Steel', note:'Cleveland-Cliffs HQ, multiple mills — one of highest flatbed L/T ratios in Midwest. Strong rates out.' },
+    { label:'Birmingham, AL',           lat:33.52, lon:-86.80, score:9,  ltt:'Very High',
+      tag:'🏭 Steel', note:'Nucor Steel + US Steel Fairfield — Southeast steel hub. Pipe, structural, coil. Excellent flatbed outbound.' },
+    { label:'Houston, TX (Steel)',      lat:29.76, lon:-95.37, score:9,  ltt:'Very High',
+      tag:'🏭 Steel/O&G', note:'Largest pipe/tubular market in US. O&G construction, steel service centers. Top flatbed rates nationwide.' },
+    { label:'Midlothian/Dallas, TX',    lat:32.47, lon:-96.99, score:9,  ltt:'Very High',
+      tag:'🏭 Steel', note:'Nucor Steel Midlothian + Commercial Metals Co. — major structural steel and rebar outbound.' },
+    { label:'Warren/Youngstown, OH',    lat:41.24, lon:-80.82, score:8,  ltt:'High',
+      tag:'🏭 Steel', note:'WCI Steel, Vallourec tube mills — dense steel corridor. Good flatbed rates connecting to auto plants.' },
+    { label:'Granite City, IL',         lat:38.70, lon:-90.15, score:9,  ltt:'Very High',
+      tag:'🏭 Steel', note:'US Steel Granite City + multiple service centers. Right next to St. Louis — strong hub outbound too.' },
+    { label:'Gallatin, TN',             lat:36.39, lon:-86.45, score:8,  ltt:'High',
+      tag:'🏭 Steel', note:'Nucor Steel Gallatin — flat-rolled products. Nashville corridor. Solid flatbed rates east/west.' },
+    { label:'Decatur, AL',              lat:34.61, lon:-86.98, score:8,  ltt:'High',
+      tag:'🏭 Steel', note:'Nucor Tubular + Tennessee Valley industrial corridor. Strong flatbed in all directions.' },
+    { label:'Ghent/Weirton, WV',        lat:40.42, lon:-80.59, score:7,  ltt:'High',
+      tag:'🏭 Steel', note:'Cleveland-Cliffs (former AK Steel) + Weirton Steel legacy area. Tri-State steel corridor.' },
+    { label:'Toledo/Maumee, OH',        lat:41.66, lon:-83.56, score:8,  ltt:'High',
+      tag:'🏭 Steel/Auto', note:'Multiple steel mills + auto glass (Owens). Strong flatbed outbound both I-80 and I-75 corridors.' },
+    { label:'Coatesville, PA',          lat:39.98, lon:-75.82, score:7,  ltt:'High',
+      tag:'🏭 Steel', note:'Evraz North America — large structural plate producer. Mid-Atlantic flatbed rates solid.' },
+    { label:'Marion/Columbus, OH',      lat:40.59, lon:-83.12, score:8,  ltt:'High',
+      tag:'🏭 Steel/Auto', note:'Nucor Steel Marion + Honda Marysville cluster. Dual flatbed generator — steel and auto equipment.' },
+    { label:'Hertford/Elizabeth City, NC', lat:36.19, lon:-76.47, score:7, ltt:'High',
+      tag:'🏭 Steel', note:'Nucor Steel Hertford — beam and plate. Coastal NC, decent outbound rates north/south.' },
+
+    // ── AUTO MANUFACTURING (score 7–9) ──────────────────────────────────
+    // Heavy flatbed for stamping dies, tooling, equipment moves
+    { label:'Detroit/Metro, MI',        lat:42.33, lon:-83.05, score:8,  ltt:'High',
+      tag:'🚗 Auto', note:'Big Three + Tier 1 suppliers — constant heavy equipment and tooling flatbed moves. Dense market.' },
+    { label:'Spartanburg, SC',          lat:34.95, lon:-81.93, score:9,  ltt:'Very High',
+      tag:'🚗 Auto', note:'BMW US plant — major flatbed for heavy equipment, tooling, oversized. Upstate SC strong outbound.' },
+    { label:'Tuscaloosa/Vance, AL',     lat:33.21, lon:-87.57, score:8,  ltt:'High',
+      tag:'🚗 Auto', note:'Mercedes-Benz US plant + suppliers. Alabama auto corridor — excellent flatbed rates outbound.' },
+    { label:'Georgetown/Lexington, KY', lat:38.21, lon:-84.56, score:8,  ltt:'High',
+      tag:'🚗 Auto', note:'Toyota Georgetown + multiple suppliers. KY auto cluster — heavy flatbed for equipment and parts.' },
+    { label:'Smyrna/Murfreesboro, TN',  lat:35.98, lon:-86.52, score:8,  ltt:'High',
+      tag:'🚗 Auto', note:'Nissan Smyrna + Bridgestone. Nashville metro auto hub — strong flatbed density.' },
+    { label:'Lincoln/Montgomery, AL',   lat:32.75, lon:-86.30, score:8,  ltt:'High',
+      tag:'🚗 Auto', note:'Hyundai + KIA plant corridor. Alabama auto corridor expanding — growing flatbed market.' },
+
+    // ── MAJOR FLATBED HUBS (score 8–9) ──────────────────────────────────
+    { label:'Chicago, IL',              lat:41.88, lon:-87.63, score:9,  ltt:'Very High',
+      tag:'🔴 Hub', note:'Largest US flatbed hub — steel service centers, manufacturing, construction equipment. Top RPM market.' },
+    { label:'Indianapolis, IN',         lat:39.77, lon:-86.16, score:9,  ltt:'Very High',
+      tag:'🔴 Hub', note:'Crossroads hub — dense flatbed with steel, auto, construction. Consistently strong L/T ratio.' },
+    { label:'Memphis, TN',              lat:35.15, lon:-90.05, score:9,  ltt:'Very High',
+      tag:'🔴 Hub', note:'Major intermodal + steel service centers + proximity to AR steel mills. One of best flatbed hub markets.' },
+    { label:'Nashville, TN',            lat:36.17, lon:-86.78, score:9,  ltt:'Very High',
+      tag:'🔴 Hub', note:'Booming construction + auto cluster + steel. Fastest growing flatbed market in Southeast.' },
+    { label:'Kansas City, MO',          lat:39.10, lon:-94.58, score:8,  ltt:'High',
+      tag:'🔴 Hub', note:'Central hub — steel service centers, construction, equipment dealers. Solid flatbed in all directions.' },
+    { label:'St. Louis, MO',            lat:38.63, lon:-90.20, score:9,  ltt:'Very High',
+      tag:'🔴 Hub', note:'Granite City steel + major industrial base + I-70/I-55/I-64 crossroads. Excellent flatbed outbound.' },
+    { label:'Cincinnati, OH',           lat:39.10, lon:-84.51, score:8,  ltt:'High',
+      tag:'🔴 Hub', note:'Auto corridor + manufacturing base. Steady flatbed with strong rates I-71/I-75.' },
+    { label:'Atlanta, GA',              lat:33.75, lon:-84.39, score:8,  ltt:'High',
+      tag:'🔴 Hub', note:'Southeast flatbed hub — construction equipment, building materials, growing manufacturing.' },
+    { label:'Columbus, OH',             lat:39.96, lon:-82.99, score:8,  ltt:'High',
+      tag:'🔴 Hub', note:'Honda + distribution + construction. Central OH flatbed density solid year-round.' },
+    { label:'Pittsburgh, PA',           lat:40.44, lon:-80.00, score:8,  ltt:'High',
+      tag:'🏭 Steel/Hub', note:'Steel legacy + US Steel Edgar Thomson active. Dense industrial flatbed, strong rates northeast.' },
+    { label:'Louisville, KY',           lat:38.25, lon:-85.76, score:8,  ltt:'High',
+      tag:'🔴 Hub', note:'Ford Truck plant + UPS hub + steel. I-65/I-64/I-71 crossroads — consistent flatbed outbound.' },
+    { label:'Charlotte, NC',            lat:35.23, lon:-80.84, score:7,  ltt:'High',
+      tag:'🔴 Hub', note:'Carolinas construction boom + manufacturing. Growing flatbed market with decent rates.' },
+    { label:'Dallas/Fort Worth, TX',    lat:32.78, lon:-97.00, score:9,  ltt:'Very High',
+      tag:'🔴 Hub', note:'Largest TX construction market + steel + O&G equipment. Top 5 flatbed hub nationwide.' },
+
+    // ── LUMBER / BUILDING MATERIALS ──────────────────────────────────────
+    { label:'Portland, OR',             lat:45.52, lon:-122.68, score:8, ltt:'High',
+      tag:'🪵 Lumber', note:'Weyerhaeuser, Georgia-Pacific — major lumber outbound. Pacific NW flatbed strong rates to CA/Midwest.' },
+    { label:'Eugene, OR',               lat:44.05, lon:-123.09, score:8, ltt:'High',
+      tag:'🪵 Lumber', note:'Dense lumber production corridor. Willamette Valley — strong flatbed outbound south and east.' },
+    { label:'Tacoma, WA',               lat:47.25, lon:-122.44, score:7, ltt:'High',
+      tag:'🪵 Lumber', note:'Port of Tacoma + lumber. Pacific NW flatbed for building materials going east and south.' },
+    { label:'Savannah, GA',             lat:32.08, lon:-81.10, score:7,  ltt:'High',
+      tag:'🪵 Lumber/Port', note:'Port of Savannah + lumber/building materials inland. Growing market — solid flatbed outbound.' },
+
+    // ── MODERATE MARKETS (score 5–7) ──────────────────────────────────────
+    { label:'Minneapolis, MN',          lat:44.98, lon:-93.27, score:6,  ltt:'Moderate',
+      tag:'🟡 Moderate', note:'Manufacturing + construction. Seasonal flatbed — strong spring/summer, soft winter. Plan ahead.' },
+    { label:'Philadelphia, PA',         lat:39.95, lon:-75.17, score:6,  ltt:'Moderate',
+      tag:'🟡 Moderate', note:'Dense population, some manufacturing. Flatbed rates OK but congestion costs add up.' },
+    { label:'Baltimore, MD',            lat:39.29, lon:-76.61, score:6,  ltt:'Moderate',
+      tag:'🟡 Moderate', note:'Port + some steel/construction. Mid-Atlantic flatbed moderate, decent north/south rates.' },
+    { label:'Richmond, VA',             lat:37.54, lon:-77.43, score:6,  ltt:'Moderate',
+      tag:'🟡 Moderate', note:'Growing construction market. I-95 corridor helps rates but not a strong flatbed origin.' },
+    { label:'Raleigh/Durham, NC',       lat:35.78, lon:-78.64, score:6,  ltt:'Moderate',
+      tag:'🟡 Moderate', note:'Construction growth but mostly dry van market. Flatbed rates moderate.' },
+    { label:'Seattle, WA',              lat:47.61, lon:-122.33, score:6, ltt:'Moderate',
+      tag:'🟡 Moderate', note:'Construction + lumber from PNW. Flatbed moderate — good positioning for Oregon loads.' },
+    { label:'Phoenix, AZ',              lat:33.45, lon:-112.07, score:5, ltt:'Moderate',
+      tag:'⚠️ Caution', note:'Construction inbound is strong but flatbed OUTBOUND is weak. Plan your reload before delivering.' },
+    { label:'Denver, CO',               lat:39.74, lon:-104.98, score:5, ltt:'Low',
+      tag:'⚠️ Caution', note:'⚠️ Construction boom but flatbed freight desert for backhaul. Expect deadhead east or DH to KS/NE.' },
+    { label:'Salt Lake City, UT',       lat:40.76, lon:-111.89, score:5, ltt:'Low',
+      tag:'⚠️ Caution', note:'Some mining/construction equipment. Mountain West flatbed thin — plan reload carefully.' },
+    { label:'Boise, ID',                lat:43.62, lon:-116.20, score:5, ltt:'Low',
+      tag:'⚠️ Caution', note:'Boise Cascade lumber — some flatbed outbound. Overall thin market. DH to Portland worth considering.' },
+    { label:'Greensboro, NC',           lat:36.07, lon:-79.79, score:6,  ltt:'Moderate',
+      tag:'🟡 Moderate', note:'Piedmont corridor — moderate flatbed. Some manufacturing and construction.' },
+
+    // ── WEAK / FREIGHT DESERTS (score 1–4) ─────────────────────────────
+    { label:'Miami, FL',                lat:25.77, lon:-80.19, score:3,  ltt:'Very Low',
+      tag:'🔴 Avoid', note:'⚠️ Flatbed freight desert. Consumer market — almost no outbound flatbed. Expect major deadhead north.' },
+    { label:'Orlando, FL',              lat:28.54, lon:-81.38, score:3,  ltt:'Very Low',
+      tag:'🔴 Avoid', note:'⚠️ Florida flatbed trap. Construction inbound only — virtually no flatbed outbound. Deadhead to GA.' },
+    { label:'Tampa, FL',                lat:27.95, lon:-82.46, score:3,  ltt:'Very Low',
+      tag:'🔴 Avoid', note:'⚠️ Florida flatbed void. Some port activity but flatbed outbound extremely limited. Plan DH out.' },
+    { label:'Jacksonville, FL',         lat:30.33, lon:-81.66, score:4,  ltt:'Low',
+      tag:'⚠️ Caution', note:'Best FL option but still weak flatbed outbound. Waypoint to GA/SC — check reloads before delivering.' },
+    { label:'Las Vegas, NV',            lat:36.17, lon:-115.14, score:3, ltt:'Very Low',
+      tag:'🔴 Avoid', note:'⚠️ Pure consumer market. No manufacturing or steel. Flatbed rates out are rock bottom.' },
+    { label:'Billings, MT',             lat:45.78, lon:-108.50, score:3, ltt:'Very Low',
+      tag:'🔴 Avoid', note:'⚠️ Known flatbed desert (0.46 L/T ratio). Agricultural only. Expect significant DH or rate hit.' },
+    { label:'Albuquerque, NM',          lat:35.11, lon:-106.61, score:4, ltt:'Low',
+      tag:'⚠️ Caution', note:'⚠️ Thin flatbed market. Some construction/O&G but rates weak. DH to TX or AZ may be necessary.' },
+    { label:'El Paso, TX',              lat:31.76, lon:-106.49, score:4, ltt:'Low',
+      tag:'⚠️ Caution', note:'⚠️ Border market — flatbed outbound limited. O&G nearby helps some but overall thin.' },
+    { label:'Spokane, WA',              lat:47.66, lon:-117.43, score:4, ltt:'Low',
+      tag:'⚠️ Caution', note:'Inland PNW — limited flatbed. Some ag equipment and lumber but thin. DH to Portland for reload.' },
+  ];
+
+  // Haversine distance in miles between two {lat,lon} points
+  function mktDist(a, b) {
+    const R = 3958.8, r = Math.PI/180;
+    const dLat = (b.lat - a.lat) * r, dLon = (b.lon - a.lon) * r;
+    const h = Math.sin(dLat/2)**2 + Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(dLon/2)**2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  }
+
+  // Geocode cache for simulator (keyed by city string)
+  const _simGeoCache = {};
+
+  async function geocodeSimCity(cityStr) {
+    if (!cityStr || cityStr.length < 3) return null;
+    const key = cityStr.trim().toLowerCase();
+    if (_simGeoCache[key]) return _simGeoCache[key];
+    try {
+      const q = encodeURIComponent(cityStr + ', USA');
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${q}`,
+        { headers: { 'Accept': 'application/json' } });
+      const data = await res.json();
+      if (!data?.[0]) return null;
+      const pt = { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) };
+      _simGeoCache[key] = pt;
+      return pt;
+    } catch(e) { return null; }
+  }
+
+  /**
+   * Returns { primary, nearby[] } where primary is the closest market
+   * within RADIUS miles, and nearby are others within RADIUS sorted by distance.
+   */
+  async function getMarketIntel(cityStr) {
+    if (!cityStr || cityStr.length < 2) return null;
+    const RADIUS = 100; // miles
+
+    const pt = await geocodeSimCity(cityStr);
+    if (!pt) {
+      // Fallback: loose string match on market label
+      const norm = cityStr.toLowerCase();
+      const hit = FLATBED_MARKETS.find(m =>
+        m.label.toLowerCase().split('/').some(p => norm.includes(p.trim().split(',')[0].toLowerCase()))
+      );
+      return hit ? { primary: { ...hit, dist: 0 }, nearby: [] } : null;
+    }
+
+    const withDist = FLATBED_MARKETS.map(m => ({ ...m, dist: Math.round(mktDist(pt, m)) }))
+      .filter(m => m.dist <= RADIUS)
+      .sort((a, b) => a.dist - b.dist);
+
+    if (!withDist.length) return null;
+    return { primary: withDist[0], nearby: withDist.slice(1, 4) };
+  }
+
+  // ── Historical lane data: loads that ORIGINATED near destCity ──
+  // Uses coordinate proximity if geocode available, falls back to string match
+  async function getHistoricalOutbound(destCity) {
+    if (!destCity || destCity.length < 3) return null;
+    const RADIUS = 80; // miles for historical match
+
+    const pt = await geocodeSimCity(destCity);
+    const keyword = destCity.toLowerCase().replace(/[,.]/g,'').split(' ')[0];
+
+    const matches = [];
+    for (const drv of Object.values(state.drivers || {})) {
+      for (const wkId of Object.keys(drv.weeks || {})) {
+        for (const load of (drv.weeks[wkId].loads || [])) {
+          if (!load.gross || !load.miles) continue;
+          const origin = (load.details?.origin || load.origin || '').toLowerCase();
+          let isMatch = false;
+          if (pt && load.details?.originCoords) {
+            isMatch = mktDist(pt, load.details.originCoords) <= RADIUS;
+          }
+          if (!isMatch) isMatch = origin.includes(keyword);
+          if (isMatch) matches.push({
+            gross: load.gross, miles: load.miles,
+            rpm: load.gross / load.miles,
+            dest: load.details?.dest || load.dest || '',
+          });
+        }
+      }
+    }
+    if (!matches.length) return null;
+    const avgRpm   = matches.reduce((s,m) => s+m.rpm,   0) / matches.length;
+    const avgGross = matches.reduce((s,m) => s+m.gross, 0) / matches.length;
+    return { count: matches.length, avgRpm, avgGross, recent: matches.slice(-5).reverse() };
+  }
+
+  // ── Samsara HOS lookup ──
+  // ── Samsara HOS lookup ──
   function getSamHOS() {
     try {
       const links = JSON.parse(localStorage.getItem('samsara_driver_links_v1') || '{}');
       const samId = Object.keys(links).find(k => links[k] === driverId);
       if (!samId) return null;
-      // Try hosById (fast lookup) first, then scan hos array
       const c = window._sam?.hosById?.[samId]
              || (window._sam?.hos || []).find(sd => sd.driver?.id === samId || sd.id === samId);
       if (!c) return null;
-      // Support both new /fleet/hos/clocks format and old drivers format
       const driveMs = c.clocks?.drive?.driveRemainingDurationMs ?? c.currentHosStatus?.remainingDrivingTimeMs ?? null;
       const cycleMs = c.clocks?.cycle?.cycleRemainingDurationMs ?? c.currentHosStatus?.hosCycle?.remainingMs  ?? null;
       const status  = c.currentDutyStatus?.hosStatusType        ?? c.currentHosStatus?.currentDutyStatus      ?? 'unknown';
@@ -8813,44 +9088,50 @@ window.showLoadSimulator = function(driverId) {
 
   const hos = getSamHOS();
 
-  // ── recalc helper ──
+  // ── Main recalc ──
   function recalc() {
     const gross       = parseFloat(document.getElementById('sim_gross')?.value)     || 0;
     const loadedMiles = parseFloat(document.getElementById('sim_mi_load')?.value)   || 0;
     const dhMiles     = parseFloat(document.getElementById('sim_mi_dh')?.value)     || 0;
     const tolls       = parseFloat(document.getElementById('sim_tolls')?.value)     || 0;
     const detention   = parseFloat(document.getElementById('sim_detention')?.value) || 0;
-    const miles       = loadedMiles + dhMiles;
+    const days        = Math.max(0.5, parseFloat(document.getElementById('sim_days')?.value) || 1);
+    const totalMiles  = loadedMiles + dhMiles;
+    const destCity    = document.getElementById('sim_dest')?.value?.trim() || '';
 
-    if (gross === 0 || miles === 0) {
+    if (gross === 0 || totalMiles === 0) {
       document.getElementById('sim_results').innerHTML =
         '<div style="text-align:center;color:var(--text-muted);padding:32px;font-size:13px;">Enter a load above to see the full breakdown ↑</div>';
       return;
     }
 
-    const calc   = calcLoadNet(d, s, { gross, miles, tolls, detention, accessorials: 0 });
-    const rpm    = miles > 0 ? gross / miles : 0;
-    const netRpm = miles > 0 ? calc.net / miles : 0;
+    const calc       = calcLoadNet(d, s, { gross, miles: totalMiles, tolls, detention, accessorials: 0 });
+    const allInRpm   = totalMiles   > 0 ? gross / totalMiles   : 0;
+    const loadedRpm  = loadedMiles  > 0 ? gross / loadedMiles  : 0;
+    const netRpm     = totalMiles   > 0 ? calc.net / totalMiles : 0;
+    const revPerDay  = gross   / days;
+    const netPerDay  = calc.net / days;
+    const REV_DAY_BENCHMARK = 1000; // ATRI industry benchmark
+    const dhRatio    = totalMiles > 0 ? dhMiles / totalMiles : 0;
 
     // Week impact
-    const newWeekNet    = t.net + calc.net;
-    const newWeekGross  = t.gross + gross;
-    const gapBefore     = targetNet - t.net;
-    const gapAfter      = targetNet - newWeekNet;
-    const targetPctNow  = targetNet > 0 ? Math.min(100, t.net     / targetNet * 100) : 0;
-    const targetPctNew  = targetNet > 0 ? Math.min(100, newWeekNet / targetNet * 100) : 0;
-    const weekNetColor  = newWeekNet >= targetNet ? 'var(--success)' : newWeekNet >= targetNet * 0.85 ? 'var(--warning)' : 'var(--danger)';
+    const newWeekNet   = t.net + calc.net;
+    const newWeekGross = t.gross + gross;
+    const gapBefore    = targetNet - t.net;
+    const gapAfter     = targetNet - newWeekNet;
+    const targetPctNow = targetNet > 0 ? Math.min(100, t.net      / targetNet * 100) : 0;
+    const targetPctNew = targetNet > 0 ? Math.min(100, newWeekNet / targetNet * 100) : 0;
+    const weekNetColor = newWeekNet >= targetNet ? 'var(--success)' : newWeekNet >= targetNet * 0.85 ? 'var(--warning)' : 'var(--danger)';
 
-    // HOS check
-    const AVG_MPH    = 55;
-    const estHours   = miles / AVG_MPH;
+    // ── HOS check ──
+    const AVG_MPH  = 55;
+    const estHours = totalMiles / AVG_MPH;
     let hosHtml = '';
     if (hos) {
-      const driveHrsLeft  = hos.driveMs != null ? hos.driveMs / 3600000 : null;
-      const cycleHrsLeft  = hos.cycleMs != null ? hos.cycleMs / 3600000 : null;
-      const hosOk         = driveHrsLeft == null || driveHrsLeft >= estHours;
-      const hosColor      = hosOk ? 'var(--success)' : 'var(--danger)';
-      const hosIcon       = hosOk ? '✅' : '⚠️';
+      const driveHrsLeft = hos.driveMs != null ? hos.driveMs / 3600000 : null;
+      const cycleHrsLeft = hos.cycleMs != null ? hos.cycleMs / 3600000 : null;
+      const hosOk        = driveHrsLeft == null || driveHrsLeft >= estHours;
+      const hosColor     = hosOk ? 'var(--success)' : 'var(--danger)';
       hosHtml = `
         <div style="background:rgba(0,0,0,0.2);border:1px solid ${hosColor}44;border-radius:10px;padding:14px 16px;margin-bottom:14px;">
           <div style="font-size:11px;font-weight:800;letter-spacing:1px;color:var(--text-muted);text-transform:uppercase;margin-bottom:10px;">🕐 HOS Check (Samsara Live)</div>
@@ -8858,7 +9139,7 @@ window.showLoadSimulator = function(driverId) {
             <div style="text-align:center;">
               <div style="font-size:10px;color:var(--text-muted);">Est. Drive Time</div>
               <div style="font-size:16px;font-weight:800;color:var(--accent-cyan);">${estHours.toFixed(1)}h</div>
-              <div style="font-size:10px;color:var(--text-muted);">${miles.toLocaleString()} mi @ ${AVG_MPH}mph</div>
+              <div style="font-size:10px;color:var(--text-muted);">${totalMiles.toLocaleString()} mi @ ${AVG_MPH}mph</div>
             </div>
             <div style="text-align:center;">
               <div style="font-size:10px;color:var(--text-muted);">Drive Hours Left</div>
@@ -8869,14 +9150,12 @@ window.showLoadSimulator = function(driverId) {
             </div>
             <div style="text-align:center;">
               <div style="font-size:10px;color:var(--text-muted);">Cycle Hours Left</div>
-              <div style="font-size:16px;font-weight:800;color:var(--text-primary);">
-                ${cycleHrsLeft != null ? cycleHrsLeft.toFixed(0)+'h' : '—'}
-              </div>
+              <div style="font-size:16px;font-weight:800;color:var(--text-primary);">${cycleHrsLeft != null ? cycleHrsLeft.toFixed(0)+'h' : '—'}</div>
               <div style="font-size:10px;color:var(--text-muted);">cycle remaining</div>
             </div>
           </div>
-          ${!hosOk ? `<div style="margin-top:10px;font-size:12px;font-weight:700;color:var(--danger);text-align:center;">⚠️ Driver may not have enough hours — consider a team or split</div>` : ''}
-          ${hosOk && driveHrsLeft != null && driveHrsLeft < estHours * 1.25 ? `<div style="margin-top:10px;font-size:12px;font-weight:700;color:var(--warning);text-align:center;">⚠️ Tight on hours — driver will need to plan stops carefully</div>` : ''}
+          ${!hosOk ? '<div style="margin-top:10px;font-size:12px;font-weight:700;color:var(--danger);text-align:center;">⚠️ Driver may not have enough hours — consider a team or split</div>' : ''}
+          ${hosOk && driveHrsLeft != null && driveHrsLeft < estHours * 1.25 ? '<div style="margin-top:10px;font-size:12px;font-weight:700;color:var(--warning);text-align:center;">⚠️ Tight on hours — driver will need to plan stops carefully</div>' : ''}
         </div>`;
     } else {
       hosHtml = `<div style="background:rgba(0,0,0,0.15);border:1px solid var(--border-subtle);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-muted);">
@@ -8884,34 +9163,149 @@ window.showLoadSimulator = function(driverId) {
       </div>`;
     }
 
-    // Verdict
+    // ── Destination Intel (async — placeholder rendered inline, updated after geocode) ──
+    const destHtml = destCity
+      ? `<div id="sim_dest_intel" style="margin-bottom:14px;">
+           <div style="background:rgba(0,0,0,0.15);border:1px solid var(--border-subtle);border-radius:10px;padding:12px 16px;font-size:12px;color:var(--text-muted);">
+             📍 Loading flatbed market intel for ${escapeHtml(destCity)}…
+           </div>
+         </div>`
+      : '';
+
+    // Fire async lookup — updates #sim_dest_intel in place once geocode resolves
+    let _cachedMktScore = null;
+    if (destCity) {
+      Promise.all([getMarketIntel(destCity), getHistoricalOutbound(destCity)]).then(([intel, hist]) => {
+        const el = document.getElementById('sim_dest_intel');
+        if (!el) return;
+        const mkt = intel?.primary || null;
+        const mktScore = mkt ? mkt.score : null;
+        _cachedMktScore = mktScore;
+        const mktColor = mktScore == null ? 'var(--text-muted)'
+                       : mktScore >= 8  ? 'var(--success)'
+                       : mktScore >= 6  ? 'var(--warning)'
+                       : 'var(--danger)';
+        const mktLabel = mktScore == null ? 'UNKNOWN'
+                       : mktScore >= 8  ? 'STRONG'
+                       : mktScore >= 6  ? 'MODERATE'
+                       : 'WEAK';
+        const mktBg = mktScore == null ? 'rgba(255,255,255,0.03)'
+                    : mktScore >= 8  ? 'rgba(79,158,248,0.10)'
+                    : mktScore >= 6  ? 'rgba(255,184,0,0.08)'
+                    : 'rgba(255,59,59,0.10)';
+        const distNote = mkt?.dist > 0 ? ` <span style="font-size:10px;opacity:0.6;">(${mkt.dist} mi away)</span>` : '';
+
+        let nearbyHtml = '';
+        if (intel?.nearby?.length) {
+          nearbyHtml = `<div style="border-top:1px solid var(--border-subtle);margin-top:10px;padding-top:10px;">
+            <div style="font-size:10px;font-weight:700;color:var(--text-muted);margin-bottom:6px;">ALSO WITHIN 100 MI:</div>
+            ${intel.nearby.map(m => {
+              const c = m.score>=8?'var(--success)':m.score>=6?'var(--warning)':'var(--danger)';
+              return `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                <span style="font-size:11px;color:var(--text-secondary);">${m.tag} ${m.label}</span>
+                <span style="font-size:11px;font-weight:700;color:${c};">${m.score}/10 · ${m.dist}mi</span>
+              </div>`;
+            }).join('')}
+          </div>`;
+        }
+
+        let histSection = '';
+        if (hist) {
+          const hc = hist.avgRpm >= (s.targetRpm||2.0)*1.1?'var(--success)':hist.avgRpm>=(s.targetRpm||2.0)?'var(--warning)':'var(--danger)';
+          histSection = `<div style="border-top:1px solid var(--border-subtle);margin-top:12px;padding-top:12px;">
+            <div style="font-size:11px;font-weight:700;color:var(--text-muted);margin-bottom:8px;">YOUR HISTORY OUT OF THIS AREA (${hist.count} loads)</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px;">
+              <div style="text-align:center;background:rgba(0,0,0,0.2);border-radius:8px;padding:8px;">
+                <div style="font-size:10px;color:var(--text-muted);">Avg RPM Out</div>
+                <div style="font-size:17px;font-weight:800;color:${hc};">$${hist.avgRpm.toFixed(2)}</div>
+              </div>
+              <div style="text-align:center;background:rgba(0,0,0,0.2);border-radius:8px;padding:8px;">
+                <div style="font-size:10px;color:var(--text-muted);">Avg Gross Out</div>
+                <div style="font-size:17px;font-weight:800;color:var(--text-primary);">${money(hist.avgGross)}</div>
+              </div>
+            </div>
+            <div style="font-size:11px;color:var(--text-muted);">Recent: ${hist.recent.map(r=>'$'+r.rpm.toFixed(2)+'/mi').join(' · ')}</div>
+          </div>`;
+        } else {
+          histSection = `<div style="font-size:11px;color:var(--text-muted);border-top:1px solid var(--border-subtle);margin-top:10px;padding-top:10px;">No historical outbound loads from this area yet.</div>`;
+        }
+
+        el.innerHTML = `
+          <div style="background:${mktBg};border:1px solid ${mktColor}44;border-radius:10px;padding:14px 16px;">
+            <div style="font-size:11px;font-weight:800;letter-spacing:1px;color:var(--text-muted);text-transform:uppercase;margin-bottom:10px;">📍 Flatbed Dest Intel — ${escapeHtml(destCity)}</div>
+            ${mkt ? `
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:8px;">
+              <div>
+                <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px;">Flatbed Outbound</div>
+                <div style="font-size:18px;font-weight:900;color:${mktColor};">${mktLabel}</div>
+                <div style="font-size:10px;color:var(--text-muted);">${mkt.ltt} L/T ratio</div>
+              </div>
+              <div>
+                <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px;">Score${distNote}</div>
+                <div style="font-size:18px;font-weight:900;color:${mktColor};">${mktScore}/10</div>
+                <div style="font-size:10px;color:var(--text-muted);">Nearest: ${mkt.label}</div>
+              </div>
+              <div>
+                <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px;">Market Type</div>
+                <div style="font-size:13px;font-weight:700;color:var(--text-primary);">${mkt.tag}</div>
+                <div style="font-size:10px;color:var(--text-muted);line-height:1.3;">${mkt.note}</div>
+              </div>
+            </div>` : `<div style="font-size:12px;color:var(--text-muted);">No flatbed market data within 100 miles of this location.</div>`}
+            ${nearbyHtml}
+            ${histSection}
+          </div>`;
+      });
+    }
+
+    // ── Verdict ──
     const rpmThreshold = s.targetRpm || 2.0;
     let verdictScore = 0;
     let verdictItems = [];
-    if (rpm >= rpmThreshold * 1.1)   { verdictScore += 2; verdictItems.push({c:'var(--success)', t:`✅ Strong RPM ($${rpm.toFixed(2)}/mi)`}); }
-    else if (rpm >= rpmThreshold)    { verdictScore += 1; verdictItems.push({c:'var(--warning)', t:`🟡 Acceptable RPM ($${rpm.toFixed(2)}/mi)`}); }
-    else                             { verdictScore -= 1; verdictItems.push({c:'var(--danger)',  t:`⚠️ Low RPM ($${rpm.toFixed(2)}/mi)`}); }
 
-    if (calc.net > 0)                { verdictScore += 2; verdictItems.push({c:'var(--success)', t:`✅ Profitable (${money(calc.net)} net)`}); }
-    else                             { verdictScore -= 2; verdictItems.push({c:'var(--danger)',  t:`❌ Unprofitable (${money(calc.net)} net)`}); }
+    // Tier 1: Break-even check (all-in RPM vs CPM)
+    if (allInRpm >= rpmThreshold * 1.1)   { verdictScore += 2; verdictItems.push({c:'var(--success)', t:`✅ Strong all-in RPM ($${allInRpm.toFixed(2)}/mi)`}); }
+    else if (allInRpm >= rpmThreshold)     { verdictScore += 1; verdictItems.push({c:'var(--warning)', t:`🟡 Acceptable all-in RPM ($${allInRpm.toFixed(2)}/mi)`}); }
+    else                                   { verdictScore -= 2; verdictItems.push({c:'var(--danger)',  t:`⚠️ Low all-in RPM ($${allInRpm.toFixed(2)}/mi incl. DH)`}); }
 
-    if (gapAfter <= 0)               { verdictScore += 2; verdictItems.push({c:'var(--success)', t:`✅ Hits weekly target`}); }
-    else if (gapAfter < gapBefore * 0.5) { verdictScore += 1; verdictItems.push({c:'var(--warning)', t:`🟡 Closes ${((1-gapAfter/Math.max(gapBefore,1))*100).toFixed(0)}% of weekly gap`}); }
-    else                             { verdictItems.push({c:'var(--text-muted)', t:`ℹ️ Still ${money(gapAfter)} short of target after this load`}); }
+    // Tier 2: True profitability
+    if (calc.net > 0)                      { verdictScore += 2; verdictItems.push({c:'var(--success)', t:`✅ Profitable (${money(calc.net)} net)`}); }
+    else                                   { verdictScore -= 2; verdictItems.push({c:'var(--danger)',  t:`❌ Unprofitable (${money(calc.net)} net)`}); }
 
-    const dhRatio = miles > 0 ? dhMiles / miles : 0;
-    if (dhRatio > 0.25)              { verdictScore -= 1; verdictItems.push({c:'var(--danger)', t:`⚠️ High deadhead (${(dhRatio*100).toFixed(0)}% of miles)`}); }
-    else if (dhRatio < 0.1)         { verdictScore += 1; verdictItems.push({c:'var(--success)', t:`✅ Low deadhead (${(dhRatio*100).toFixed(0)}%)`}); }
+    // Revenue per day vs benchmark
+    if (revPerDay >= REV_DAY_BENCHMARK * 1.2)  { verdictScore += 2; verdictItems.push({c:'var(--success)', t:`✅ ${money(revPerDay)}/day (${((revPerDay/REV_DAY_BENCHMARK-1)*100).toFixed(0)}% above benchmark)`}); }
+    else if (revPerDay >= REV_DAY_BENCHMARK)    { verdictScore += 1; verdictItems.push({c:'var(--warning)', t:`🟡 ${money(revPerDay)}/day (at benchmark)`}); }
+    else                                        { verdictScore -= 1; verdictItems.push({c:'var(--danger)',  t:`⚠️ ${money(revPerDay)}/day (below $1,000/day benchmark)`}); }
 
-    if (hos && hos.driveMs != null && hos.driveMs / 3600000 < miles / AVG_MPH)
-                                     { verdictScore -= 2; verdictItems.push({c:'var(--danger)', t:`❌ Insufficient HOS hours`}); }
+    // Weekly target
+    if (gapAfter <= 0)                      { verdictScore += 2; verdictItems.push({c:'var(--success)', t:`✅ Hits weekly target`}); }
+    else if (gapAfter < gapBefore * 0.5)   { verdictScore += 1; verdictItems.push({c:'var(--warning)', t:`🟡 Closes ${((1-gapAfter/Math.max(gapBefore,1))*100).toFixed(0)}% of weekly gap`}); }
+    else                                    { verdictItems.push({c:'var(--text-muted)', t:`ℹ️ Still ${money(gapAfter)} short of target after load`}); }
+
+    // Deadhead
+    if (dhMiles > 0) {
+      if (dhRatio > 0.25)                   { verdictScore -= 1; verdictItems.push({c:'var(--danger)',  t:`⚠️ High deadhead (${(dhRatio*100).toFixed(0)}% of miles)`}); }
+      else if (dhRatio < 0.1)              { verdictScore += 1; verdictItems.push({c:'var(--success)', t:`✅ Low deadhead (${(dhRatio*100).toFixed(0)}%)`}); }
+    }
+
+    // Destination market (async intel updates separately — use quick string check for verdict scoring)
+    if (destCity) {
+      const destLow = destCity.toLowerCase();
+      const isKnownWeak = ['miami','orlando','tampa','las vegas','billings','albuquerque','el paso','phoenix','denver'].some(w => destLow.includes(w));
+      const isKnownStrong = ['osceola','blytheville','gary','cleveland','birmingham','memphis','nashville','indianapolis','chicago','midlothian','granite city','gallatin','decatur','spartanburg','tuscaloosa','vance','smyrna','murfreesboro','dallas','houston','kansas city','st. louis','saint louis','louisville','columbus','cincinnati','portland','eugene'].some(w => destLow.includes(w));
+      if (isKnownWeak)   { verdictScore -= 2; verdictItems.push({c:'var(--danger)',  t:`⚠️ Weak flatbed outbound — plan next load before arriving`}); }
+      else if (isKnownStrong) { verdictScore += 1; verdictItems.push({c:'var(--success)', t:`✅ Strong flatbed market at delivery (see intel below)`}); }
+    }
+
+    // HOS
+    if (hos && hos.driveMs != null && hos.driveMs / 3600000 < estHours)
+                                            { verdictScore -= 2; verdictItems.push({c:'var(--danger)', t:`❌ Insufficient HOS hours`}); }
 
     const [verdictLabel, verdictColor, verdictBg] =
-      verdictScore >= 4  ? ['BOOK IT',        'var(--success)', 'rgba(79,158,248,0.1)'] :
-      verdictScore >= 2  ? ['LOOKS GOOD',     'var(--success)', 'rgba(79,158,248,0.08)'] :
-      verdictScore >= 0  ? ['ACCEPTABLE',     'var(--warning)', 'rgba(255,184,0,0.1)']  :
-      verdictScore >= -1 ? ['THINK TWICE',    'var(--warning)', 'rgba(255,184,0,0.1)']  :
-                           ['PASS ON THIS',   'var(--danger)',  'rgba(255,59,59,0.1)'];
+      verdictScore >= 5  ? ['BOOK IT',       'var(--success)', 'rgba(79,158,248,0.1)'] :
+      verdictScore >= 3  ? ['LOOKS GOOD',    'var(--success)', 'rgba(79,158,248,0.08)'] :
+      verdictScore >= 1  ? ['ACCEPTABLE',    'var(--warning)', 'rgba(255,184,0,0.1)']  :
+      verdictScore >= -1 ? ['THINK TWICE',   'var(--warning)', 'rgba(255,184,0,0.1)']  :
+                           ['PASS ON THIS',  'var(--danger)',  'rgba(255,59,59,0.1)'];
 
     document.getElementById('sim_results').innerHTML = `
       <!-- VERDICT -->
@@ -8919,6 +9313,29 @@ window.showLoadSimulator = function(driverId) {
         <div style="font-size:22px;font-weight:900;letter-spacing:2px;color:${verdictColor};">${verdictLabel}</div>
         <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:10px;">
           ${verdictItems.map(v=>`<span style="font-size:12px;color:${v.c};background:rgba(0,0,0,0.2);padding:3px 10px;border-radius:20px;">${v.t}</span>`).join('')}
+        </div>
+      </div>
+
+      <!-- RATE BREAKDOWN (Tier 1 + 2 metrics) -->
+      <div style="background:rgba(0,0,0,0.2);border:1px solid var(--border-subtle);border-radius:10px;padding:14px 16px;margin-bottom:14px;">
+        <div style="font-size:11px;font-weight:800;letter-spacing:1px;color:var(--text-muted);text-transform:uppercase;margin-bottom:12px;">📊 Rate Breakdown</div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
+          <div style="text-align:center;">
+            <div style="font-size:10px;color:var(--text-muted);">Loaded RPM<br><span style="opacity:0.6;">(loaded mi only)</span></div>
+            <div style="font-size:16px;font-weight:800;color:var(--accent-cyan);">$${loadedRpm.toFixed(2)}</div>
+          </div>
+          <div style="text-align:center;border-left:1px solid var(--border-subtle);padding-left:8px;">
+            <div style="font-size:10px;color:var(--text-muted);">All-In RPM<br><span style="opacity:0.6;">(incl. ${dhMiles} DH mi)</span></div>
+            <div style="font-size:16px;font-weight:800;color:${allInRpm>=(rpmThreshold||2.0)?'var(--success)':'var(--danger)'};">$${allInRpm.toFixed(2)}</div>
+          </div>
+          <div style="text-align:center;border-left:1px solid var(--border-subtle);padding-left:8px;">
+            <div style="font-size:10px;color:var(--text-muted);">Rev / Day<br><span style="opacity:0.6;">(${days}d · $1k benchmark)</span></div>
+            <div style="font-size:16px;font-weight:800;color:${revPerDay>=REV_DAY_BENCHMARK?'var(--success)':'var(--danger)'};">${money(revPerDay)}</div>
+          </div>
+          <div style="text-align:center;border-left:1px solid var(--border-subtle);padding-left:8px;">
+            <div style="font-size:10px;color:var(--text-muted);">Net / Day<br><span style="opacity:0.6;">${days}d total</span></div>
+            <div style="font-size:16px;font-weight:800;color:${netPerDay>0?'var(--success)':'var(--danger)'};">${money(netPerDay)}</div>
+          </div>
         </div>
       </div>
 
@@ -8942,13 +9359,16 @@ window.showLoadSimulator = function(driverId) {
           <div style="font-size:18px;font-weight:900;color:${calc.net>=0?'var(--success)':'var(--danger)'};">${money(calc.net)}</div>
         </div>
         <div style="background:rgba(0,0,0,0.2);border-radius:8px;padding:10px 12px;border:1px solid var(--border-subtle);">
-          <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px;">RPM / Net/Mi</div>
-          <div style="font-size:15px;font-weight:800;color:var(--accent-cyan);">$${rpm.toFixed(2)} / $${netRpm.toFixed(2)}</div>
+          <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px;">Net/Mi (all-in)</div>
+          <div style="font-size:15px;font-weight:800;color:var(--accent-cyan);">$${netRpm.toFixed(2)}/mi</div>
         </div>
       </div>
 
       <!-- HOS -->
       ${hosHtml}
+
+      <!-- DESTINATION INTEL -->
+      ${destHtml}
 
       <!-- WEEK IMPACT -->
       <div style="background:rgba(0,0,0,0.2);border:1px solid var(--border-subtle);border-radius:10px;padding:14px 16px;">
@@ -8973,9 +9393,9 @@ window.showLoadSimulator = function(driverId) {
           <div style="height:100%;width:${targetPctNew}%;background:${weekNetColor};border-radius:5px;transition:width 0.4s;"></div>
         </div>
         <div style="margin-top:8px;font-size:12px;font-weight:700;color:${weekNetColor};">
-          ${gapAfter <= 0 ? `🎉 Target hit with this load!` : `${money(gapAfter)} remaining to hit target after this load`}
+          ${gapAfter <= 0 ? '🎉 Target hit with this load!' : money(gapAfter)+' remaining to hit target after this load'}
         </div>
-        ${!isCompany ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Owner-op ${(split*100).toFixed(0)}% split · driver earns ${money(calc.cut)} from this load</div>` : ''}
+        ${!isCompany ? '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Owner-op '+(split*100).toFixed(0)+'% split · driver earns '+money(calc.cut)+' from this load</div>' : ''}
       </div>
     `;
   }
@@ -8990,7 +9410,7 @@ window.showLoadSimulator = function(driverId) {
           <div style="display:flex;align-items:center;justify-content:space-between;">
             <div>
               <div style="font-size:18px;font-weight:900;color:var(--text-primary);">⚡ Load Simulator</div>
-              <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${escapeHtml(d.name)} &nbsp;·&nbsp; Week net so far: <strong style="color:${t.net>=0?'var(--success)':'var(--danger)'};">${money(t.net)}</strong> &nbsp;·&nbsp; Target: <strong style="color:var(--accent-cyan);">${money(targetNet)}</strong></div>
+              <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${escapeHtml(d.name)} &nbsp;·&nbsp; Week net so far: <strong style="color:${t.net>=0?'var(--success)':'var(--danger)'}">${money(t.net)}</strong> &nbsp;·&nbsp; Target: <strong style="color:var(--accent-cyan)">${money(targetNet)}</strong></div>
             </div>
             <button onclick="document.getElementById('loadSimOverlay').remove()" style="background:none;border:none;color:var(--text-muted);font-size:26px;cursor:pointer;line-height:1;padding:0;">×</button>
           </div>
@@ -9009,7 +9429,8 @@ window.showLoadSimulator = function(driverId) {
             <div>
               <label style="font-size:11px;font-weight:700;color:var(--text-muted);display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:1px;">Delivery City</label>
               <input id="sim_dest" type="text" placeholder="e.g. Dallas, TX"
-                style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--border-medium);border-radius:8px;color:var(--text-primary);font-size:13px;box-sizing:border-box;">
+                style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--border-medium);border-radius:8px;color:var(--text-primary);font-size:13px;box-sizing:border-box;"
+                oninput="window._simRecalc()">
             </div>
             <div>
               <button id="sim_gmaps_btn" onclick="gmapsAutoFillSimMiles()"
@@ -9046,7 +9467,13 @@ window.showLoadSimulator = function(driverId) {
                 oninput="window._simRecalc()">
             </div>
           </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+            <div>
+              <label style="font-size:11px;font-weight:700;color:var(--text-muted);display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:1px;">Transit Days</label>
+              <input id="sim_days" type="number" inputmode="decimal" min="0.5" step="0.5" value="1"
+                style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--border-medium);border-radius:8px;color:var(--text-primary);font-size:14px;font-weight:700;box-sizing:border-box;"
+                oninput="window._simRecalc()">
+            </div>
             <div>
               <label style="font-size:11px;font-weight:700;color:var(--text-muted);display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:1px;">Tolls ($) <span style="opacity:0.6;">optional</span></label>
               <input id="sim_tolls" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0.00"
@@ -9070,15 +9497,23 @@ window.showLoadSimulator = function(driverId) {
         <!-- Footer -->
         <div style="padding:14px 24px;border-top:1px solid var(--border-medium);display:flex;gap:10px;">
           <button onclick="document.getElementById('loadSimOverlay').remove()" style="flex:1;padding:10px;background:var(--bg-primary);color:var(--text-muted);border:1px solid var(--border-subtle);border-radius:8px;font-weight:600;cursor:pointer;font-size:13px;">Close</button>
+          <button onclick="window.bookSimLoad()" style="flex:2;padding:10px;background:linear-gradient(135deg,var(--accent-cyan),var(--accent-blue));color:#000;border:none;border-radius:8px;font-weight:800;cursor:pointer;font-size:14px;letter-spacing:0.5px;">📋 Book This Load →</button>
         </div>
       </div>
     </div>`;
 
   document.body.insertAdjacentHTML('beforeend', modalHtml);
   window._simRecalc = recalc;
+
+  // Wire Google Maps city autocomplete to dynamically created inputs
+  ['sim_origin', 'sim_dest', 'sim_dh_from'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el && window.attachCityAC) window.attachCityAC(el);
+  });
   // Focus gross field
   setTimeout(() => document.getElementById('sim_gross')?.focus(), 100);
 };
+
 
 /***********************************************
  * FLEET OVERVIEW MODAL
@@ -9112,8 +9547,8 @@ function showDriverDetailModal(driverId) {
   var d = state.drivers[driverId];
   if (!d) return;
 
-  var thisWeekId = isoDate(startOfWeekMonday(new Date()));
-  var wkId = d.weeks && d.weeks[thisWeekId] ? thisWeekId : d.currentWeekId;
+  var activeWkId = getGlobalWeekId();
+  var wkId = d.weeks && d.weeks[activeWkId] ? activeWkId : d.currentWeekId;
   var wk   = (d.weeks && d.weeks[wkId]) || { loads: [] };
   var t    = computeWeekTotals(wk, d);
   var loads = (wk.loads || []).filter(function(l) { return !l.deliversNextWeek; });
@@ -9328,14 +9763,14 @@ function renderDispatchView() {
   var cardsEl = document.getElementById('driverCards');
   if (!cardsEl) return;
 
-  var thisWeekId = isoDate(startOfWeekMonday(new Date()));
+  var activeWkId = getGlobalWeekId();
   var driverIds  = Object.keys(state.drivers);
   var totalLoads = 0, totalGross = 0, totalNet = 0, totalMiles = 0;
 
   var html = driverIds.map(function(id) {
     var d  = state.drivers[id];
     if (!d) return '';
-    var wkId = d.weeks && d.weeks[thisWeekId] ? thisWeekId : d.currentWeekId;
+    var wkId = (d.weeks && d.weeks[activeWkId]) ? activeWkId : d.currentWeekId;
     var wk   = (d.weeks && d.weeks[wkId]) || { loads: [] };
     var loads = (wk.loads || []).filter(function(l) { return !l.deliversNextWeek; });
     var wkT  = computeWeekTotals(wk, d);
@@ -9396,7 +9831,7 @@ function renderDispatchView() {
 
       + '<div class="driver-actions">'
         + '<button class="action-btn" data-view-detail="' + id + '">&#x1F4CA; View Details</button>'
-        + '<button class="action-btn" data-load-sim="' + id + '">&#x26A1; Simulate Load</button>'
+        + '<button class="action-btn" data-load-sim="' + id + '">&#x26A1; Simulate</button>'
         + '<button class="action-btn" data-open-dash-card="' + id + '">&#x1F3E0; Dashboard</button>'
       + '</div>'
     + '</div>';
@@ -9452,17 +9887,16 @@ function renderFleetCards(){
   const summaryEl = document.getElementById('fleetSummaryStats');
   const s = getSpecs();
   
-  // Build driver data array
-  // Fleet overview ALWAYS shows this week's numbers — currentWeekId is just a navigation cursor
-  const thisWeekId = isoDate(startOfWeekMonday(new Date()));
+  // Fleet overview shows the globally selected week
+  const activeWkId = getGlobalWeekId();
   const driverIds = Object.keys(state.drivers);
   let driverData = driverIds.map(id => {
     const d = state.drivers[id];
     const split = getDriverSplit(d);
     const targetNet = getDriverTargetNet(d);
     
-    // Always show this week for fleet overview (fall back to currentWeekId if this week doesn't exist)
-    const fleetWkId = d.weeks?.[thisWeekId] ? thisWeekId : d.currentWeekId;
+    // Use global week cursor (fall back to currentWeekId if week doesn't exist yet)
+    const fleetWkId = d.weeks?.[activeWkId] ? activeWkId : d.currentWeekId;
     const wk = d.weeks?.[fleetWkId] || { loads: [] };
     const loads = (wk.loads || []).filter(l => !l.deliversNextWeek);
     
@@ -11323,8 +11757,10 @@ document.addEventListener('keydown', function(e) {
       // Refresh the whole UI
       // Resolve week state for all drivers (handles cleanup, closed weeks, future weeks)
       resolveAllDriverWeeks();
+      // Re-sync all drivers to the global week cursor after cloud load
+      globalWeekId = isoDate(startOfWeekMonday(new Date()));
+      syncAllDriversToWeek(globalWeekId);
       updateUI();
-      ensureDriversOnActiveWeek();
       refreshAll({ save: false, mapDelay: 400 });
       // If Analytics tab is active, refresh alerts/analytics after cloud load
       try {
