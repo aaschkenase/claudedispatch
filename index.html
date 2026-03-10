@@ -1613,6 +1613,54 @@ td {
 .flatpickr-prev-month:hover svg, .flatpickr-next-month:hover svg { fill: #00c8ff !important; }
 .flatpickr-day.flatpickr-disabled, .flatpickr-day.prevMonthDay, .flatpickr-day.nextMonthDay { color: #3a4560 !important; }
 
+
+/* ── Lane Simulator ── */
+.ls-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  margin-bottom: 4px;
+}
+.ls-input {
+  width: 100%;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-medium);
+  border-radius: 8px;
+  padding: 7px 10px;
+  color: var(--text-primary);
+  font-size: 13px;
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+}
+.ls-input:focus { outline: none; border-color: var(--accent-cyan); }
+.ls-week-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-medium);
+  border-radius: 12px;
+  padding: 16px;
+  border-top: 3px solid transparent;
+  transition: transform 0.1s;
+}
+.ls-week-card:hover { transform: translateY(-2px); }
+.ls-metric-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.ls-load-tag {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 10px;
+  display: inline-block;
+  margin-bottom: 3px;
+}
+.ls-load-tag.out { background: rgba(103,232,249,0.12); color: var(--accent-cyan); }
+.ls-load-tag.rel { background: rgba(167,139,250,0.12); color: #a78bfa; }
+.ls-load-tag.rollover { background: rgba(251,191,36,0.12); color: var(--warning); }
 </style>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.js"></script>
@@ -1802,6 +1850,7 @@ td {
     <button class="nav-tab" onclick="showTab('companycut', this)">Company Cut</button>
     <button class="nav-tab" onclick="showTab('settings', this)">Settings</button>
     <button class="nav-tab" onclick="showTab('samsara', this)" style="background:rgba(79,158,248,0.08);border:1px solid rgba(79,158,248,0.2);color:var(--success);">🛰️ Samsara</button>
+    <button class="nav-tab" onclick="showTab('lanesim', this)" style="background:rgba(167,139,250,0.08);border:1px solid rgba(167,139,250,0.2);color:#a78bfa;">📐 Lane Sim</button>
     <button class="nav-tab fleet-btn" onclick="openFleetModal()">🚛 Fleet Overview</button>
   </nav>
 
@@ -4129,6 +4178,7 @@ function showTab(id, btn){
     calendarWeekStart = null; // Reset to show driver's current week
     setTimeout(renderCalendar, 200);
   }
+  if (id === "lanesim") { setTimeout(laneSimInit, 100); }
   if (id === "settings") {
     bindDriverStatusToInputs();
     bindDriverOverridesToInputs();
@@ -8228,7 +8278,7 @@ if (CONFIG.DEBUG) {
   `;
   document.head.appendChild(style);
 
-  const CITY_INPUT_IDS = ['origin', 'dest', 'sim_origin', 'sim_dest', 'sim_dh_from'];
+  const CITY_INPUT_IDS = ['origin', 'dest', 'sim_origin', 'sim_dest', 'sim_dh_from', 'ls_out_origin', 'ls_out_dest', 'ls_rel_origin', 'ls_rel_dest'];
   let _activeDropdown = null;
   let _debounceTimer  = null;
 
@@ -12691,6 +12741,835 @@ window.samSaveProxy = function() {
 
 })();
 
+
+/***********************************************
+ * DEDICATED LANE SIMULATOR
+ ***********************************************/
+(function() {
+
+  function fmt$(n) { return n == null ? '--' : '$' + Math.round(n).toLocaleString(); }
+  function fmtRpm(n) { return (!n || !isFinite(n)) ? '--' : '$' + n.toFixed(2); }
+  function fmtMi(n)  { return n ? Math.round(n).toLocaleString() + ' mi' : '--'; }
+  function netColor(n) { return n >= 2500 ? 'var(--success)' : n >= 1200 ? 'var(--warning)' : 'var(--danger)'; }
+  function rpmColor(r) { return r >= 2.50 ? 'var(--success)' : r >= 1.80 ? 'var(--warning)' : 'var(--danger)'; }
+  function toN(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
+  function autoTransit(miles) { return Math.max(1, Math.ceil(miles / 500)); }
+
+  var DAY_NAMES = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+
+  window.laneSimInit = function() {
+    // Attach city autocomplete to lane sim inputs
+    ['ls_out_origin','ls_out_dest','ls_rel_origin','ls_rel_dest'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el && window.attachCityAC) window.attachCityAC(el);
+    });
+
+    laneSimRefreshRouteDropdown();
+
+    var sel = document.getElementById('ls_driver');
+    if (!sel) return;
+    var current = sel.value;
+    sel.innerHTML = '<option value="">-- Select driver --</option>';
+    if (state && state.drivers) {
+      Object.entries(state.drivers).forEach(function(entry) {
+        var id = entry[0], d = entry[1];
+        if (!d.name) return;
+        var opt = document.createElement('option');
+        opt.value = id;
+        opt.textContent = d.name;
+        sel.appendChild(opt);
+      });
+    }
+    if (current) sel.value = current;
+    if (!sel.value && state && state.currentDriverId) sel.value = state.currentDriverId;
+    laneSimDriverChange();
+  };
+
+  window.laneSimDriverChange = function() {
+    var driverId = document.getElementById('ls_driver').value;
+    var statsEl  = document.getElementById('ls_driver_stats');
+    if (!driverId || !state.drivers[driverId]) { if (statsEl) statsEl.innerHTML = ''; return; }
+    var d = state.drivers[driverId];
+
+    var split   = getDriverSplit(d);
+    var weekly  = getDriverFixedWeekly(d);
+    var mpg     = (d.fixedCosts && d.fixedCosts.mpg > 0) ? d.fixedCosts.mpg : (settings && settings.s_mpg ? settings.s_mpg : 6.5);
+    var fuel    = (d.fixedCosts && d.fixedCosts.fuelPrice >= 0 && d.fixedCosts.fuelPrice != null)
+                  ? d.fixedCosts.fuelPrice : (settings && settings.s_fuel ? settings.s_fuel : 3.87);
+    var truck   = d.fixedCosts ? (d.fixedCosts.truck || 0) : (settings && settings.f_truck ? settings.f_truck : 0);
+    var trailer = d.fixedCosts ? (d.fixedCosts.trailer || 0) : (settings && settings.f_trailer ? settings.f_trailer : 0);
+    var isOwnerOp = d.driverType !== 'company';
+
+    var pills = [
+      ['Split', isOwnerOp ? Math.round(split * 100) + '%' : 'Co. Driver'],
+      ['MPG', parseFloat(mpg).toFixed(1)],
+      ['Diesel', '$' + parseFloat(fuel).toFixed(2) + '/gal'],
+      ['Fixed/wk', fmt$(weekly / 4.33)],
+      ['Truck+Trailer', fmt$(truck + trailer) + '/mo']
+    ];
+
+    statsEl.innerHTML = pills.map(function(p) {
+      return '<div style="font-size:11px;color:var(--text-muted);">' +
+             '<span style="color:var(--accent-cyan);font-weight:700;">' + p[1] + '</span> ' + p[0] + '</div>';
+    }).join('');
+  };
+
+  window.laneSimBadgeUpdate = function() {
+    ['out','rel'].forEach(function(side) {
+      var gross = toN(document.getElementById('ls_' + side + '_gross') && document.getElementById('ls_' + side + '_gross').value);
+      var miles = toN(document.getElementById('ls_' + side + '_miles') && document.getElementById('ls_' + side + '_miles').value);
+      var dh    = toN(document.getElementById('ls_' + side + '_dh') && document.getElementById('ls_' + side + '_dh').value);
+      var badge = document.getElementById('ls_' + side + '_rpm_badge');
+      if (!badge) return;
+      var totalMi = miles + dh;
+      if (gross > 0 && totalMi > 0) {
+        var rpm = gross / totalMi;
+        badge.textContent = '$' + rpm.toFixed(2) + ' RPM';
+        badge.style.display = 'block';
+        badge.style.color       = rpmColor(rpm);
+        badge.style.borderColor = rpm >= 2.50 ? 'rgba(63,185,80,0.3)' : rpm >= 1.80 ? 'rgba(227,179,65,0.3)' : 'rgba(255,80,80,0.3)';
+        badge.style.background  = rpm >= 2.50 ? 'rgba(63,185,80,0.08)' : rpm >= 1.80 ? 'rgba(227,179,65,0.08)' : 'rgba(255,80,80,0.08)';
+      } else {
+        badge.style.display = 'none';
+      }
+      var hintEl = document.getElementById('ls_' + side + '_miles_hint');
+      if (hintEl && miles > 0) {
+        hintEl.textContent = 'Auto transit: ' + autoTransit(miles) + ' day(s) at 500 mi/day';
+      }
+    });
+  };
+
+  window.laneSimGetMiles = async function(side) {
+    var prefix = 'ls_' + side + '_';
+    var origin = ((document.getElementById(prefix + 'origin') || {}).value || '').trim();
+    var dest   = ((document.getElementById(prefix + 'dest')   || {}).value || '').trim();
+    if (!origin || !dest) return alert('Enter origin and destination cities first.');
+
+    var hintEl = document.getElementById(prefix + 'miles_hint');
+
+    await gmapsShowRouteOptions(origin, dest, {
+      onSelect: function(route, avoidTolls) {
+        var miEl = document.getElementById(prefix + 'miles');
+        if (miEl) miEl.value = route.miles;
+
+        // Auto-fill tolls field if toll route was NOT chosen (user picked no-toll)
+        if (avoidTolls) {
+          var tollsEl = document.getElementById(prefix + 'tolls');
+          if (tollsEl && !tollsEl.value) tollsEl.value = 0;
+        }
+
+        if (hintEl) {
+          hintEl.textContent = route.miles.toLocaleString() + ' mi' +
+            (avoidTolls ? ' (no-toll route)' : ' (fastest route)') +
+            (route.durationMin ? ' · ~' + Math.floor(route.durationMin/60) + 'h ' + (route.durationMin%60) + 'm' : '');
+        }
+
+        laneSimBadgeUpdate();
+      }
+    });
+  };
+
+  function buildSimulation(driver, out, rel, dieselOverride, lpwOverride) {
+    var WEEKS = 4;
+    var driverSplit   = getDriverSplit(driver);
+    var effectiveMpg  = (driver.fixedCosts && driver.fixedCosts.mpg > 0) ? driver.fixedCosts.mpg
+                        : (settings && settings.s_mpg ? settings.s_mpg : 6.5);
+    var effectiveFuel = dieselOverride
+                        ? dieselOverride
+                        : ((driver.fixedCosts && driver.fixedCosts.fuelPrice != null && driver.fixedCosts.fuelPrice >= 0)
+                           ? driver.fixedCosts.fuelPrice
+                           : (settings && settings.s_fuel ? settings.s_fuel : 3.87));
+    var fixedMonthly  = getDriverFixedWeekly(driver);
+    var fixedPerWeek  = fixedMonthly / 4.33;
+    var isOwnerOp     = driver.driverType !== 'company';
+
+    var legs = [out, rel];
+    var loads = [];
+    var day = 0;
+    var legIdx = 0;
+    var horizon = WEEKS * 7 + 14;
+
+    // ── Day-of-week helpers (0=Mon … 4=Fri, 5=Sat, 6=Sun) ──
+    function dow(d) { return d % 7; }
+    function isWeekend(d) { return dow(d) === 5 || dow(d) === 6; }
+    // Advance to next Monday if on weekend
+    function nextWorkday(d) {
+      if (dow(d) === 5) return d + 2; // Sat → Mon
+      if (dow(d) === 6) return d + 1; // Sun → Mon
+      return d;
+    }
+    // Advance to next Monday (regardless of current day)
+    function nextMonday(d) {
+      return d + (7 - dow(d));
+    }
+
+    // HOS tracking — FMCSA 70-hr / 8-day rule
+    // At ~500 mi/day driver runs ~11 on-duty hrs/day
+    // After 6 consecutive driving days (66+ hrs) force 34-hr restart → next Monday
+    var hosDrivingDays = 0;  // consecutive driving days since last restart
+
+    while (day < horizon) {
+      var leg = legs[legIdx % 2];
+
+      // ── DH travel to pickup ──
+      var dhMilesThisLeg = leg.dh || 0;
+      var dhDays = dhMilesThisLeg > 100 ? Math.ceil(dhMilesThisLeg / 500) : 0;
+      hosDrivingDays += dhDays;
+
+      // Candidate pickup day after DH
+      var pickDay = nextWorkday(day + dhDays);
+
+      // ── HOS check: if driver has been running 6+ days since last restart, force restart ──
+      if (hosDrivingDays >= 6) {
+        // 34-hr restart — effectively gets driver to next Monday
+        pickDay = nextMonday(pickDay);
+        hosDrivingDays = 0;
+      }
+
+      // ── Transit ──
+      var transit = (leg.transit && leg.transit >= 1) ? parseInt(leg.transit) : autoTransit(leg.miles);
+
+      // Candidate delivery day
+      var delDay = pickDay + transit;
+
+      // ── Friday pickup rule: shipper/receiver closed Sat-Sun ──
+      // If pickup is Friday, earliest delivery is Monday (skip the weekend)
+      if (dow(pickDay) === 4) {
+        var monAfterFri = pickDay + 3;
+        if (delDay < monAfterFri) delDay = monAfterFri;
+      }
+
+      // ── Any delivery landing on weekend slips to Monday ──
+      delDay = nextWorkday(delDay);
+
+      // Actual transit days (may have grown due to weekend slip)
+      var actualTransit = delDay - pickDay;
+      hosDrivingDays += actualTransit;
+
+      // ── Weekend reset: if delivery is Monday and we crossed a weekend, reset HOS ──
+      // (driver rested Sat-Sun, clock resets)
+      if (dow(delDay) === 0 && actualTransit > transit) {
+        hosDrivingDays = 0;
+      }
+
+      // ── HOS check again after transit (edge case: long haul pushes into 6-day window) ──
+      if (hosDrivingDays >= 6) {
+        hosDrivingDays = 0; // next iteration will snap to Monday naturally
+      }
+
+      loads.push({
+        idx:       loads.length,
+        legType:   legIdx % 2 === 0 ? 'out' : 'rel',
+        legLabel:  legIdx % 2 === 0 ? 'Outbound' : 'Reload',
+        pickDay:   pickDay,
+        delDay:    delDay,
+        gross:     leg.gross,
+        miles:     leg.miles,
+        dh:        dhMilesThisLeg,
+        dhDays:    dhDays,
+        tolls:     leg.tolls || 0,
+        detention: leg.detention || 0,
+        transit:   actualTransit,
+        hosReset:  hosDrivingDays === 0,
+        grossWeek: Math.floor(delDay / 7)
+      });
+
+      day = delDay;  // same-day pickup for next leg (will be snapped to workday above)
+      legIdx++;
+    }
+
+    var weeks = [];
+    for (var i = 0; i < WEEKS; i++) {
+      var wkLoads = loads.filter(function(l) { return l.grossWeek === i; });
+      var gross       = wkLoads.reduce(function(s,l){ return s + l.gross + l.detention; }, 0);
+      var loadedMiles = wkLoads.reduce(function(s,l){ return s + l.miles; }, 0);
+      var dhMiles     = wkLoads.reduce(function(s,l){ return s + l.dh; }, 0);
+      var totalMiles  = loadedMiles + dhMiles;
+      var fuelCost    = (totalMiles / effectiveMpg) * effectiveFuel;
+      var tollsCost   = wkLoads.reduce(function(s,l){ return s + l.tolls; }, 0);
+
+      var maintRate = (typeof getSpecs === 'function') ? (getSpecs().maint || 0.17) : 0.17;
+      var maintCost = totalMiles * maintRate;
+
+      var companyCut = 0;
+      var driverPay  = 0;
+      var driverNet;
+      if (isOwnerOp) {
+        companyCut = gross * (1 - driverSplit);
+        driverNet  = (gross * driverSplit) - fuelCost - tollsCost - maintCost - fixedPerWeek;
+      } else {
+        var payType = driver.companyPayType || 'cpm';
+        var payRate = parseFloat(driver.companyPayRate) || 0;
+        driverPay   = payType === 'weekly' ? payRate : loadedMiles * payRate;
+        driverNet   = gross - driverPay - fuelCost - tollsCost - maintCost - fixedPerWeek;
+        companyCut  = driverNet; // company's net after all costs
+      }
+
+      var rpm = totalMiles > 0 ? gross / totalMiles : 0;
+
+      wkLoads.forEach(function(l) { l.isRollover = l.pickDay < i * 7; });
+
+      weeks.push({
+        weekNum: i + 1,
+        loads: wkLoads,
+        gross: gross,
+        loadedMiles: loadedMiles,
+        dhMiles: dhMiles,
+        totalMiles: totalMiles,
+        fuelCost: fuelCost,
+        tollsCost: tollsCost,
+        maintCost: maintCost,
+        fixedPerWeek: fixedPerWeek,
+        companyCut: companyCut,
+        driverPay: driverPay,
+        driverNet: driverNet,
+        rpm: rpm,
+        revPerDay: gross / 7,
+        isOwnerOp: isOwnerOp
+      });
+    }
+
+    var monthGross  = weeks.reduce(function(s,w){ return s+w.gross; }, 0);
+    var monthMiles  = weeks.reduce(function(s,w){ return s+w.totalMiles; }, 0);
+    var monthNet    = weeks.reduce(function(s,w){ return s+w.driverNet; }, 0);
+    var monthFuel   = weeks.reduce(function(s,w){ return s+w.fuelCost; }, 0);
+
+    return {
+      weeks: weeks, loads: loads,
+      monthGross: monthGross, monthMiles: monthMiles, monthNet: monthNet, monthFuel: monthFuel,
+      driver: driver, effectiveMpg: effectiveMpg, effectiveFuel: effectiveFuel,
+      fixedPerWeek: fixedPerWeek, driverSplit: driverSplit, isOwnerOp: isOwnerOp
+    };
+  }
+
+  function renderSim(sim) {
+    var resultsEl = document.getElementById('ls_results');
+    if (!resultsEl) return;
+    resultsEl.style.display = 'block';
+
+    // Week cards
+    var weekCardsEl = document.getElementById('ls_week_cards');
+    weekCardsEl.innerHTML = sim.weeks.map(function(wk) {
+      var topColor = netColor(wk.driverNet);
+      var loadItems = wk.loads.map(function(l) {
+        var pickDow = DAY_NAMES[l.pickDay % 7];
+        var delDow  = DAY_NAMES[l.delDay % 7];
+        var tag     = l.isRollover ? 'rollover' : l.legType;
+        var tagTxt  = (l.isRollover ? 'Rollover ' : '') + l.legLabel;
+        var hosTag  = l.hosReset ? '<div class="ls-load-tag" style="background:rgba(251,191,36,0.1);color:var(--warning);margin-bottom:2px;">&#9664;&#9658; 34-hr restart</div>' : '';
+        return hosTag + '<div class="ls-load-tag ' + tag + '">' + tagTxt + '</div>' +
+               '<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">' +
+               escapeHtml(pickDow) + ' pick → ' + escapeHtml(delDow) + ' del' +
+               ' &middot; ' + fmt$(l.gross) + ' &middot; ' + Math.round(l.miles+l.dh).toLocaleString() + ' mi' +
+               (l.isRollover ? ' <span style="color:var(--warning);">&#127769;</span>' : '') + '</div>';
+      }).join('');
+
+      var companyCutLabel = wk.isOwnerOp ? 'Company Cut' : 'Driver Pay';
+      var companyCutVal   = wk.isOwnerOp ? fmt$(wk.companyCut) : fmt$(wk.driverPay);
+      var metrics = [
+        ['Gross',           fmt$(wk.gross),                     'var(--text-primary)'],
+        ['All-in RPM',      fmtRpm(wk.rpm),                     rpmColor(wk.rpm)],
+        ['Rev / Day',       fmt$(wk.revPerDay),                  'var(--text-primary)'],
+        ['Loaded Mi',       fmtMi(wk.loadedMiles),              'var(--text-secondary)'],
+        ['DH Miles',        fmtMi(wk.dhMiles),                  'var(--text-muted)'],
+        ['Fuel',            fmt$(wk.fuelCost),                   'var(--danger)'],
+        ['Maint',           fmt$(wk.maintCost),                  'var(--danger)'],
+        [wk.tollsCost > 0 ? 'Tolls' : 'Tolls', wk.tollsCost > 0 ? fmt$(wk.tollsCost) : '$0', wk.tollsCost > 0 ? 'var(--danger)' : 'var(--text-muted)'],
+        ['Fixed / Wk',      fmt$(wk.fixedPerWeek),               'var(--danger)'],
+        [companyCutLabel,   companyCutVal,                       'rgba(167,139,250,0.9)'],
+        ['Loads',           wk.loads.length + ' loads',          'var(--text-muted)']
+      ];
+
+      return '<div class="ls-week-card" style="border-top-color:' + topColor + ';">' +
+        '<div style="font-size:10px;font-weight:900;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">Week ' + wk.weekNum + '</div>' +
+        '<div style="font-size:24px;font-weight:900;color:' + topColor + ';margin-bottom:2px;">' + fmt$(wk.driverNet) + '</div>' +
+        '<div style="font-size:10px;color:var(--text-muted);margin-bottom:12px;">' + (wk.isOwnerOp ? 'driver net' : 'co. net') + '</div>' +
+        metrics.map(function(m) {
+          return '<div class="ls-metric-row"><span style="color:var(--text-muted);">' + m[0] + '</span>' +
+                 '<span style="font-weight:700;color:' + m[2] + ';">' + m[1] + '</span></div>';
+        }).join('') +
+        '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-subtle);">' + loadItems + '</div>' +
+        '</div>';
+    }).join('');
+
+    // Monthly summary
+    var ms  = document.getElementById('ls_monthly_summary');
+    var avgNet = sim.monthNet / 4;
+    var summaryPills = [
+      ['Monthly Gross',  fmt$(sim.monthGross),    'var(--text-primary)'],
+      [sim.isOwnerOp ? 'Driver Net (4 wk)' : 'Net (4 wk)', fmt$(sim.monthNet), netColor(sim.monthNet)],
+      ['Avg Net / Wk',   fmt$(avgNet),            netColor(avgNet)],
+      ['Total Miles',    sim.monthMiles ? Math.round(sim.monthMiles).toLocaleString() : '--', 'var(--text-primary)'],
+      ['Avg All-in RPM', fmtRpm(sim.monthMiles ? sim.monthGross / sim.monthMiles : null), rpmColor(sim.monthMiles ? sim.monthGross/sim.monthMiles : 0)],
+      ['Monthly Fuel',   fmt$(sim.monthFuel),     'var(--danger)']
+    ];
+    ms.innerHTML = '<div style="font-size:13px;font-weight:900;color:#a78bfa;text-transform:uppercase;letter-spacing:.08em;margin-bottom:16px;">Monthly Summary — ' + escapeHtml(sim.driver.name) + '</div>' +
+      '<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:12px;">' +
+      summaryPills.map(function(p) {
+        return '<div style="text-align:center;background:var(--bg-primary);border:1px solid var(--border-subtle);border-radius:10px;padding:14px 8px;">' +
+          '<div style="font-size:20px;font-weight:900;color:' + p[2] + ';">' + p[1] + '</div>' +
+          '<div style="font-size:11px;color:var(--text-muted);margin-top:3px;">' + p[0] + '</div></div>';
+      }).join('') + '</div>' +
+      '<div style="margin-top:12px;font-size:12px;color:var(--text-muted);">' +
+        'Fixed: ' + fmt$(sim.fixedPerWeek) + '/wk &nbsp;&middot;&nbsp; Diesel: $' + parseFloat(sim.effectiveFuel).toFixed(2) + '/gal' +
+        ' &nbsp;&middot;&nbsp; MPG: ' + parseFloat(sim.effectiveMpg).toFixed(1) +
+        ' &nbsp;&middot;&nbsp; Split: ' + (sim.isOwnerOp ? Math.round(sim.driverSplit*100)+'%' : 'Company driver') +
+      '</div>';
+
+    // Schedule table
+    var st = document.getElementById('ls_schedule_table');
+    var visLoads = sim.loads.filter(function(l){ return l.grossWeek < 4; });
+    st.innerHTML = '<div style="font-size:13px;font-weight:900;color:var(--accent-cyan);text-transform:uppercase;letter-spacing:.08em;margin-bottom:14px;">Full Load Schedule</div>' +
+      '<div style="overflow-x:auto;">' +
+      '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:700px;">' +
+      '<thead><tr style="border-bottom:1px solid var(--border-medium);">' +
+      ['#','Leg','Pickup','Delivery','Gross','Miles','DH','Tolls','Counts In','RPM'].map(function(h){
+        return '<th style="text-align:left;padding:6px 10px;font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;white-space:nowrap;">' + h + '</th>';
+      }).join('') + '</tr></thead><tbody>' +
+      visLoads.map(function(l) {
+        var pickDow = DAY_NAMES[l.pickDay % 7];
+        var delDow  = DAY_NAMES[l.delDay % 7];
+        var pickWk  = Math.floor(l.pickDay / 7) + 1;
+        var delWk   = l.grossWeek + 1;
+        var totalMi = l.miles + l.dh;
+        var rpm     = totalMi > 0 ? l.gross / totalMi : 0;
+        var isRoll  = l.pickDay < l.grossWeek * 7;
+        var rowBg   = isRoll ? 'rgba(251,191,36,0.04)' : '';
+        return '<tr style="border-bottom:1px solid var(--border-subtle);background:' + rowBg + ';">' +
+          '<td style="padding:7px 10px;color:var(--text-muted);">' + (l.idx+1) + '</td>' +
+          '<td style="padding:7px 10px;">' +
+            (l.hosReset ? '<div style="font-size:9px;color:var(--warning);font-weight:700;margin-bottom:2px;">&#9664;&#9658; 34-hr restart</div>' : '') +
+            '<span class="ls-load-tag ' + (isRoll?'rollover':l.legType) + '">' +
+            l.legLabel + (isRoll ? ' &#127769;' : '') + '</span></td>' +
+          '<td style="padding:7px 10px;">' + escapeHtml(pickDow) + ' <span style="color:var(--text-muted);font-size:10px;">Wk'+pickWk+'</span></td>' +
+          '<td style="padding:7px 10px;">' + escapeHtml(delDow) + ' <span style="color:' + (isRoll?'var(--warning)':'var(--text-muted)') + ';font-size:10px;">Wk'+delWk+'</span></td>' +
+          '<td style="padding:7px 10px;font-weight:700;">' + fmt$(l.gross) + '</td>' +
+          '<td style="padding:7px 10px;">' + Math.round(l.miles).toLocaleString() + '</td>' +
+          '<td style="padding:7px 10px;color:var(--text-muted);">' + (l.dh||'0') + '</td>' +
+          '<td style="padding:7px 10px;color:var(--text-muted);">' + (l.tolls ? fmt$(l.tolls) : '--') + '</td>' +
+          '<td style="padding:7px 10px;font-weight:700;color:' + (isRoll?'var(--warning)':'var(--text-secondary)') + ';">Week ' + delWk + '</td>' +
+          '<td style="padding:7px 10px;font-weight:700;color:' + rpmColor(rpm) + ';">' + fmtRpm(rpm) + '</td>' +
+          '</tr>';
+      }).join('') +
+      '</tbody></table></div>' +
+      '<div style="margin-top:10px;font-size:11px;color:var(--text-muted);">&#127769; Rollover: picks up in one week, delivers (and earns) in the next</div>';
+
+    resultsEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // ── Sync city fields: out dest → rel origin (and update DH button labels) ──
+  // ── Saved Routes ──
+  var LS_ROUTES_KEY = 'lane_sim_routes_v1';
+
+  function laneSimGetAllRoutes() {
+    try { return JSON.parse(localStorage.getItem(LS_ROUTES_KEY) || '{}'); } catch(e) { return {}; }
+  }
+
+  function laneSimRefreshRouteDropdown() {
+    var sel = document.getElementById('ls_saved_routes_sel');
+    if (!sel) return;
+    var routes = laneSimGetAllRoutes();
+    var names  = Object.keys(routes).sort();
+    var current = sel.value;
+    sel.innerHTML = '<option value="">📂 Load saved route…</option>';
+    names.forEach(function(name) {
+      var opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = '🛣 ' + name;
+      sel.appendChild(opt);
+    });
+    if (current && routes[current]) sel.value = current;
+  }
+
+  function laneSimReadFields() {
+    function v(id) { var el = document.getElementById(id); return el ? el.value : ''; }
+    return {
+      driverId:    v('ls_driver'),
+      diesel:      v('ls_diesel'),
+      lpw:         v('ls_lpw'),
+      out: {
+        origin:    v('ls_out_origin'),
+        dest:      v('ls_out_dest'),
+        gross:     v('ls_out_gross'),
+        miles:     v('ls_out_miles'),
+        dh:        v('ls_out_dh'),
+        transit:   v('ls_out_transit'),
+        tolls:     v('ls_out_tolls'),
+        detention: v('ls_out_detention')
+      },
+      rel: {
+        origin:    v('ls_rel_origin'),
+        dest:      v('ls_rel_dest'),
+        gross:     v('ls_rel_gross'),
+        miles:     v('ls_rel_miles'),
+        dh:        v('ls_rel_dh'),
+        transit:   v('ls_rel_transit'),
+        tolls:     v('ls_rel_tolls'),
+        detention: v('ls_rel_detention')
+      }
+    };
+  }
+
+  function laneSimFillFields(route) {
+    function s(id, val) { var el = document.getElementById(id); if (el) el.value = val || ''; }
+    s('ls_driver',       route.driverId || '');
+    s('ls_diesel',       route.diesel   || '');
+    s('ls_lpw',          route.lpw      || '');
+    var legs = { out: route.out || {}, rel: route.rel || {} };
+    ['out','rel'].forEach(function(side) {
+      var leg = legs[side];
+      s('ls_' + side + '_origin',    leg.origin    || '');
+      s('ls_' + side + '_dest',      leg.dest      || '');
+      s('ls_' + side + '_gross',     leg.gross     || '');
+      s('ls_' + side + '_miles',     leg.miles     || '');
+      s('ls_' + side + '_dh',        leg.dh        || '');
+      s('ls_' + side + '_transit',   leg.transit   || '');
+      s('ls_' + side + '_tolls',     leg.tolls     || '');
+      s('ls_' + side + '_detention', leg.detention || '');
+    });
+    laneSimDriverChange();
+    laneSimBadgeUpdate();
+    laneSimSyncCities();
+  }
+
+  window.laneSimSaveRoute = function() {
+    var nameEl = document.getElementById('ls_route_name');
+    var name = (nameEl ? nameEl.value.trim() : '');
+    if (!name) { alert('Enter a route name first.'); nameEl && nameEl.focus(); return; }
+    var routes = laneSimGetAllRoutes();
+    routes[name] = laneSimReadFields();
+    localStorage.setItem(LS_ROUTES_KEY, JSON.stringify(routes));
+    laneSimRefreshRouteDropdown();
+    var sel = document.getElementById('ls_saved_routes_sel');
+    if (sel) sel.value = name;
+    // Brief feedback on button
+    var btn = document.querySelector('[onclick="laneSimSaveRoute()"]');
+    if (btn) { var orig = btn.textContent; btn.textContent = '✅ Saved'; setTimeout(function(){ btn.textContent = orig; }, 1500); }
+  };
+
+  window.laneSimLoadRoute = function(name) {
+    if (!name) return;
+    var routes = laneSimGetAllRoutes();
+    var route  = routes[name];
+    if (!route) return;
+    laneSimFillFields(route);
+    var nameEl = document.getElementById('ls_route_name');
+    if (nameEl) nameEl.value = name;
+  };
+
+  window.laneSimDeleteRoute = function() {
+    var sel  = document.getElementById('ls_saved_routes_sel');
+    var name = sel ? sel.value : '';
+    if (!name) { alert('Select a saved route to delete.'); return; }
+    if (!confirm('Delete saved route "' + name + '"?')) return;
+    var routes = laneSimGetAllRoutes();
+    delete routes[name];
+    localStorage.setItem(LS_ROUTES_KEY, JSON.stringify(routes));
+    laneSimRefreshRouteDropdown();
+    var nameEl = document.getElementById('ls_route_name');
+    if (nameEl && nameEl.value === name) nameEl.value = '';
+  };
+
+  window.laneSimSyncCities = function() {
+    var outDest = ((document.getElementById('ls_out_dest') || {}).value || '').trim();
+    var relDest = ((document.getElementById('ls_rel_dest') || {}).value || '').trim();
+
+    // Update DH button labels to show actual city names
+    var outOrigin = ((document.getElementById('ls_out_origin') || {}).value || '').trim();
+    var relOrigin = ((document.getElementById('ls_rel_origin') || {}).value || '').trim();
+
+    var relDhCitiesEl = document.getElementById('ls_rel_dh_cities');
+    if (relDhCitiesEl) {
+      relDhCitiesEl.textContent = outDest && relOrigin
+        ? outDest + ' → ' + relOrigin
+        : 'Outbound dest → Reload pickup';
+    }
+    var outDhCitiesEl = document.getElementById('ls_out_dh_cities');
+    if (outDhCitiesEl) {
+      outDhCitiesEl.textContent = relDest && outOrigin
+        ? relDest + ' → ' + outOrigin
+        : 'Reload dest → Outbound pickup';
+    }
+
+    // Update hint labels under DH fields
+    var relDhFrom = document.getElementById('ls_rel_dh_from');
+    if (relDhFrom) relDhFrom.textContent = outDest ? 'From: ' + outDest : '';
+    var outDhFrom = document.getElementById('ls_out_dh_from');
+    if (outDhFrom) outDhFrom.textContent = relDest ? 'From: ' + relDest : '';
+  };
+
+  // ── Get DH miles via route picker modal ──
+  window.laneSimGetDH = async function(side) {
+    var outOrigin = ((document.getElementById('ls_out_origin') || {}).value || '').trim();
+    var outDest   = ((document.getElementById('ls_out_dest')   || {}).value || '').trim();
+    var relOrigin = ((document.getElementById('ls_rel_origin') || {}).value || '').trim();
+    var relDest   = ((document.getElementById('ls_rel_dest')   || {}).value || '').trim();
+
+    var from, to, dhInputId, hintId;
+    if (side === 'rel') {
+      // Reload DH: from outbound dest to reload pickup (origin)
+      from = outDest; to = relOrigin;
+      dhInputId = 'ls_rel_dh'; hintId = 'ls_rel_dh_from';
+      if (!from) return alert('Enter the Outbound Destination city first — that is where reload DH starts.');
+      if (!to)   return alert('Enter the Reload Origin city first.');
+    } else {
+      // Outbound DH: from reload dest to outbound pickup (origin)
+      from = relDest; to = outOrigin;
+      dhInputId = 'ls_out_dh'; hintId = 'ls_out_dh_from';
+      if (!from) return alert('Enter the Reload Destination city first — that is where outbound DH starts.');
+      if (!to)   return alert('Enter the Outbound Origin city first.');
+    }
+
+    await gmapsShowRouteOptions(from, to, {
+      onSelect: function(route) {
+        var dhEl = document.getElementById(dhInputId);
+        if (dhEl) dhEl.value = route.miles;
+        var hintEl = document.getElementById(hintId);
+        if (hintEl) hintEl.textContent = route.miles.toLocaleString() + ' mi DH from ' + from;
+        laneSimBadgeUpdate();
+      }
+    });
+  };
+
+  window.laneSimRun = function() {
+    var driverId = document.getElementById('ls_driver') && document.getElementById('ls_driver').value;
+    if (!driverId || !state.drivers[driverId]) return alert('Select a driver first.');
+    var driver = state.drivers[driverId];
+
+    function readLeg(side) {
+      function v(id) { var el = document.getElementById('ls_' + side + '_' + id); return el ? el.value : ''; }
+      return {
+        gross:     toN(v('gross')),
+        miles:     toN(v('miles')),
+        dh:        toN(v('dh')),
+        tolls:     toN(v('tolls')),
+        detention: toN(v('detention')),
+        transit:   toN(v('transit')) || null,
+        origin:    v('origin'),
+        dest:      v('dest')
+      };
+    }
+
+    var out = readLeg('out');
+    var rel = readLeg('rel');
+
+    if (!out.gross || !out.miles) return alert('Enter gross pay and loaded miles for the Outbound leg.');
+    if (!rel.gross || !rel.miles) return alert('Enter gross pay and loaded miles for the Reload leg.');
+
+    var diesel = toN((document.getElementById('ls_diesel')||{}).value) || null;
+    var lpw    = toN((document.getElementById('ls_lpw')||{}).value) || null;
+
+    var sim = buildSimulation(driver, out, rel, diesel, lpw);
+    renderSim(sim);
+  };
+
+})();
+
 </script>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       DEDICATED LANE SIMULATOR TAB
+  ════════════════════════════════════════════════════════════ -->
+  <div id="lanesim" class="tab-content">
+    <div style="max-width:1300px;margin:0 auto;padding:24px 20px;">
+
+      <!-- Header -->
+      <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:22px;flex-wrap:wrap;gap:12px;">
+        <div>
+          <div style="font-size:22px;font-weight:900;color:#fff;letter-spacing:-0.5px;">📐 Dedicated Lane Simulator</div>
+          <div style="font-size:13px;color:var(--text-muted);margin-top:3px;">Model a repeating A→B→A lane · week-by-week breakdown · gross buckets by delivery date</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <!-- Load saved route -->
+          <select id="ls_saved_routes_sel" onchange="laneSimLoadRoute(this.value)"
+            style="background:var(--bg-elevated);border:1px solid var(--border-medium);border-radius:8px;padding:9px 12px;color:var(--text-primary);font-size:13px;min-width:180px;cursor:pointer;">
+            <option value="">📂 Load saved route…</option>
+          </select>
+          <!-- Save current -->
+          <input type="text" id="ls_route_name" placeholder="Route name…"
+            style="background:var(--bg-elevated);border:1px solid var(--border-medium);border-radius:8px;padding:9px 12px;color:var(--text-primary);font-size:13px;width:160px;">
+          <button onclick="laneSimSaveRoute()"
+            style="padding:9px 16px;background:rgba(167,139,250,0.15);border:1px solid rgba(167,139,250,0.35);border-radius:8px;color:#a78bfa;font-weight:700;font-size:13px;cursor:pointer;">
+            💾 Save
+          </button>
+          <button onclick="laneSimDeleteRoute()"
+            style="padding:9px 12px;background:rgba(255,80,80,0.08);border:1px solid rgba(255,80,80,0.2);border-radius:8px;color:var(--danger);font-weight:700;font-size:12px;cursor:pointer;"
+            title="Delete selected saved route">🗑</button>
+          <button onclick="laneSimRun()" style="padding:12px 28px;background:linear-gradient(135deg,rgba(167,139,250,0.25),rgba(103,232,249,0.15));border:1px solid rgba(167,139,250,0.5);border-radius:10px;color:#fff;font-weight:900;font-size:15px;cursor:pointer;letter-spacing:0.02em;">
+            ▶ Run Simulation
+          </button>
+        </div>
+      </div>
+
+      <!-- Config row: Driver + Start Day -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px;" id="lsConfigRow">
+        <!-- Driver -->
+        <div style="background:var(--bg-elevated);border:1px solid var(--border-medium);border-radius:12px;padding:16px;">
+          <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">Driver</div>
+          <select id="ls_driver" onchange="laneSimDriverChange()" style="width:100%;background:var(--bg-primary);border:1px solid var(--border-medium);border-radius:8px;padding:9px 12px;color:var(--text-primary);font-size:14px;font-weight:700;">
+            <option value="">— Select driver —</option>
+          </select>
+          <div id="ls_driver_stats" style="display:flex;gap:16px;margin-top:10px;flex-wrap:wrap;"></div>
+        </div>
+        <!-- Sim settings -->
+        <div style="background:var(--bg-elevated);border:1px solid var(--border-medium);border-radius:12px;padding:16px;">
+          <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">Simulation Settings</div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <div style="font-size:12px;color:var(--text-muted);font-weight:600;">Start:</div>
+            <div style="font-size:12px;color:var(--accent-cyan);font-weight:700;background:rgba(103,232,249,0.1);padding:4px 12px;border-radius:6px;border:1px solid rgba(103,232,249,0.2);">Always Monday</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-left:8px;">4 weeks + monthly summary</div>
+          </div>
+          <div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <div>
+              <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Diesel Price Override</div>
+              <input type="number" id="ls_diesel" placeholder="Use settings default" step="0.01" min="2" max="8"
+                style="width:100%;background:var(--bg-primary);border:1px solid var(--border-medium);border-radius:8px;padding:7px 10px;color:var(--text-primary);font-size:13px;box-sizing:border-box;">
+            </div>
+            <div>
+              <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Loads Per Week Override</div>
+              <input type="number" id="ls_lpw" placeholder="Auto" step="1" min="1" max="10"
+                style="width:100%;background:var(--bg-primary);border:1px solid var(--border-medium);border-radius:8px;padding:7px 10px;color:var(--text-primary);font-size:13px;box-sizing:border-box;">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Leg inputs: Outbound + Reload side by side -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px;">
+
+        <!-- OUTBOUND LEG -->
+        <div style="background:var(--bg-elevated);border:1px solid rgba(103,232,249,0.3);border-radius:12px;padding:18px;" id="ls_outbound_card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+            <div style="font-size:13px;font-weight:900;color:var(--accent-cyan);text-transform:uppercase;letter-spacing:.08em;">🟦 Outbound Leg</div>
+            <div id="ls_out_rpm_badge" style="font-size:11px;font-weight:700;background:rgba(103,232,249,0.1);border:1px solid rgba(103,232,249,0.2);color:var(--accent-cyan);padding:3px 10px;border-radius:20px;display:none;"></div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+            <div>
+              <div class="ls-label">Origin City</div>
+              <div style="display:flex;gap:6px;">
+                <input type="text" id="ls_out_origin" class="ls-input" placeholder="Memphis, TN" oninput="laneSimBadgeUpdate()">
+              </div>
+            </div>
+            <div>
+              <div class="ls-label">Destination City</div>
+              <input type="text" id="ls_out_dest" class="ls-input" placeholder="Chicago, IL" oninput="laneSimBadgeUpdate(); laneSimSyncCities()">
+            </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px;">
+            <div>
+              <div class="ls-label">Gross Pay</div>
+              <input type="number" id="ls_out_gross" class="ls-input" placeholder="3200" oninput="laneSimBadgeUpdate()">
+            </div>
+            <div>
+              <div class="ls-label">Loaded Miles</div>
+              <input type="number" id="ls_out_miles" class="ls-input" placeholder="480" oninput="laneSimBadgeUpdate()">
+            </div>
+            <div>
+              <div class="ls-label">DH Miles <span style="font-weight:400;text-transform:none;font-size:10px;">from reload dest</span></div>
+              <input type="number" id="ls_out_dh" class="ls-input" placeholder="0" oninput="laneSimBadgeUpdate()">
+              <div id="ls_out_dh_from" style="font-size:10px;color:var(--accent-cyan);margin-top:3px;min-height:13px;font-style:italic;"></div>
+            </div>
+          </div>
+
+          <button onclick="laneSimGetDH('out')" style="width:100%;padding:7px 10px;background:rgba(103,232,249,0.06);border:1px solid rgba(103,232,249,0.2);border-radius:7px;color:var(--accent-cyan);font-weight:700;font-size:11px;cursor:pointer;margin-bottom:10px;text-align:left;">
+            🗺 Get DH Miles &nbsp;<span style="font-weight:400;opacity:0.7;" id="ls_out_dh_cities">Reload dest → Outbound pickup</span>
+          </button>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px;">
+            <div>
+              <div class="ls-label">Transit Days <span style="font-weight:400;text-transform:none;">(or auto)</span></div>
+              <input type="number" id="ls_out_transit" class="ls-input" placeholder="Auto" min="1" max="7">
+            </div>
+            <div>
+              <div class="ls-label">Tolls</div>
+              <input type="number" id="ls_out_tolls" class="ls-input" placeholder="0" oninput="laneSimBadgeUpdate()">
+            </div>
+            <div>
+              <div class="ls-label">Detention</div>
+              <input type="number" id="ls_out_detention" class="ls-input" placeholder="0">
+            </div>
+          </div>
+
+          <button onclick="laneSimGetMiles('out')" style="width:100%;padding:9px;background:rgba(103,232,249,0.1);border:1px solid rgba(103,232,249,0.3);border-radius:8px;color:var(--accent-cyan);font-weight:700;font-size:12px;cursor:pointer;">
+            🗺 Get Miles via Google Maps
+          </button>
+          <div id="ls_out_miles_hint" style="font-size:11px;color:var(--text-muted);margin-top:6px;min-height:16px;"></div>
+        </div>
+
+        <!-- RELOAD LEG -->
+        <div style="background:var(--bg-elevated);border:1px solid rgba(167,139,250,0.3);border-radius:12px;padding:18px;" id="ls_reload_card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+            <div style="font-size:13px;font-weight:900;color:#a78bfa;text-transform:uppercase;letter-spacing:.08em;">🟪 Reload Leg</div>
+            <div id="ls_rel_rpm_badge" style="font-size:11px;font-weight:700;background:rgba(167,139,250,0.1);border:1px solid rgba(167,139,250,0.2);color:#a78bfa;padding:3px 10px;border-radius:20px;display:none;"></div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+            <div>
+              <div class="ls-label">Origin City</div>
+              <input type="text" id="ls_rel_origin" class="ls-input" placeholder="Chicago, IL" oninput="laneSimBadgeUpdate()">
+            </div>
+            <div>
+              <div class="ls-label">Destination City</div>
+              <input type="text" id="ls_rel_dest" class="ls-input" placeholder="Memphis, TN" oninput="laneSimBadgeUpdate(); laneSimSyncCities()">
+            </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px;">
+            <div>
+              <div class="ls-label">Gross Pay</div>
+              <input type="number" id="ls_rel_gross" class="ls-input" placeholder="2800" oninput="laneSimBadgeUpdate()">
+            </div>
+            <div>
+              <div class="ls-label">Loaded Miles</div>
+              <input type="number" id="ls_rel_miles" class="ls-input" placeholder="480" oninput="laneSimBadgeUpdate()">
+            </div>
+            <div>
+              <div class="ls-label">DH Miles <span style="font-weight:400;text-transform:none;font-size:10px;">from outbound dest</span></div>
+              <input type="number" id="ls_rel_dh" class="ls-input" placeholder="0" oninput="laneSimBadgeUpdate()">
+              <div id="ls_rel_dh_from" style="font-size:10px;color:#a78bfa;margin-top:3px;min-height:13px;font-style:italic;"></div>
+            </div>
+          </div>
+
+          <button onclick="laneSimGetDH('rel')" style="width:100%;padding:7px 10px;background:rgba(167,139,250,0.06);border:1px solid rgba(167,139,250,0.2);border-radius:7px;color:#a78bfa;font-weight:700;font-size:11px;cursor:pointer;margin-bottom:10px;text-align:left;">
+            🗺 Get DH Miles &nbsp;<span style="font-weight:400;opacity:0.7;" id="ls_rel_dh_cities">Outbound dest → Reload pickup</span>
+          </button>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px;">
+            <div>
+              <div class="ls-label">Transit Days <span style="font-weight:400;text-transform:none;">(or auto)</span></div>
+              <input type="number" id="ls_rel_transit" class="ls-input" placeholder="Auto" min="1" max="7">
+            </div>
+            <div>
+              <div class="ls-label">Tolls</div>
+              <input type="number" id="ls_rel_tolls" class="ls-input" placeholder="0" oninput="laneSimBadgeUpdate()">
+            </div>
+            <div>
+              <div class="ls-label">Detention</div>
+              <input type="number" id="ls_rel_detention" class="ls-input" placeholder="0">
+            </div>
+          </div>
+
+          <button onclick="laneSimGetMiles('rel')" style="width:100%;padding:9px;background:rgba(167,139,250,0.1);border:1px solid rgba(167,139,250,0.3);border-radius:8px;color:#a78bfa;font-weight:700;font-size:12px;cursor:pointer;">
+            🗺 Get Miles via Google Maps
+          </button>
+          <div id="ls_rel_miles_hint" style="font-size:11px;color:var(--text-muted);margin-top:6px;min-height:16px;"></div>
+        </div>
+      </div>
+
+      <!-- Results area -->
+      <div id="ls_results" style="display:none;">
+        <!-- Week cards -->
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px;" id="ls_week_cards"></div>
+        <!-- Monthly summary -->
+        <div id="ls_monthly_summary" style="background:var(--bg-elevated);border:1px solid rgba(167,139,250,0.35);border-radius:14px;padding:22px;margin-bottom:18px;"></div>
+        <!-- Load schedule table -->
+        <div id="ls_schedule_table" style="background:var(--bg-elevated);border:1px solid var(--border-medium);border-radius:14px;padding:22px;"></div>
+      </div>
+
+    </div>
+  </div>
+
 </body>
 </html>
