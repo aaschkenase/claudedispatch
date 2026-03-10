@@ -1949,41 +1949,59 @@ td {
     <!-- ── PANE: PROXY SETUP ── -->
     <div class="sam-pane" id="pane-proxy">
       <div class="sam-pane-body">
-        <div style="padding:11px 14px;background:rgba(227,179,65,0.06);border:1px solid rgba(227,179,65,0.2);border-left:3px solid var(--warning);border-radius:8px;margin-bottom:18px;font-size:13px;">
-          <strong style="color:var(--warning);">⚠️ CORS Required:</strong> Samsara's API blocks direct browser requests.
-          Run a tiny local proxy first — takes about 30 seconds.
+        <div style="padding:12px 16px;background:rgba(255,59,59,0.07);border:1px solid rgba(255,59,59,0.25);border-left:3px solid var(--danger);border-radius:8px;margin-bottom:18px;font-size:13px;line-height:1.5;">
+          <strong style="color:var(--danger);">⚠️ Why the proxy is required:</strong> Samsara's API blocks direct browser requests (CORS policy).
+          The app cannot call <code style="opacity:0.8;">api.samsara.com</code> directly from GitHub Pages — a local proxy running on your computer acts as the bridge. Takes about 60 seconds to set up, then runs in the background.
         </div>
+
+        <!-- Download buttons -->
+        <div style="display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap;">
+          <button onclick="window.downloadProxyJs()" style="padding:10px 18px;background:rgba(79,158,248,0.12);border:1px solid rgba(79,158,248,0.35);border-radius:8px;color:var(--accent-cyan);font-weight:800;font-size:13px;cursor:pointer;">
+            ⬇️ Download proxy.js <span style="font-size:10px;font-weight:600;opacity:0.7;">(Node.js)</span>
+          </button>
+          <button onclick="window.downloadProxyPy()" style="padding:10px 18px;background:rgba(79,158,248,0.12);border:1px solid rgba(79,158,248,0.35);border-radius:8px;color:var(--accent-cyan);font-weight:800;font-size:13px;cursor:pointer;">
+            ⬇️ Download proxy.py <span style="font-size:10px;font-weight:600;opacity:0.7;">(Python 3)</span>
+          </button>
+        </div>
+
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px;">
           <div style="background:var(--bg-elevated);border:1px solid var(--border-medium);border-radius:8px;padding:14px;">
-            <div style="font-size:13px;font-weight:700;color:var(--accent-cyan);margin-bottom:4px;">Option A — Node.js <span style="font-size:10px;color:var(--success);font-weight:700;">(Recommended)</span></div>
-            <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">Requires Node.js (<a href="https://nodejs.org" target="_blank" style="color:var(--accent-blue);">nodejs.org</a>). No npm install needed.</div>
-            <ol style="font-size:12px;color:var(--text-secondary);padding-left:16px;line-height:2;">
-              <li>Download <code style="color:var(--accent-cyan);background:rgba(121,192,255,0.1);padding:1px 5px;border-radius:4px;">proxy.js</code> from files provided</li>
-              <li>Open a terminal in that folder</li>
-              <li>Run: <code style="color:var(--success);background:rgba(63,185,80,0.08);padding:2px 7px;border-radius:4px;">node proxy.js</code></li>
-              <li>You'll see <strong style="color:var(--success);">"🛰️ Samsara Proxy — RUNNING"</strong></li>
-              <li>Enter proxy URL below and click Save</li>
+            <div style="font-size:13px;font-weight:700;color:var(--accent-cyan);margin-bottom:2px;">Option A — Node.js <span style="font-size:10px;color:var(--success);font-weight:700;">(Recommended)</span></div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;">Need Node.js? Get it free at <a href="https://nodejs.org" target="_blank" style="color:var(--accent-blue);">nodejs.org</a>. No npm install needed.</div>
+            <ol style="font-size:12px;color:var(--text-secondary);padding-left:16px;line-height:2.1;margin:0;">
+              <li>Click <strong>Download proxy.js</strong> above</li>
+              <li>Open Terminal, <code style="color:var(--accent-cyan);font-size:11px;">cd</code> to your Downloads folder</li>
+              <li>Run: <code style="color:var(--success);background:rgba(63,185,80,0.08);padding:2px 7px;border-radius:4px;font-size:11px;">node proxy.js</code></li>
+              <li>You'll see <strong style="color:var(--success);">🛰️ Samsara Proxy — RUNNING</strong></li>
+              <li>Enter URL below and Save</li>
             </ol>
           </div>
           <div style="background:var(--bg-elevated);border:1px solid var(--border-medium);border-radius:8px;padding:14px;">
-            <div style="font-size:13px;font-weight:700;color:var(--accent-cyan);margin-bottom:4px;">Option B — Python 3</div>
-            <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">Already on most Macs/Linux. No installs needed.</div>
-            <ol style="font-size:12px;color:var(--text-secondary);padding-left:16px;line-height:2;">
-              <li>Download <code style="color:var(--accent-cyan);background:rgba(121,192,255,0.1);padding:1px 5px;border-radius:4px;">proxy.py</code> from files provided</li>
-              <li>Open a terminal in that folder</li>
-              <li>Run: <code style="color:var(--success);background:rgba(63,185,80,0.08);padding:2px 7px;border-radius:4px;">python3 proxy.py</code></li>
-              <li>You'll see <strong style="color:var(--success);">"🛰️ Samsara Proxy — RUNNING"</strong></li>
-              <li>Enter proxy URL below and click Save</li>
+            <div style="font-size:13px;font-weight:700;color:var(--accent-cyan);margin-bottom:2px;">Option B — Python 3</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;">Built into Mac &amp; Linux. Windows: <a href="https://python.org" target="_blank" style="color:var(--accent-blue);">python.org</a>. No pip installs.</div>
+            <ol style="font-size:12px;color:var(--text-secondary);padding-left:16px;line-height:2.1;margin:0;">
+              <li>Click <strong>Download proxy.py</strong> above</li>
+              <li>Open Terminal, <code style="color:var(--accent-cyan);font-size:11px;">cd</code> to your Downloads folder</li>
+              <li>Run: <code style="color:var(--success);background:rgba(63,185,80,0.08);padding:2px 7px;border-radius:4px;font-size:11px;">python3 proxy.py</code></li>
+              <li>You'll see <strong style="color:var(--success);">🛰️ Samsara Proxy — RUNNING</strong></li>
+              <li>Enter URL below and Save</li>
             </ol>
           </div>
         </div>
+
+        <div style="background:rgba(0,0,0,0.15);border:1px solid var(--border-subtle);border-radius:8px;padding:12px 14px;margin-bottom:18px;font-size:12px;color:var(--text-muted);">
+          <strong style="color:var(--text-secondary);">💡 Tips:</strong>
+          Run the proxy once per computer session — it stays running in the background until you close the terminal.
+          You can leave the terminal window minimized. The proxy only accepts connections from <code>localhost</code> so it's safe.
+        </div>
+
         <div style="max-width:560px;">
           <span class="sam-field-label">Proxy URL <span style="text-transform:none;letter-spacing:0;font-family:'DM Sans',sans-serif;color:var(--text-muted);font-size:10px;">(default: http://localhost:3377)</span></span>
           <div style="display:flex;gap:8px;align-items:center;">
             <input type="text" id="samProxyUrl" class="sam-input" placeholder="http://localhost:3377" />
             <button class="sam-btn green" onclick="samSaveProxy()" style="white-space:nowrap;">💾 Save Proxy</button>
           </div>
-          <div id="samProxyStatus" style="margin-top:8px;font-size:12px;font-weight:600;color:var(--text-muted);">⚪ No proxy configured — direct API calls (may hit CORS)</div>
+          <div id="samProxyStatus" style="margin-top:8px;font-size:12px;font-weight:600;color:var(--text-muted);">⚪ No proxy configured — direct API calls will fail (CORS)</div>
         </div>
       </div>
     </div>
@@ -10616,7 +10634,271 @@ document.addEventListener('keydown', function(e) {
     return proxy ? proxy.replace(/\/$/, '') : 'https://api.samsara.com';
   }
 
-  window.samSaveProxy = function() {
+  
+// ── Proxy file download helpers ──
+window.downloadProxyJs = function() {
+  const src = `#!/usr/bin/env node
+/**
+ * 🛰️  Samsara CORS Proxy — for Dispatch App
+ * ─────────────────────────────────────────
+ * Forwards requests from the browser to Samsara's API,
+ * adding the CORS headers that Samsara's servers don't send.
+ *
+ * Usage:
+ *   node proxy.js
+ *   node proxy.js 3377          (custom port)
+ *   node proxy.js 3377 YOUR_KEY (lock to one API key)
+ *
+ * Requires: Node.js 18+ (no npm install needed — uses built-ins only)
+ */
+
+const http  = require('http');
+const https = require('https');
+const url   = require('url');
+
+const PORT       = parseInt(process.argv[2]) || 3377;
+const LOCKED_KEY = process.argv[3] || null;   // optional: hard-code one API key
+const TARGET     = 'api.samsara.com';
+
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin':  '*',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Authorization, Content-Type, Accept',
+  'Access-Control-Max-Age':       '86400',
+};
+
+const server = http.createServer((req, res) => {
+  // ── Preflight ──
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, CORS_HEADERS);
+    res.end();
+    return;
+  }
+
+  // ── Parse path ──
+  const parsed   = url.parse(req.url);
+  const pathname = parsed.pathname || '/';
+  const search   = parsed.search  || '';
+
+  // ── Auth ──
+  const authHeader = req.headers['authorization'] || '';
+  const token = LOCKED_KEY
+    ? 'Bearer ' + LOCKED_KEY
+    : authHeader;
+
+  if (!token) {
+    res.writeHead(401, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'No Authorization header and no locked key configured.' }));
+    return;
+  }
+
+  const options = {
+    hostname: TARGET,
+    port:     443,
+    path:     pathname + search,
+    method:   req.method,
+    headers: {
+      'Authorization': token,
+      'Content-Type':  'application/json',
+      'Accept':        'application/json',
+    },
+  };
+
+  // ── Proxy ──
+  const proxyReq = https.request(options, (proxyRes) => {
+    let body = '';
+    proxyRes.setEncoding('utf8');
+    proxyRes.on('data', chunk => body += chunk);
+    proxyRes.on('end', () => {
+      res.writeHead(proxyRes.statusCode, {
+        ...CORS_HEADERS,
+        'Content-Type': 'application/json',
+      });
+      res.end(body);
+    });
+  });
+
+  proxyReq.on('error', (e) => {
+    console.error('Proxy request error:', e.message);
+    res.writeHead(502, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Proxy error: ' + e.message }));
+  });
+
+  // Forward body for POST/PUT/PATCH
+  if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
+    req.pipe(proxyReq);
+  } else {
+    proxyReq.end();
+  }
+});
+
+server.listen(PORT, '127.0.0.1', () => {
+  console.log('');
+  console.log('  🛰️  Samsara CORS Proxy — RUNNING');
+  console.log('  ─────────────────────────────────');
+  console.log(\`  Listening on : http://localhost:\${PORT}\`);
+  console.log(\`  Forwarding to: https://\${TARGET}\`);
+  if (LOCKED_KEY) console.log(\`  Locked key   : \${LOCKED_KEY.slice(0,8)}…\`);
+  console.log('');
+  console.log('  In the app → Settings → Samsara → Proxy Setup:');
+  console.log(\`  Enter URL: http://localhost:\${PORT}\`);
+  console.log('');
+  console.log('  Press Ctrl+C to stop.');
+  console.log('');
+});
+
+server.on('error', (e) => {
+  if (e.code === 'EADDRINUSE') {
+    console.error(\`\\n  ❌ Port \${PORT} is already in use.\`);
+    console.error(\`  Try: node proxy.js \${PORT + 1}\\n\`);
+  } else {
+    console.error('\\n  ❌ Server error:', e.message);
+  }
+  process.exit(1);
+});
+`;
+  const blob = new Blob([src], {type: 'text/javascript'});
+  const a = Object.assign(document.createElement('a'), {href: URL.createObjectURL(blob), download: 'proxy.js'});
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+};
+window.downloadProxyPy = function() {
+  const src = `#!/usr/bin/env python3
+"""
+🛰️  Samsara CORS Proxy — for Dispatch App
+─────────────────────────────────────────
+Forwards requests from the browser to Samsara's API,
+adding the CORS headers that Samsara's servers don't send.
+
+Usage:
+  python3 proxy.py
+  python3 proxy.py 3377               (custom port)
+  python3 proxy.py 3377 YOUR_API_KEY  (lock to one API key)
+
+Requires: Python 3.6+  —  no pip installs needed (stdlib only)
+"""
+
+import sys
+import json
+import http.server
+import http.client
+import urllib.parse
+import threading
+
+PORT       = int(sys.argv[1]) if len(sys.argv) > 1 else 3377
+LOCKED_KEY = sys.argv[2]       if len(sys.argv) > 2 else None
+TARGET     = "api.samsara.com"
+
+CORS_HEADERS = {
+    "Access-Control-Allow-Origin":  "*",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Authorization, Content-Type, Accept",
+    "Access-Control-Max-Age":       "86400",
+}
+
+
+class SamsaraProxy(http.server.BaseHTTPRequestHandler):
+
+    def log_message(self, fmt, *args):
+        # Simple clean log: METHOD /path status
+        print(f"  {self.command:7s} {self.path[:80]:80s}  →  {args[1] if len(args) > 1 else ''}")
+
+    def _send_cors_preflight(self):
+        self.send_response(204)
+        for k, v in CORS_HEADERS.items():
+            self.send_header(k, v)
+        self.end_headers()
+
+    def _proxy(self):
+        parsed  = urllib.parse.urlparse(self.path)
+        path    = parsed.path + ("?" + parsed.query if parsed.query else "")
+
+        # Auth
+        auth_header = self.headers.get("Authorization", "")
+        token = ("Bearer " + LOCKED_KEY) if LOCKED_KEY else auth_header
+
+        if not token:
+            self._error(401, "No Authorization header and no locked key configured.")
+            return
+
+        # Read body for POST/PUT/PATCH
+        body = b""
+        if self.command in ("POST", "PUT", "PATCH"):
+            length = int(self.headers.get("Content-Length", 0))
+            if length:
+                body = self.rfile.read(length)
+
+        try:
+            conn = http.client.HTTPSConnection(TARGET, timeout=30)
+            conn.request(
+                self.command,
+                path,
+                body=body,
+                headers={
+                    "Authorization": token,
+                    "Content-Type":  "application/json",
+                    "Accept":        "application/json",
+                },
+            )
+            resp = conn.getresponse()
+            resp_body = resp.read()
+
+            self.send_response(resp.status)
+            self.send_header("Content-Type", "application/json")
+            for k, v in CORS_HEADERS.items():
+                self.send_header(k, v)
+            self.end_headers()
+            self.wfile.write(resp_body)
+            conn.close()
+
+        except Exception as e:
+            self._error(502, f"Proxy error: {e}")
+
+    def _error(self, code, msg):
+        body = json.dumps({"error": msg}).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        for k, v in CORS_HEADERS.items():
+            self.send_header(k, v)
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_OPTIONS(self): self._send_cors_preflight()
+    def do_GET(self):     self._proxy()
+    def do_POST(self):    self._proxy()
+    def do_PUT(self):     self._proxy()
+    def do_PATCH(self):   self._proxy()
+    def do_DELETE(self):  self._proxy()
+
+
+if __name__ == "__main__":
+    server = http.server.HTTPServer(("127.0.0.1", PORT), SamsaraProxy)
+
+    print()
+    print("  🛰️  Samsara CORS Proxy — RUNNING")
+    print("  ─────────────────────────────────")
+    print(f"  Listening on : http://localhost:{PORT}")
+    print(f"  Forwarding to: https://{TARGET}")
+    if LOCKED_KEY:
+        print(f"  Locked key   : {LOCKED_KEY[:8]}…")
+    print()
+    print("  In the app → Settings → Samsara → Proxy Setup:")
+    print(f"  Enter URL: http://localhost:{PORT}")
+    print()
+    print("  Press Ctrl+C to stop.")
+    print()
+
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\\n  Proxy stopped.\\n")
+        server.shutdown()
+`;
+  const blob = new Blob([src], {type: 'text/x-python'});
+  const a = Object.assign(document.createElement('a'), {href: URL.createObjectURL(blob), download: 'proxy.py'});
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+};
+
+window.samSaveProxy = function() {
     const val = (document.getElementById('samProxyUrl')?.value || '').trim();
     if (val) {
       localStorage.setItem(SAM_PROXY_KEY, val);
@@ -11026,6 +11308,20 @@ document.addEventListener('keydown', function(e) {
     }
     localStorage.setItem(SAM_LINK_STORAGE, JSON.stringify(window._sam.links));
     samSetStatus('Driver link saved.', 'ok');
+
+    // Keep both tabs in sync — re-render whichever has live data
+    // Update link-selects already in the DOM (faster than full re-render)
+    document.querySelectorAll('.sam-link-select[data-samid="' + samId + '"]').forEach(sel => {
+      if (sel.value !== appId) sel.value = appId || '';
+    });
+    // Re-render fuel tab if data is loaded (so Apply button + link label refreshes)
+    if (window._sam.fuelData && window._sam.fuelData.length) {
+      samRenderFuel(window._sam.fuelData);
+    }
+    // Re-render drivers tab if loaded
+    if (window._sam.drivers && window._sam.drivers.length) {
+      samRenderDrivers();
+    }
   };
 
   // ── Load Vehicles ──
@@ -11369,7 +11665,7 @@ document.addEventListener('keydown', function(e) {
           <th>Fuel Cost</th>
           <th>MPG</th>
           <th>Idle Time</th>
-          <th>Apply to App</th>
+          <th>Link Driver / Apply</th>
         </tr></thead>
         <tbody>
           ${rows.map(r => {
@@ -11392,12 +11688,19 @@ document.addEventListener('keydown', function(e) {
               <td style="font-weight:700;color:var(--danger);">${fuelDollars != null ? '$' + fuelDollars.toFixed(2) : '—'}</td>
               <td style="font-weight:800;color:${mpgColor};">${r.mpg != null ? r.mpg.toFixed(1) : '—'}</td>
               <td style="font-size:12px;color:var(--text-muted);">${idleHrs != null ? idleHrs + ' hrs' : '—'}</td>
-              <td>
-                ${linkedDriver && fuelDollars != null ? `
-                  <button class="sam-apply-fuel" onclick="samApplyFuelToDriver('${escapeHtml(r.id)}', ${fuelDollars.toFixed(2)}, ${r.mpg ? r.mpg.toFixed(2) : 'null'})">
-                    ⛽ Apply to ${escapeHtml(linkedDriver.name.split(' ')[0])}
-                  </button>
-                ` : `<span style="font-size:11px;color:var(--text-muted);">${linkedDriver ? 'No $ data' : 'Link driver ↑'}</span>`}
+              <td style="min-width:180px;">
+                <div style="display:flex;flex-direction:column;gap:5px;">
+                  <select class="sam-link-select" data-samid="${escapeHtml(r.id)}" onchange="samLinkDriver(this.dataset.samid, this.value)"
+                    style="width:100%;padding:5px 7px;background:var(--bg-primary);border:1px solid var(--border-medium);border-radius:6px;color:var(--text-primary);font-size:11px;font-weight:600;">
+                    <option value="">— Link to app driver —</option>
+                    ${appDriverOptions.replace(`value="${linkedAppId}"`, `value="${linkedAppId}" selected`)}
+                  </select>
+                  ${linkedDriver && fuelDollars != null ? `
+                    <button class="sam-apply-fuel" onclick="samApplyFuelToDriver('${escapeHtml(r.id)}', ${fuelDollars.toFixed(2)}, ${r.mpg ? r.mpg.toFixed(2) : 'null'})">
+                      ⛽ Apply to ${escapeHtml(linkedDriver.name.split(' ')[0])}
+                    </button>
+                  ` : linkedDriver ? `<span style="font-size:10px;color:var(--text-muted);">No fuel $ data yet</span>` : ''}
+                </div>
               </td>
             </tr>`;
           }).join('')}
