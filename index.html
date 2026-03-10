@@ -2009,6 +2009,8 @@ td {
     <!-- ── PANE: SYNC ── -->
     <div class="sam-pane" id="pane-sync">
       <div class="sam-pane-body">
+        <!-- Dynamic proxy health banner — updated by samCheckProxyBanner() -->
+        <div id="samProxyBanner" style="display:none;margin-bottom:14px;"></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
           <button class="sam-btn green" onclick="samSyncAll()">🔄 Sync All</button>
           <button class="sam-btn" onclick="samLoadDrivers()">👤 Drivers</button>
@@ -10908,6 +10910,7 @@ window.samSaveProxy = function() {
     const s = document.getElementById('samProxyStatus');
     s.textContent = val ? '✅ Proxy saved: ' + val : '⚪ No proxy — direct API (may hit CORS)';
     s.style.color = val ? 'var(--success)' : 'var(--text-muted)';
+    samCheckProxyBanner();
   };
   const SAM_LINK_STORAGE  = 'samsara_driver_links_v1';  // { samsaraDriverId: appDriverId }
   const SAM_TRUCK_STORAGE = 'samsara_truck_assign_v1';   // { samsaraDriverId: samsaraVehicleId }
@@ -11006,9 +11009,33 @@ window.samSaveProxy = function() {
 
   // ── Collapsible section toggle ──
   // ── Samsara inner tab switcher ──
+  // -- Proxy health banner --
+  function samCheckProxyBanner() {
+    var banner = document.getElementById('samProxyBanner');
+    if (!banner) return;
+    var proxyUrl = localStorage.getItem(SAM_PROXY_KEY) || '';
+    var apiKey   = localStorage.getItem(SAM_KEY_STORAGE) || '';
+    if (!apiKey) {
+      banner.style.display = 'block';
+      banner.innerHTML = '<div style="padding:10px 14px;background:rgba(255,184,0,0.08);border:1px solid rgba(255,184,0,0.3);border-left:3px solid var(--warning);border-radius:8px;font-size:13px;">' +
+        '<strong style="color:var(--warning);">No API key saved.</strong> Go to the <strong>API Key</strong> tab, enter your Samsara token, and click Save.</div>';
+    } else if (!proxyUrl) {
+      banner.style.display = 'block';
+      banner.innerHTML = '<div style="padding:10px 14px;background:rgba(255,59,59,0.07);border:1px solid rgba(255,59,59,0.25);border-left:3px solid var(--danger);border-radius:8px;font-size:13px;">' +
+        '<strong style="color:var(--danger);">Proxy not configured.</strong> Direct calls to Samsara will fail (CORS). ' +
+        'Go to <strong>Proxy Setup</strong> tab, download and run the proxy, then save the URL. ' +
+        '<button onclick="document.querySelectorAll(\'.sam-itab\').forEach(function(t){t.classList.remove(\'on\')});document.querySelectorAll(\'#samsara .sam-pane\').forEach(function(p){p.classList.remove(\'on\')});var pn=document.getElementById(\'pane-proxy\');if(pn)pn.classList.add(\'on\')" style="margin-left:8px;padding:3px 10px;background:rgba(255,59,59,0.15);border:1px solid rgba(255,59,59,0.4);border-radius:5px;color:var(--danger);font-size:12px;font-weight:700;cursor:pointer;">Proxy Setup</button></div>';
+    } else {
+      banner.style.display = 'block';
+      banner.innerHTML = '<div style="padding:8px 14px;background:rgba(63,185,80,0.07);border:1px solid rgba(63,185,80,0.2);border-left:3px solid var(--success);border-radius:8px;font-size:12px;color:var(--text-secondary);">' +
+        '<strong style="color:var(--success);">Proxy configured:</strong> ' + proxyUrl +
+        ' -- make sure it is running (<code>node proxy.js</code> or <code>python3 proxy.py</code>).</div>';
+    }
+  }
   window.samShowPane = function(paneId, clickedTab) {
     document.querySelectorAll('#samsara .sam-pane').forEach(p => p.classList.remove('on'));
     document.querySelectorAll('.sam-itab').forEach(t => t.classList.remove('on'));
+    if (paneId === 'pane-sync') samCheckProxyBanner();
     const pane = document.getElementById(paneId);
     if (pane) pane.classList.add('on');
     if (clickedTab) clickedTab.classList.add('on');
@@ -11307,21 +11334,58 @@ window.samSaveProxy = function() {
       delete window._sam.links[samId];
     }
     localStorage.setItem(SAM_LINK_STORAGE, JSON.stringify(window._sam.links));
-    samSetStatus('Driver link saved.', 'ok');
 
-    // Keep both tabs in sync — re-render whichever has live data
-    // Update link-selects already in the DOM (faster than full re-render)
+    if (appId) {
+      // Auto-assign truck: check if vehicle stats already have this driver assigned to a vehicle
+      if (window._sam._vehicleStats) {
+        const autoVehicle = Object.entries(window._sam._vehicleStats)
+          .find(([vid, vstats]) => vstats.driver?.id === samId);
+        if (autoVehicle) {
+          const assigns = JSON.parse(localStorage.getItem(SAM_TRUCK_STORAGE) || '{}');
+          if (!assigns[samId]) {
+            assigns[samId] = autoVehicle[0];
+            localStorage.setItem(SAM_TRUCK_STORAGE, JSON.stringify(assigns));
+            samSetStatus('Driver linked + truck auto-assigned from live data.', 'ok');
+          } else {
+            samSetStatus('Driver link saved.', 'ok');
+          }
+        } else {
+          samSetStatus('Driver linked. No active vehicle found in Samsara yet — sync Vehicles to pull GPS.', 'ok');
+        }
+      } else {
+        // Vehicle stats not loaded — trigger a vehicle load to get GPS + auto-assign
+        samSetStatus('Driver linked. Fetching vehicle data for GPS...', 'ok');
+        samLoadVehicles().then(() => {
+          // After load, auto-assign if found
+          const autoVehicle = Object.entries(window._sam._vehicleStats || {})
+            .find(([vid, vstats]) => vstats.driver?.id === samId);
+          if (autoVehicle) {
+            const assigns = JSON.parse(localStorage.getItem(SAM_TRUCK_STORAGE) || '{}');
+            if (!assigns[samId]) {
+              assigns[samId] = autoVehicle[0];
+              localStorage.setItem(SAM_TRUCK_STORAGE, JSON.stringify(assigns));
+            }
+            samSetStatus('GPS activated for linked driver.', 'ok');
+            renderDispatchView();
+          }
+        }).catch(() => {});
+      }
+    } else {
+      samSetStatus('Driver unlinked.', 'ok');
+    }
+
+    // Keep both tabs in sync
     document.querySelectorAll('.sam-link-select[data-samid="' + samId + '"]').forEach(sel => {
       if (sel.value !== appId) sel.value = appId || '';
     });
-    // Re-render fuel tab if data is loaded (so Apply button + link label refreshes)
     if (window._sam.fuelData && window._sam.fuelData.length) {
       samRenderFuel(window._sam.fuelData);
     }
-    // Re-render drivers tab if loaded
     if (window._sam.drivers && window._sam.drivers.length) {
       samRenderDrivers();
     }
+    // Refresh dispatch view so LIVE badge / location updates immediately
+    if (appId) renderDispatchView();
   };
 
   // ── Load Vehicles ──
@@ -11376,6 +11440,25 @@ window.samSaveProxy = function() {
           window._sam._vehicleStats = statsMap;
         } catch(e) { /* locations endpoint optional */ }
       }
+
+      // Auto-assign trucks for any linked drivers that don't have a manual assignment
+      // Uses the driver decoration returned by /fleet/vehicles/stats
+      try {
+        const assigns = JSON.parse(localStorage.getItem(SAM_TRUCK_STORAGE) || '{}');
+        const links   = JSON.parse(localStorage.getItem(SAM_LINK_STORAGE) || '{}');
+        let changed = false;
+        Object.entries(statsMap).forEach(([vehicleId, vstats]) => {
+          const driverId = vstats.driver?.id;
+          if (driverId && links[driverId] && !assigns[driverId]) {
+            assigns[driverId] = vehicleId;
+            changed = true;
+          }
+        });
+        if (changed) {
+          localStorage.setItem(SAM_TRUCK_STORAGE, JSON.stringify(assigns));
+          renderDispatchView(); // refresh LIVE badges immediately
+        }
+      } catch(e) {}
 
       samRenderVehicles(statsMap);
       samSetStatus(`✅ Loaded ${vehicles.length} vehicles from Samsara`, 'ok');
@@ -11893,13 +11976,30 @@ window.samSaveProxy = function() {
       }
 
       // GPS: from vehicle stats via truck assignment
+      // Also auto-detect by driver decoration on vehicle (no manual truck assignment needed)
       let gpsCity = null;
-      const samVehicleId = truckAssigns[samId];
+      let samVehicleId = truckAssigns[samId];
+
+      // If no explicit assignment, try to find the vehicle currently assigned to this driver
+      // Samsara's /fleet/vehicles/stats with decorations=driver returns entry.driver.id
+      if (!samVehicleId && window._sam._vehicleStats) {
+        const autoVehicle = Object.entries(window._sam._vehicleStats)
+          .find(([vid, vstats]) => vstats.driver?.id === samId);
+        if (autoVehicle) {
+          samVehicleId = autoVehicle[0];
+          // Persist it so we don't have to scan every time
+          const assigns = JSON.parse(localStorage.getItem(SAM_TRUCK_STORAGE) || '{}');
+          if (!assigns[samId]) {
+            assigns[samId] = samVehicleId;
+            localStorage.setItem(SAM_TRUCK_STORAGE, JSON.stringify(assigns));
+          }
+        }
+      }
+
       if (samVehicleId && window._sam._vehicleStats) {
         const vstats = window._sam._vehicleStats[samVehicleId];
         if (vstats?.gps) {
           const g = vstats.gps;
-          // Try all known field paths Samsara uses
           gpsCity = g.formattedLocation
                  || g.reverseGeo?.formattedLocation
                  || g.name
@@ -12021,6 +12121,7 @@ window.samSaveProxy = function() {
     }
 
     // Load saved proxy URL
+    samCheckProxyBanner();
     const savedProxy = localStorage.getItem(SAM_PROXY_KEY) || '';
     const proxyInput = document.getElementById('samProxyUrl');
     const proxyStatus = document.getElementById('samProxyStatus');
