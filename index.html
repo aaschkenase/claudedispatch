@@ -822,6 +822,17 @@ select:focus {
   background-clip: text;
 }
 
+/* Load row upgrades */
+tr.load-row-main {
+  transition: background 0.15s;
+}
+tr.load-row-main:hover {
+  background: rgba(79,158,248,0.04) !important;
+}
+tr.load-row-main td {
+  position: relative;
+}
+
 /* Color classes for financial data */
 .positive {
   color: var(--success) !important;
@@ -1912,6 +1923,43 @@ td {
   </header>
 
   <div id="warn" class="warn-banner"></div>
+  <!-- Progress Ring — shown instead of warn banner when loads exist -->
+  <div id="progressRingWrap" style="display:none;margin-bottom:20px;padding:16px 20px;background:linear-gradient(135deg,var(--bg-elevated),var(--bg-secondary));border:1px solid var(--border-medium);border-radius:14px;box-shadow:var(--shadow-md);">
+    <div style="display:flex;align-items:center;gap:20px;">
+      <div style="position:relative;flex-shrink:0;">
+        <svg id="progressRingSvg" width="90" height="90">
+          <circle cx="45" cy="45" r="36" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="6"/>
+          <circle id="progressRingArc" cx="45" cy="45" r="36" fill="none" stroke="#4f9ef8" stroke-width="6"
+            stroke-dasharray="0 226" stroke-linecap="round" transform="rotate(-90 45 45)"
+            style="transition:stroke-dasharray 0.7s ease,stroke 0.4s ease;"/>
+        </svg>
+        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+          <div id="progressRingPct" style="font-size:18px;font-weight:900;color:#4f9ef8;line-height:1;">0%</div>
+          <div style="font-size:8px;color:var(--text-muted);font-weight:700;letter-spacing:0.5px;">TARGET</div>
+        </div>
+      </div>
+      <div style="flex:1;">
+        <div style="font-size:13px;font-weight:800;color:var(--text-primary);margin-bottom:8px;" id="progressRingTitle">Weekly Net Progress</div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <div style="display:flex;justify-content:space-between;font-size:12px;">
+            <span style="color:var(--text-muted);">Current Net</span>
+            <span id="progressRingCurrent" style="font-weight:700;color:var(--success);">$0</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;">
+            <span style="color:var(--text-muted);">Target</span>
+            <span id="progressRingTarget" style="font-weight:700;color:var(--text-secondary);">$0</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;">
+            <span style="color:var(--text-muted);">Gap</span>
+            <span id="progressRingGap" style="font-weight:700;color:var(--danger);">$0</span>
+          </div>
+        </div>
+        <div style="margin-top:8px;height:4px;background:rgba(255,255,255,0.06);border-radius:2px;overflow:hidden;">
+          <div id="progressRingBar" style="height:100%;width:0%;background:linear-gradient(90deg,#4f9ef8,#79c0ff);border-radius:2px;transition:width 0.7s ease;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- NAVIGATION -->
   <nav class="main-nav no-print">
@@ -2379,24 +2427,44 @@ td {
 
     <div class="stats-grid">
       <div class="stat-card">
-        <div class="stat-label">Weekly Gross</div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+          <div class="stat-label">Weekly Gross</div>
+          <canvas id="spark_gross" width="64" height="24" style="opacity:0.7;margin-top:2px;"></canvas>
+        </div>
         <div class="stat-value" id="wk_gross">$0.00</div>
+        <div id="delta_gross" style="font-size:10px;font-weight:700;margin-top:4px;color:var(--text-muted);"></div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Weekly Miles</div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+          <div class="stat-label">Weekly Miles</div>
+          <canvas id="spark_miles" width="64" height="24" style="opacity:0.7;margin-top:2px;"></canvas>
+        </div>
         <div class="stat-value" id="wk_miles">0</div>
+        <div id="delta_miles" style="font-size:10px;font-weight:700;margin-top:4px;color:var(--text-muted);"></div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Net Profit</div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+          <div class="stat-label">Net Profit</div>
+          <canvas id="spark_net" width="64" height="24" style="opacity:0.7;margin-top:2px;"></canvas>
+        </div>
         <div class="stat-value positive" id="wk_profit">$0.00</div>
+        <div id="delta_net" style="font-size:10px;font-weight:700;margin-top:4px;color:var(--text-muted);"></div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Avg RPM (Gross)</div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+          <div class="stat-label">Avg RPM (Gross)</div>
+          <canvas id="spark_rpm" width="64" height="24" style="opacity:0.7;margin-top:2px;"></canvas>
+        </div>
         <div class="stat-value" id="wk_rpm">$0.00</div>
+        <div id="delta_rpm" style="font-size:10px;font-weight:700;margin-top:4px;color:var(--text-muted);"></div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Break-even RPM</div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+          <div class="stat-label">Break-even RPM</div>
+          <canvas id="spark_be" width="64" height="24" style="opacity:0.7;margin-top:2px;"></canvas>
+        </div>
         <div class="stat-value" id="wk_be_rpm">$0.00</div>
+        <div id="delta_be" style="font-size:10px;font-weight:700;margin-top:4px;color:var(--text-muted);"></div>
       </div>
     </div>
     
@@ -6461,20 +6529,59 @@ function preview(){
   analyzeLoad();
 }
 
+function toggleLoadDetailRow(rowId, idx) {
+  const row = document.getElementById(rowId);
+  if (!row) return;
+  const isOpen = row.style.display !== 'none';
+  row.style.display = isOpen ? 'none' : 'table-row';
+}
+
 function updateWarnBanner(){
   const driver = getDriver();
   const targetNet = getDriverTargetNet(driver);
   const wk = getCurrentWeek();
   const t = computeWeekTotals(wk, driver);
   const warn = document.getElementById("warn");
-  
-  if (wk.loads.length > 0 && t.net < targetNet) {
-    const gap = targetNet - t.net;
-    warn.style.display = "block";
-    warn.innerHTML = `⚠️ Target not met for <b>${escapeHtml(driver.name)}</b>: goal <b>${money(targetNet)}</b> • currently <b>${money(t.net)}</b> • gap <b>${money(gap)}</b>.`;
-  } else {
+  const ringWrap = document.getElementById("progressRingWrap");
+
+  if (wk.loads.length > 0 && targetNet > 0) {
+    // Hide old banner, show progress ring
     warn.style.display = "none";
     warn.innerHTML = "";
+    if (ringWrap) {
+      ringWrap.style.display = "block";
+      const pct = Math.min(Math.round((t.net / targetNet) * 100), 100);
+      const gap = targetNet - t.net;
+      const color = pct >= 100 ? "#3fb950" : pct >= 70 ? "#e3b341" : "#ff4455";
+      const circ = 2 * Math.PI * 36;
+      const dash = (Math.max(0, pct) / 100) * circ;
+
+      const arc = document.getElementById("progressRingArc");
+      if (arc) { arc.setAttribute("stroke-dasharray", `${dash.toFixed(1)} ${circ.toFixed(1)}`); arc.setAttribute("stroke", color); }
+
+      const pctEl = document.getElementById("progressRingPct");
+      if (pctEl) { pctEl.textContent = pct + "%"; pctEl.style.color = color; }
+
+      const titleEl = document.getElementById("progressRingTitle");
+      if (titleEl) titleEl.textContent = pct >= 100 ? "✅ Target Reached!" : "Weekly Net Progress";
+
+      const currEl = document.getElementById("progressRingCurrent");
+      if (currEl) { currEl.textContent = money(t.net); currEl.style.color = t.net >= 0 ? "var(--success)" : "var(--danger)"; }
+
+      const tgtEl = document.getElementById("progressRingTarget");
+      if (tgtEl) tgtEl.textContent = money(targetNet);
+
+      const gapEl = document.getElementById("progressRingGap");
+      if (gapEl) { gapEl.textContent = gap > 0 ? money(gap) : "Exceeded by " + money(-gap); gapEl.style.color = gap > 0 ? "var(--danger)" : "var(--success)"; }
+
+      const bar = document.getElementById("progressRingBar");
+      if (bar) { bar.style.width = pct + "%"; bar.style.background = `linear-gradient(90deg,${color},${color}88)`; }
+    }
+  } else {
+    // No loads or no target — hide both
+    warn.style.display = "none";
+    warn.innerHTML = "";
+    if (ringWrap) ringWrap.style.display = "none";
   }
 }
 
@@ -8167,6 +8274,75 @@ function updateUI(){
   const wkBreakEvenGross = isCoDriver ? wkCosts : (split>0 ? (wkCosts / split) : 0);
   const wkBERpm = totals.miles>0 ? (wkBreakEvenGross / totals.miles) : 0;
   document.getElementById('wk_be_rpm').innerText = money(wkBERpm);
+
+  // ── Upgrade 1: Sparklines + week-over-week deltas ──
+  (function() {
+    try {
+      // Collect last 6 weeks of data for sparklines
+      const weekIds = Object.keys(d.weeks || {}).sort().slice(-6);
+      const history = weekIds.map(id => {
+        const w = d.weeks[id];
+        const t2 = computeWeekTotals(w, d);
+        const r2 = t2.miles > 0 ? t2.gross / t2.miles : 0;
+        const be2 = t2.miles > 0 ? (t2.gross > 0 ? (t2.gross - t2.net) / t2.miles : 0) : 0;
+        return { gross: t2.gross, miles: t2.miles, net: t2.net, rpm: r2, be: be2 };
+      });
+      if (history.length < 2) return;
+
+      function drawSparkline(canvasId, data, color) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const w = canvas.width, h = canvas.height;
+        ctx.clearRect(0, 0, w, h);
+        const min = Math.min(...data), max = Math.max(...data);
+        const range = max - min || 1;
+        const pts = data.map((v, i) => ({
+          x: (i / (data.length - 1)) * (w - 4) + 2,
+          y: h - ((v - min) / range) * (h - 6) - 3
+        }));
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        pts.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        ctx.stroke();
+        // Dot at last point
+        const last = pts[pts.length - 1];
+        ctx.beginPath();
+        ctx.arc(last.x, last.y, 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+      }
+
+      function setDelta(elId, curr, prev, isMoney) {
+        const el = document.getElementById(elId);
+        if (!el || prev === 0) return;
+        const pct = ((curr - prev) / Math.abs(prev)) * 100;
+        const up = pct >= 0;
+        const arrow = up ? '↑' : '↓';
+        const col = up ? '#3fb950' : '#ff4455';
+        el.innerHTML = `<span style="color:${col}">${arrow} ${Math.abs(pct).toFixed(1)}% vs last wk</span>`;
+      }
+
+      const prev = history[history.length - 2];
+      const curr = history[history.length - 1];
+
+      drawSparkline('spark_gross', history.map(h => h.gross), '#4f9ef8');
+      drawSparkline('spark_miles', history.map(h => h.miles), '#79c0ff');
+      drawSparkline('spark_net',   history.map(h => h.net),   '#3fb950');
+      drawSparkline('spark_rpm',   history.map(h => h.rpm),   '#e3b341');
+      drawSparkline('spark_be',    history.map(h => h.be),    '#ff6b6b');
+
+      setDelta('delta_gross', curr.gross, prev.gross, true);
+      setDelta('delta_miles', curr.miles, prev.miles, false);
+      setDelta('delta_net',   curr.net,   prev.net,   true);
+      setDelta('delta_rpm',   curr.rpm,   prev.rpm,   false);
+      setDelta('delta_be',    curr.be,    prev.be,    false);
+    } catch(e) { /* sparklines are best-effort */ }
+  })();
   
   // Company driver breakdown panel
   const coStatsEl = document.getElementById('companyDriverStats');
@@ -8223,28 +8399,59 @@ function updateUI(){
       ? `<span style="display:inline-block;background:rgba(255,184,0,0.2);color:var(--warning);padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;margin-left:8px;cursor:pointer;" onclick="event.stopPropagation();toggleLoadStatus(${i})" title="Click to confirm">📋 Planned</span>`
       : '';
     
-    return `
-      <tr style="${l.deliversNextWeek ? 'opacity: 0.7;' : ''}${l.status === 'planned' ? 'border-left: 3px solid var(--warning);' : ''}">
-        <td style="font-weight:700;font-size:13px;">
-          ${escapeHtml(l.origin)} 
-          <span style="color:var(--accent-cyan)">➜</span> 
-          ${escapeHtml(l.dest)}
-          ${multiStopBadge}
-          ${crossWeekBadge}
-          ${prevWeekBadge}
-          ${statusBadge}
-          ${dayInfo}
-        </td>
-        <td>${Number(l.miles||0).toLocaleString()}</td>
-        <td class="positive">${money(l.gross)}</td>
-        <td class="${(l.net||0)>=0?'positive':'negative'}">${money(l.net)}${isCoDriver && loadDriverPay > 0 ? '<div style="font-size:10px;color:var(--text-muted);font-weight:400;">DrvPay: ' + money(loadDriverPay) + '</div>' : (isCoDriver && d.companyPayType === 'weekly' ? '<div style="font-size:10px;color:var(--text-muted);font-weight:400;">before salary</div>' : '')}</td>
-        <td>${money(grossRpm)}</td>
-        <td>
-          <button class="action-btn" onclick="viewDetail(${i})">Detail</button>
-          <button class="action-btn delete" onclick="delLoad(${i})">X</button>
-        </td>
-      </tr>
-    `;
+    // ── Upgrade 2+4: RPM heatmap color + richer row ──
+    const s_be = getSpecs();
+    const _driver = getDriver();
+    const beRpmLoad = (() => {
+      try {
+        const calcBE = calcLoadNet(_driver, s_be, { gross: l.gross, miles: l.miles||0, tolls: l.tolls||0, detention: l.det||0, accessorials: 0 });
+        const totalC = calcBE.fuel + calcBE.maint + calcBE.fixed + (calcBE.tolls||0) + (calcBE.driverPay||0);
+        return (l.miles||0) > 0 ? totalC / l.miles : 0;
+      } catch(e) { return 0; }
+    })();
+    const rpmVsBE = beRpmLoad > 0 ? (grossRpm / beRpmLoad) : (grossRpm > 1.5 ? 2 : 0);
+    const rpmHeat = rpmVsBE >= 1.25 ? '#3fb950' : rpmVsBE >= 1.0 ? '#e3b341' : '#ff4455';
+    const rpmLabel = rpmVsBE >= 1.25 ? '🟢' : rpmVsBE >= 1.0 ? '🟡' : '🔴';
+    const margin = l.gross > 0 ? Math.max(0, (l.net||0) / l.gross) : 0;
+    const marginPct = (margin * 100).toFixed(0);
+
+    const detailRowId = 'loadDetailRow_' + i;
+
+    return (
+      '<tr class="load-row-main" style="' + (l.deliversNextWeek ? 'opacity:0.75;' : '') + 'border-left:3px solid ' + (l.status==='planned'?'var(--warning)':rpmHeat) + ';cursor:pointer;" onclick="toggleLoadDetailRow(\'' + detailRowId + '\', ' + i + ')">' +
+        '<td style="font-weight:700;font-size:13px;">' +
+          escapeHtml(l.origin) + ' <span style="color:var(--accent-cyan)">➜</span> ' + escapeHtml(l.dest) +
+          multiStopBadge + crossWeekBadge + prevWeekBadge + statusBadge + dayInfo +
+        '</td>' +
+        '<td>' + Number(l.miles||0).toLocaleString() + '</td>' +
+        '<td class="positive">' + money(l.gross) + '</td>' +
+        '<td class="' + ((l.net||0)>=0?'positive':'negative') + '">' + money(l.net) +
+          (isCoDriver && loadDriverPay > 0 ? '<div style="font-size:10px;color:var(--text-muted);font-weight:400;">DrvPay: ' + money(loadDriverPay) + '</div>' :
+           (isCoDriver && d.companyPayType === 'weekly' ? '<div style="font-size:10px;color:var(--text-muted);font-weight:400;">before salary</div>' : '')) +
+        '</td>' +
+        '<td><span style="display:inline-flex;align-items:center;gap:4px;background:' + rpmHeat + '18;border:1px solid ' + rpmHeat + '44;border-radius:6px;padding:2px 7px;font-size:11px;font-weight:800;color:' + rpmHeat + ';">' + rpmLabel + ' ' + money(grossRpm) + '</span></td>' +
+        '<td onclick="event.stopPropagation();">' +
+          '<button class="action-btn" onclick="viewDetail(' + i + ')">Detail</button>' +
+          '<button class="action-btn delete" onclick="delLoad(' + i + ')">✕</button>' +
+        '</td>' +
+      '</tr>' +
+      '<tr id="' + detailRowId + '" style="display:none;">' +
+        '<td colspan="6" style="padding:0;">' +
+          '<div style="padding:10px 16px 12px;background:rgba(255,255,255,0.02);border-bottom:1px solid rgba(255,255,255,0.06);">' +
+            '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:12px;margin-bottom:10px;">' +
+              '<div style="text-align:center;"><div style="font-size:10px;color:var(--text-muted);margin-bottom:2px;">Net</div><div style="font-size:16px;font-weight:800;color:' + ((l.net||0)>=0?'var(--success)':'var(--danger)') + ';">' + money(l.net||0) + '</div></div>' +
+              '<div style="text-align:center;"><div style="font-size:10px;color:var(--text-muted);margin-bottom:2px;">Margin</div><div style="font-size:16px;font-weight:800;color:var(--warning);">' + marginPct + '%</div></div>' +
+              '<div style="text-align:center;"><div style="font-size:10px;color:var(--text-muted);margin-bottom:2px;">Net/mi</div><div style="font-size:16px;font-weight:800;color:var(--accent-blue);">' + (l.miles>0?money((l.net||0)/l.miles):'—') + '</div></div>' +
+              '<div style="text-align:center;"><div style="font-size:10px;color:var(--text-muted);margin-bottom:2px;">RPM vs BE</div><div style="font-size:16px;font-weight:800;color:' + rpmHeat + ';">' + rpmLabel + ' ' + (beRpmLoad>0?(rpmVsBE*100).toFixed(0)+'%':'—') + '</div></div>' +
+            '</div>' +
+            '<div style="height:4px;background:rgba(255,255,255,0.05);border-radius:2px;overflow:hidden;">' +
+              '<div style="height:100%;width:' + Math.min(marginPct,100) + '%;background:linear-gradient(90deg,' + rpmHeat + ',' + rpmHeat + '88);border-radius:2px;"></div>' +
+            '</div>' +
+            '<div style="font-size:10px;color:var(--text-muted);margin-top:4px;">Profit margin bar — ' + marginPct + '% net margin</div>' +
+          '</div>' +
+        '</td>' +
+      '</tr>'
+    );
   }).join("") + incomingCrossWeek.map(l => {
     const grossRpm = l.miles>0 ? l.gross/l.miles : 0;
     const loadDriverPay = toNum(l.details?.driverPay);
