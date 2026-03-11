@@ -44,6 +44,78 @@
   --shadow-glow:   0 0 20px rgba(79,158,248,0.2);
 }
 
+/* ── Light Mode Theme ── */
+[data-theme="light"] {
+  --bg-primary:    #f4f6f9;
+  --bg-secondary:  #eceef2;
+  --bg-elevated:   #ffffff;
+  --chrome-light:  #1e293b;
+  --chrome-dark:   #334155;
+  --chrome-accent: #475569;
+  --accent-blue:   #1a6ef5;
+  --accent-cyan:   #0891b2;
+  --success:       #16a34a;
+  --warning:       #b45309;
+  --danger:        #dc2626;
+  --border-subtle: rgba(0,0,0,0.06);
+  --border-medium: rgba(0,0,0,0.11);
+  --glow-blue:     rgba(26,110,245,0.15);
+  --glow-cyan:     rgba(8,145,178,0.12);
+  --text-primary:  #0f172a;
+  --text-secondary:#334155;
+  --text-muted:    #64748b;
+  --shadow-sm:     0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.05);
+  --shadow-md:     0 4px 12px rgba(0,0,0,0.09), 0 2px 4px rgba(0,0,0,0.05);
+  --shadow-lg:     0 8px 24px rgba(0,0,0,0.11), 0 4px 8px rgba(0,0,0,0.06);
+  --shadow-glow:   0 0 16px rgba(26,110,245,0.12);
+}
+
+/* Light mode overrides for components that use hard-coded dark colors */
+[data-theme="light"] .main-nav {
+  background: #ffffff;
+  border-color: rgba(0,0,0,0.10);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+}
+[data-theme="light"] .nav-tab:hover {
+  background: rgba(0,0,0,0.04);
+  color: var(--text-primary);
+}
+[data-theme="light"] .nav-tab.active {
+  background: linear-gradient(135deg, #1a6ef5 0%, #0891b2 100%);
+  color: #ffffff;
+  box-shadow: 0 4px 14px rgba(26,110,245,0.28);
+}
+[data-theme="light"] header {
+  background: #ffffff;
+  border-bottom: 1px solid rgba(0,0,0,0.10);
+}
+[data-theme="light"] .stat-card,
+[data-theme="light"] .load-card,
+[data-theme="light"] .week-summary-card,
+[data-theme="light"] .driver-card,
+[data-theme="light"] .analytics-card,
+[data-theme="light"] .settings-pane,
+[data-theme="light"] .ls-week-card,
+[data-theme="light"] .city-ac-dropdown {
+  background: #ffffff;
+  border-color: rgba(0,0,0,0.11);
+}
+[data-theme="light"] .stat-value { color: var(--text-primary); }
+[data-theme="light"] input,
+[data-theme="light"] select,
+[data-theme="light"] textarea,
+[data-theme="light"] .s-field-input,
+[data-theme="light"] .ls-input {
+  background: #f4f6f9;
+  border-color: rgba(0,0,0,0.13);
+  color: var(--text-primary);
+}
+[data-theme="light"] input::placeholder,
+[data-theme="light"] select::placeholder { color: #94a3b8; }
+[data-theme="light"] .city-ac-item:hover,
+[data-theme="light"] .city-ac-item.active { background: #eff6ff; }
+[data-theme="light"] .city-ac-main { color: #1a6ef5; }
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -1852,6 +1924,10 @@ td {
     <button class="nav-tab" onclick="showTab('samsara', this)" style="background:rgba(79,158,248,0.08);border:1px solid rgba(79,158,248,0.2);color:var(--success);">🛰️ Samsara</button>
     <button class="nav-tab" onclick="showTab('lanesim', this)" style="background:rgba(167,139,250,0.08);border:1px solid rgba(167,139,250,0.2);color:#a78bfa;">📐 Lane Sim</button>
     <button class="nav-tab fleet-btn" onclick="openFleetModal()">🚛 Fleet Overview</button>
+    <button id="themeToggleBtn" onclick="toggleTheme()" title="Toggle light/dark mode"
+      style="margin-left:auto;padding:8px 14px;background:transparent;border:1px solid var(--border-medium);border-radius:10px;color:var(--text-muted);font-size:16px;cursor:pointer;transition:all 0.2s;flex-shrink:0;"
+      onmouseover="this.style.background='rgba(255,255,255,0.06)';this.style.color='var(--text-primary)'"
+      onmouseout="this.style.background='transparent';this.style.color='var(--text-muted)'">🌙</button>
   </nav>
 
   <!-- ═══════════════════════════════════════════════════
@@ -2422,15 +2498,17 @@ td {
             </div>
 
             <!-- MULTI-STOP SECTION -->
-            <div id="multiStopSection" style="display: none; margin: 16px 0; padding: 16px; background: rgba(79,158,248,0.04); border: 1px solid var(--border-medium); border-radius: 10px;">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                <div style="font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-primary);">
-                  🚛 Additional Stops
-                </div>
+            <div id="multiStopSection" style="display: none; margin: 16px 0; padding: 16px; background: rgba(79,158,248,0.05); border: 1px solid rgba(79,158,248,0.25); border-radius: 12px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <div style="font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: var(--accent-blue);">🚛 Multi-Stop Route Builder</div>
                 <button onclick="closeMultiStop()" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 18px; padding: 4px 8px;">✕</button>
               </div>
+              <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 12px;">Stops are added between Origin and Destination in order</div>
               <div id="stopsList"></div>
-              <button class="btn-tool" onclick="addStop()" style="margin-top: 8px;">➕ Add Another Stop</button>
+              <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+                <button class="btn-tool" onclick="addStop()" style="flex:1;min-width:140px;">➕ Add Stop</button>
+                <button class="btn-tool" id="multiStopGetMilesBtn" onclick="calcMultiStopRoute()" style="flex:1;min-width:140px;background:rgba(79,158,248,0.15);border-color:rgba(79,158,248,0.4);color:var(--accent-blue);font-weight:800;">📡 Get Miles (All Stops)</button>
+              </div>
             </div>
 
             <button class="btn-tool" onclick="openMultiStop()" id="multiStopBtn" style="margin-bottom: 12px;">🚛 Multi-Stop Load</button>
@@ -2479,10 +2557,16 @@ td {
               </div>
             </div>
 
-            <div class="preview-box">
-              <div class="preview-label">Trip Net Preview</div>
-              <div class="preview-value" id="preview_net">$0.00</div>
-              <div class="preview-hint" id="preview_hint"></div>
+            <div class="preview-box" id="previewBox" onclick="togglePreviewBreakdown()" style="cursor:pointer;text-align:left;">
+              <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
+                <div style="flex:1;">
+                  <div class="preview-label">Trip Net Preview</div>
+                  <div class="preview-value" id="preview_net" style="text-align:left;">$0.00</div>
+                  <div class="preview-hint" id="preview_hint"></div>
+                </div>
+                <div id="previewBreakdownToggle" style="font-size:10px;color:var(--accent-blue);font-weight:800;letter-spacing:0.5px;background:rgba(79,158,248,0.1);border:1px solid rgba(79,158,248,0.25);border-radius:6px;padding:4px 8px;white-space:nowrap;margin-top:4px;flex-shrink:0;">▼ BREAKDOWN</div>
+              </div>
+              <div id="previewBreakdown" style="display:none;margin-top:12px;border-top:1px solid rgba(255,255,255,0.07);padding-top:12px;"></div>
               <div id="dh_cost_display" style="display:none; margin-top:8px; padding:8px 12px; background:rgba(255,51,102,0.06); border:1px solid rgba(255,51,102,0.15); border-radius:8px; font-size:12px; color:var(--text-secondary);"></div>
             </div>
 
@@ -2979,6 +3063,29 @@ td {
           <div><span class="s-field-label">Default Split % (0.80)</span><input id="s_split" type="number" inputmode="decimal" min="0" max="1" step="0.01" class="s-field-input"></div>
           <div><span class="s-field-label">Default Target Net / Week</span><input id="s_target_net" type="number" inputmode="decimal" min="0" step="0.01" class="s-field-input"></div>
         </div>
+        <!-- EIA Diesel Price -->
+        <div style="background:rgba(103,232,249,0.04);border:1px solid rgba(103,232,249,0.15);border-radius:10px;padding:14px 16px;margin-bottom:14px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+            <div>
+              <div style="font-size:12px;font-weight:800;color:var(--accent-cyan);margin-bottom:2px;">⛽ EIA National Diesel Price</div>
+              <div id="eia_status" style="font-size:11px;color:var(--text-muted);">Click Fetch — no key required</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+              <div id="eia_price_badge" style="display:none;font-size:18px;font-weight:900;color:var(--accent-cyan);">$0.000</div>
+              <button onclick="eiaFetchNow()" style="padding:7px 14px;background:rgba(103,232,249,0.12);border:1px solid rgba(103,232,249,0.3);border-radius:7px;color:var(--accent-cyan);font-weight:700;font-size:12px;cursor:pointer;">🔄 Fetch Now</button>
+              <button onclick="eiaApplyToSettings()" id="eia_apply_btn" style="display:none;padding:7px 14px;background:rgba(103,232,249,0.2);border:1px solid rgba(103,232,249,0.4);border-radius:7px;color:#fff;font-weight:700;font-size:12px;cursor:pointer;">✅ Apply to Fuel Price</button>
+            </div>
+          </div>
+          <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <input type="text" id="eia_api_key" placeholder="Optional: EIA API key for higher rate limits" autocomplete="off"
+              style="flex:1;min-width:220px;background:var(--bg-primary);border:1px solid var(--border-medium);border-radius:7px;padding:7px 10px;color:var(--text-primary);font-size:12px;font-family:monospace;">
+            <button onclick="eiaSaveKey()" style="padding:7px 12px;background:var(--bg-primary);border:1px solid var(--border-medium);border-radius:7px;color:var(--text-muted);font-weight:700;font-size:11px;cursor:pointer;">Save Key</button>
+          </div>
+          <div style="margin-top:6px;font-size:10px;color:var(--text-muted);">
+            Works without a key · Optional free key at <a href="https://www.eia.gov/opendata/register.php" target="_blank" style="color:var(--accent-cyan);text-decoration:none;">eia.gov/opendata/register.php</a> · Weekly on-highway diesel, national avg
+          </div>
+        </div>
+
         <div class="s-field-row cols3">
           <div><span class="s-field-label">Fuel Price ($/gal)</span><input id="s_fuel" type="number" inputmode="decimal" min="0" step="0.01" class="s-field-input"></div>
           <div><span class="s-field-label">MPG</span><input id="s_mpg" type="number" inputmode="decimal" min="0.1" step="0.1" class="s-field-input"></div>
@@ -4164,6 +4271,29 @@ function calcLoadNet(driver, specs, { gross, miles, tolls, detention, accessoria
 /************************* 
  * NAV 
  *************************/
+// ── Theme toggle ──
+(function() {
+  var THEME_KEY = 'tag_trans_theme_v1';
+
+  function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    var btn = document.getElementById('themeToggleBtn');
+    if (btn) btn.textContent = theme === 'light' ? '🌙' : '☀️';
+    localStorage.setItem(THEME_KEY, theme);
+  }
+
+  window.toggleTheme = function() {
+    var current = document.documentElement.getAttribute('data-theme') || 'dark';
+    applyTheme(current === 'light' ? 'dark' : 'light');
+  };
+
+  // Apply saved preference immediately on load (before paint)
+  (function() {
+    var saved = localStorage.getItem(THEME_KEY) || 'dark';
+    applyTheme(saved);
+  })();
+})();
+
 function showTab(id, btn){
   document.querySelectorAll('.tab-content').forEach(d=>d.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(b=>b.classList.remove('active'));
@@ -6178,81 +6308,155 @@ function analyzeLoad(){
   }
 }
 
+// Track whether breakdown is open
+var _previewBreakdownOpen = false;
+
+function togglePreviewBreakdown() {
+  _previewBreakdownOpen = !_previewBreakdownOpen;
+  const bd = document.getElementById('previewBreakdown');
+  const tog = document.getElementById('previewBreakdownToggle');
+  if (bd) bd.style.display = _previewBreakdownOpen ? 'block' : 'none';
+  if (tog) tog.textContent = _previewBreakdownOpen ? '▲ HIDE' : '▼ BREAKDOWN';
+  if (_previewBreakdownOpen) preview(); // re-render breakdown content
+}
+
 function preview(){
   const s = getSpecs();
   const driver = getDriver();
   const split = getDriverSplit(driver);
   const isCompany = driver.driverType === 'company';
-  
-  const gross = parseFloat(document.getElementById('pay_gross').value) || 0;
-  const miles = (parseFloat(document.getElementById('mi_load').value)||0) 
-    + (parseFloat(document.getElementById('mi_dh').value)||0);
-  const tolls = parseFloat(document.getElementById('cost_tolls').value) || 0;
-  const detention = parseFloat(document.getElementById('cost_detention').value) || 0;
-  const accessorials = parseFloat(document.getElementById('cost_accessorials').value) || 0;
-  
+
+  const gross       = parseFloat(document.getElementById('pay_gross').value) || 0;
+  const loadedMiles = parseFloat(document.getElementById('mi_load').value) || 0;
+  const dhMiles     = parseFloat(document.getElementById('mi_dh').value) || 0;
+  const miles       = loadedMiles + dhMiles;
+  const tolls       = parseFloat(document.getElementById('cost_tolls').value) || 0;
+  const detention   = parseFloat(document.getElementById('cost_detention').value) || 0;
+  const accessorials= parseFloat(document.getElementById('cost_accessorials').value) || 0;
+
   // Central net calculation
   const calc = calcLoadNet(driver, s, { gross, miles, tolls, detention, accessorials });
-  const net = calc.net;
+  const net  = calc.net;
   const fuel = calc.fuel;
-  const maint = calc.maint;
-  const fixed = calc.fixed;
-  
+  const maint= calc.maint;
+  const fixed= calc.fixed;
+
+  // ── Big number display ──
   const el = document.getElementById('preview_net');
   el.innerText = money(net);
   el.className = 'preview-value ' + (net >= 0 ? 'positive' : 'negative');
-  
-  const grossRpm = miles>0 ? gross/miles : 0;
-  // Break-even: for company driver, include driver pay in costs
+  el.style.textAlign = 'left';
+
+  // ── Hint line (RPM / split info) ──
+  const grossRpm   = miles > 0 ? gross / miles : 0;
+  const netRpm     = miles > 0 ? net  / miles : 0;
   const totalCosts = fuel + maint + fixed + tolls + (calc.driverPay || 0);
-  const beGross = miles>0 ? totalCosts : 0;
-  const beRpm = miles>0 ? (beGross/miles) : 0;
-  
+  const beRpm      = miles > 0 ? totalCosts / miles : 0;
+
   if (isCompany) {
-    let payLabel, payInfo;
-    if (driver.companyPayType === 'cpm') {
-      payLabel = `${toNum(driver.companyPayRate).toFixed(2)}/mi`;
-      payInfo = `Driver Pay: ${money(calc.driverPay)}`;
-    } else if (driver.companyPayType === 'per_load') {
-      payLabel = `$${toNum(driver.companyPayRate)}/load`;
-      payInfo = `Driver Pay: ${money(calc.driverPay)}`;
-    } else {
-      payLabel = `$${toNum(driver.companyPayRate)}/wk salary`;
-      payInfo = `Salary: ${money(toNum(driver.companyPayRate))}/wk (flat)`;
+    let payLabel = '';
+    if (driver.companyPayType === 'cpm')       payLabel = `${toNum(driver.companyPayRate).toFixed(2)}¢/mi`;
+    else if (driver.companyPayType === 'per_load') payLabel = `$${toNum(driver.companyPayRate)}/load`;
+    else                                            payLabel = `$${toNum(driver.companyPayRate)}/wk salary`;
+    document.getElementById('preview_hint').innerText = miles > 0
+      ? `Co. Driver (${payLabel}) · Gross ${money(grossRpm)}/mi · Net ${money(netRpm)}/mi · BE ${money(beRpm)}/mi`
+      : '';
+  } else {
+    document.getElementById('preview_hint').innerText = miles > 0
+      ? `${(split*100).toFixed(0)}% split · Gross ${money(grossRpm)}/mi · Net ${money(netRpm)}/mi · BE ${money(beRpm)}/mi`
+      : '';
+  }
+
+  // ── Deadhead cost display (keep existing element hidden; info is in breakdown now) ──
+  document.getElementById('dh_cost_display').style.display = 'none';
+
+  // ── Breakdown panel ──
+  if (_previewBreakdownOpen) {
+    const totalRevenue = gross + detention + accessorials;
+    const dhFuelCost   = dhMiles > 0 ? (dhMiles / (s.mpg||6.5)) * s.fuel : 0;
+    const dhMaintCost  = dhMiles > 0 ? dhMiles * s.maint : 0;
+    const dhTotalCost  = dhFuelCost + dhMaintCost;
+
+    function brow(icon, label, val, color, opts) {
+      opts = opts || {};
+      const indent  = opts.indent  ? 'padding-left:16px;' : '';
+      const sz      = opts.indent  ? '11px' : '12.5px';
+      const fw      = opts.bold    ? '800'  : '600';
+      const sepLine = opts.sep     ? '<div style="height:1px;background:rgba(255,255,255,0.06);margin:5px 0;"></div>' : '';
+      return `${sepLine}<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;${indent}">
+        <span style="font-size:${sz};color:#8b949e;">${icon ? icon + ' ' : ''}${escapeHtml(label)}</span>
+        <span style="font-size:${sz};font-weight:${fw};color:${color};font-family:'DM Mono',monospace;">${val}</span>
+      </div>`;
     }
-    document.getElementById('preview_hint').innerText = miles>0 
-      ? `Co. Driver (${payLabel}) • ${payInfo} • Gross RPM: ${money(grossRpm)} • BE RPM: ${money(beRpm)}`
-      : "";
-  } else {
-    document.getElementById('preview_hint').innerText = miles>0 
-      ? `Split: ${(split*100).toFixed(0)}% • Gross RPM: ${money(grossRpm)} • Break-even RPM: ${money(beRpm)}`
-      : "";
+
+    function sectionHeader(label, color) {
+      return `<div style="font-size:10px;text-transform:uppercase;letter-spacing:1.2px;color:${color};font-weight:800;margin:10px 0 4px;">${label}</div>`;
+    }
+
+    let html = '';
+
+    // ── Revenue ──
+    html += sectionHeader('Revenue', 'var(--accent-blue)');
+    html += brow('💵', 'Gross Pay', `+${money(gross)}`, 'var(--chrome-light)', { bold: true });
+    if (detention > 0)    html += brow('⏱️', 'Detention',    `+${money(detention)}`,    '#cdd9e5', { indent: true });
+    if (accessorials > 0) html += brow('➕', 'Accessorials', `+${money(accessorials)}`, '#cdd9e5', { indent: true });
+    if (detention > 0 || accessorials > 0)
+      html += brow('', 'Total Revenue', `+${money(totalRevenue)}`, 'var(--accent-cyan)', { bold: true, sep: true });
+
+    // ── Cut / Driver pay ──
+    if (!isCompany) {
+      html += sectionHeader(`Your Cut (${(split*100).toFixed(0)}% split)`, 'var(--warning)');
+      html += brow('✂️', `${(split*100).toFixed(0)}% of ${money(totalRevenue)}`, `+${money(calc.cut)}`, 'var(--warning)', { bold: true });
+    } else {
+      html += sectionHeader('Driver Cost', 'var(--warning)');
+      if (driver.companyPayType === 'cpm') {
+        html += brow('👤', `Driver Pay (${toNum(driver.companyPayRate).toFixed(2)}¢/mi × ${loadedMiles} mi)`, `-${money(calc.driverPay)}`, 'var(--warning)', { bold: true });
+      } else if (driver.companyPayType === 'per_load') {
+        html += brow('👤', `Driver Pay ($${toNum(driver.companyPayRate)}/load)`, `-${money(calc.driverPay)}`, 'var(--warning)', { bold: true });
+      } else {
+        html += brow('👤', 'Driver Pay (weekly salary — flat)', `−`, 'var(--warning)', { bold: true });
+      }
+    }
+
+    // ── Operating costs ──
+    html += sectionHeader('Operating Costs', 'var(--danger)');
+    const fuelFormula = `${miles} mi ÷ ${(s.mpg||6.5).toFixed(1)} mpg × $${(s.fuel||0).toFixed(2)}/gal`;
+    html += brow('⛽', `Fuel (${fuelFormula})`, `-${money(fuel)}`, '#ff6b6b', { bold: true });
+    if (dhMiles > 0)
+      html += brow('', `↳ DH portion (${dhMiles} empty mi)`, `-${money(dhFuelCost)}`, '#6e8ea0', { indent: true });
+    html += brow('🔧', `Maintenance ($${(s.maint||0).toFixed(3)}/mi × ${miles} mi)`, `-${money(maint)}`, '#ff6b6b', { bold: true });
+    html += brow('📋', 'Fixed Costs (per load share)', `-${money(fixed)}`, '#ff6b6b', { bold: true });
+    if (calc.tolls > 0)
+      html += brow('🛣️', 'Tolls', `-${money(calc.tolls)}`, '#ff6b6b', { bold: true });
+
+    const totalCostDisplay = fuel + maint + fixed + calc.tolls + (isCompany ? calc.driverPay : 0);
+    html += brow('', 'Total Costs', `-${money(totalCostDisplay)}`, 'var(--danger)', { bold: true, sep: true });
+
+    // ── Net result ──
+    const netBg    = net >= 0 ? 'rgba(63,185,80,0.08)'  : 'rgba(255,68,85,0.08)';
+    const netBorder= net >= 0 ? 'rgba(63,185,80,0.25)'  : 'rgba(255,68,85,0.25)';
+    const netLabel = net >= 0 ? '✅ Trip Net'            : '⚠️ Trip Net';
+    html += `<div style="margin-top:10px;padding:10px 14px;background:${netBg};border:1px solid ${netBorder};border-radius:10px;display:flex;justify-content:space-between;align-items:center;">
+      <span style="font-size:13px;font-weight:800;color:var(--chrome-light);">${netLabel}</span>
+      <span style="font-size:20px;font-weight:900;color:${net>=0?'var(--success)':'var(--danger)'};font-family:'DM Mono',monospace;">${money(net)}</span>
+    </div>`;
+
+    // DH callout if applicable
+    if (dhMiles > 0) {
+      const dhPct = gross > 0 ? (dhTotalCost / gross * 100).toFixed(1) : '0.0';
+      html += `<div style="margin-top:8px;padding:7px 10px;background:rgba(255,51,102,0.05);border:1px solid rgba(255,51,102,0.15);border-radius:8px;font-size:11px;color:var(--text-muted);">
+        ⛽ <strong style="color:var(--danger);">DH cost: ${money(dhTotalCost)}</strong> — ${dhMiles} empty mi eats ${dhPct}% of gross
+      </div>`;
+    }
+
+    document.getElementById('previewBreakdown').innerHTML = html;
   }
-  
-  // Deadhead cost calculator
-  const dhEl = document.getElementById('dh_cost_display');
-  const dhMiles = parseFloat(document.getElementById('mi_dh').value) || 0;
-  if (dhMiles > 0 && miles > 0) {
-    const dhFuel = (dhMiles / s.mpg) * s.fuel;
-    const dhMaint = dhMiles * s.maint;
-    const dhTotal = dhFuel + dhMaint;
-    const dhPctGross = gross > 0 ? (dhTotal / gross * 100) : 0;
-    const loadedMilesVal = parseFloat(document.getElementById('mi_load').value) || 0;
-    const dhPctMiles = miles > 0 ? (dhMiles / miles * 100) : 0;
-    const netWithoutDh = net + dhTotal; // what net would be with 0 DH
-    dhEl.style.display = 'block';
-    dhEl.innerHTML = `<span style="font-weight:700;color:var(--danger);">⛽ Deadhead Cost: ${money(dhTotal)}</span>` +
-      ` <span style="color:var(--text-muted);">• Fuel: ${money(dhFuel)} • Wear: ${money(dhMaint)}</span>` +
-      `<br><span style="color:var(--text-muted);">${dhMiles} empty mi (${dhPctMiles.toFixed(0)}% of total) eats ${dhPctGross.toFixed(1)}% of gross` +
-      ` • Net without DH: <span style="color:var(--success);font-weight:600;">${money(netWithoutDh)}</span></span>`;
-  } else {
-    dhEl.style.display = 'none';
-  }
-  
+
+  // ── Sticky bar ──
   const stickyEl = document.getElementById('sticky_preview');
   stickyEl.innerText = money(net);
   stickyEl.className = 'sticky-preview-value ' + (net >= 0 ? 'positive' : 'negative');
-  
+
   // Run load analyzer
   analyzeLoad();
 }
@@ -6640,6 +6844,12 @@ function addLoad(){
   document.getElementById('preview_net').innerText="$0.00";
   document.getElementById('preview_hint').innerText="";
   document.getElementById('sticky_preview').innerText="$0.00";
+  // Reset breakdown panel
+  _previewBreakdownOpen = false;
+  const _bd = document.getElementById('previewBreakdown');
+  if (_bd) { _bd.style.display = 'none'; _bd.innerHTML = ''; }
+  const _tog = document.getElementById('previewBreakdownToggle');
+  if (_tog) _tog.textContent = '▼ BREAKDOWN';
   document.getElementById('dh_cost_display').style.display='none';
   document.getElementById('analyzerSummaryBar').style.display='none';
   
@@ -8208,6 +8418,8 @@ function openMultiStop() {
   if (sec) sec.style.display = 'block';
   const btn = document.getElementById('multiStopBtn');
   if (btn) btn.style.display = 'none';
+  // Render the stop list fresh with the route builder UI
+  renderMultiStopList();
 }
 
 function closeMultiStop() {
@@ -8216,6 +8428,261 @@ function closeMultiStop() {
   if (sec) sec.style.display = 'none';
   const btn = document.getElementById('multiStopBtn');
   if (btn) btn.style.display = '';
+  const list = document.getElementById('stopsList');
+  if (list) list.innerHTML = '';
+}
+
+function renderMultiStopList() {
+  const list = document.getElementById('stopsList');
+  if (!list) return;
+  list.innerHTML = '';
+  multiStops.forEach((stop, idx) => _renderStopRow(idx));
+}
+
+function _renderStopRow(idx) {
+  const list = document.getElementById('stopsList');
+  if (!list) return;
+
+  const stop = multiStops[idx];
+  const row = document.createElement('div');
+  row.id = 'stopRow_' + idx;
+  row.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:8px;';
+
+  const num = document.createElement('div');
+  num.style.cssText = 'width:22px;height:22px;border-radius:50%;background:var(--accent-blue);color:#000;font-size:11px;font-weight:900;display:flex;align-items:center;justify-content:center;flex-shrink:0;';
+  num.textContent = idx + 1;
+
+  const wrapper = document.createElement('div');
+  wrapper.style.cssText = 'position:relative;flex:1;';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = 'City, State';
+  input.id = 'stop_city_' + idx;
+  input.autocomplete = 'off';
+  input.value = stop.city || '';
+  input.style.cssText = 'width:100%;background:var(--bg-primary);border:1px solid var(--border-medium);color:var(--text-primary);padding:10px 14px;border-radius:8px;font-family:\'DM Sans\',sans-serif;font-size:14px;box-sizing:border-box;';
+  input.dataset.lat = stop.lat || '';
+  input.dataset.lon = stop.lon || '';
+
+  // Wire Google Maps city autocomplete — same system as origin/dest
+  if (typeof window.attachCityAC === 'function') {
+    window.attachCityAC(input);
+  }
+
+  // Keep multiStops array in sync as user types / selects
+  input.addEventListener('input', function() {
+    multiStops[idx].city = this.value;
+    // Clear cached coords when user types new text
+    if (!this._skipAC) {
+      multiStops[idx].lat = null;
+      multiStops[idx].lon = null;
+      input.dataset.lat = '';
+      input.dataset.lon = '';
+    }
+  });
+  // After autocomplete selection, coords may land in dataset — capture on blur
+  input.addEventListener('blur', function() {
+    multiStops[idx].city = this.value;
+    if (this.dataset.lat) multiStops[idx].lat = parseFloat(this.dataset.lat);
+    if (this.dataset.lon) multiStops[idx].lon = parseFloat(this.dataset.lon);
+  });
+
+  const removeBtn = document.createElement('button');
+  removeBtn.textContent = '✕';
+  removeBtn.title = 'Remove stop';
+  removeBtn.style.cssText = 'background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:16px;padding:4px 8px;flex-shrink:0;transition:color 0.2s;';
+  removeBtn.onmouseover = function() { this.style.color = 'var(--danger)'; };
+  removeBtn.onmouseout  = function() { this.style.color = 'var(--text-muted)'; };
+  removeBtn.onclick = function() { removeStop(idx); };
+
+  wrapper.appendChild(input);
+  row.appendChild(num);
+  row.appendChild(wrapper);
+  row.appendChild(removeBtn);
+  list.appendChild(row);
+}
+
+function addStop() {
+  multiStops.push({ city: '', lat: null, lon: null });
+  _renderStopRow(multiStops.length - 1);
+  // Focus the new input
+  const inp = document.getElementById('stop_city_' + (multiStops.length - 1));
+  if (inp) setTimeout(() => inp.focus(), 50);
+}
+
+function removeStop(idx) {
+  multiStops.splice(idx, 1);
+  // Re-render all rows cleanly so numbering stays correct
+  const list = document.getElementById('stopsList');
+  if (list) list.innerHTML = '';
+  multiStops.forEach((_, i) => _renderStopRow(i));
+}
+
+// ── Multi-stop route calculation — fires when user clicks "Get Miles" with stops open ──
+async function calcMultiStopRoute() {
+  const originEl = document.getElementById('origin');
+  const destEl   = document.getElementById('dest');
+  const origin   = originEl ? originEl.value.trim() : '';
+  const dest     = destEl   ? destEl.value.trim()   : '';
+
+  // Collect only stops that have a city name
+  const validStops = multiStops.filter(s => s.city && s.city.trim().length > 1);
+
+  if (!origin || !dest) { alert('Enter an origin and destination first.'); return; }
+  if (validStops.length === 0) { alert('Add at least one stop with a city name.'); return; }
+
+  const key = (typeof gmapsGetKey === 'function') ? gmapsGetKey() : '';
+  if (!key) { alert('Add your Google Maps API key in Settings → Google Maps API first.'); return; }
+
+  // Build full ordered city list: origin → stops → dest
+  const allCities = [origin, ...validStops.map(s => s.city.trim()), dest];
+
+  // Show loading state
+  const btn = document.getElementById('multiStopGetMilesBtn');
+  const origText = btn ? btn.textContent : '';
+  if (btn) { btn.textContent = '⏳ Calculating…'; btn.disabled = true; }
+
+  try {
+    // Geocode all cities in parallel
+    async function geocode(place) {
+      const res  = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(place)}&key=${key}`);
+      const data = await res.json();
+      if (data.status !== 'OK' || !data.results[0]) throw new Error(`Could not find "${place}"`);
+      const loc = data.results[0].geometry.location;
+      return { lat: loc.lat, lng: loc.lng, formatted: data.results[0].formatted_address };
+    }
+
+    const coords = await Promise.all(allCities.map(geocode));
+
+    // Build Routes API body with intermediates (waypoints)
+    const body = {
+      origin:      { location: { latLng: { latitude: coords[0].lat, longitude: coords[0].lng } } },
+      destination: { location: { latLng: { latitude: coords[coords.length - 1].lat, longitude: coords[coords.length - 1].lng } } },
+      intermediates: coords.slice(1, -1).map(c => ({
+        location: { latLng: { latitude: c.lat, longitude: c.lng } }
+      })),
+      travelMode: 'DRIVE',
+      routingPreference: 'TRAFFIC_UNAWARE',
+      optimizeWaypointOrder: false  // Keep stops in exact order dispatcher entered
+    };
+
+    const res = await fetch(`https://routes.googleapis.com/directions/v2:computeRoutes?key=${key}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-FieldMask': 'routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,routes.legs'
+      },
+      body: JSON.stringify(body)
+    });
+
+    const data = await res.json();
+    if (!data.routes?.[0]?.distanceMeters) {
+      throw new Error(data.error?.message || 'No route returned — check key permissions');
+    }
+
+    const route   = data.routes[0];
+    const miles   = Math.round(route.distanceMeters / 1609.34);
+    const durMin  = Math.round(parseInt(route.duration) / 60);
+
+    // Build leg breakdown for display
+    const legs = route.legs || [];
+    let legHTML = '';
+    if (legs.length > 1) {
+      legs.forEach((leg, i) => {
+        const legMi  = Math.round(leg.distanceMeters / 1609.34);
+        const legMin = Math.round(parseInt(leg.duration) / 60);
+        const fromCity = allCities[i];
+        const toCity   = allCities[i + 1];
+        legHTML += `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:12px;">
+          <span style="color:var(--text-muted);">📍 ${fromCity} → ${toCity}</span>
+          <span style="color:var(--accent-cyan);font-weight:700;">${legMi} mi</span>
+        </div>`;
+      });
+    }
+
+    // Store polyline on origin input for map drawing (same as single-stop)
+    if (route.polyline?.encodedPolyline && typeof gmapsDecodePolyline === 'function') {
+      try {
+        originEl.dataset.routeGeo = JSON.stringify(gmapsDecodePolyline(route.polyline.encodedPolyline));
+      } catch(e) {}
+    }
+    // Store coords
+    originEl.dataset.lat = coords[0].lat;
+    originEl.dataset.lon = coords[0].lng;
+    destEl.dataset.lat   = coords[coords.length - 1].lat;
+    destEl.dataset.lon   = coords[coords.length - 1].lng;
+
+    // Fill loaded miles field
+    const miLoad = document.getElementById('mi_load');
+    if (miLoad) { miLoad.value = miles; miLoad.dispatchEvent(new Event('input')); }
+
+    // Auto-calc deadhead from previous load's last drop — same logic as regular calcRoute
+    try {
+      var dhFromStr = null;
+      var wk = getCurrentWeek();
+      if (wk && wk.lastDropCoords && wk.lastDropCoords.lat && wk.lastDropCoords.lon) {
+        var ldc = wk.lastDropCoords;
+        var rgResp = await fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat=' + ldc.lat + '&lon=' + ldc.lon, { headers: { 'Accept-Language': 'en' } });
+        var rgData = await rgResp.json();
+        var dhCity  = rgData.address?.city || rgData.address?.town || rgData.address?.village || '';
+        var dhState = rgData.address?.state || '';
+        if (dhCity) dhFromStr = dhCity + (dhState ? ', ' + dhState : '');
+      }
+      // Fallback: last load destination text
+      if (!dhFromStr && wk && wk.loads && wk.loads.length > 0) {
+        dhFromStr = wk.loads[wk.loads.length - 1].dest || null;
+      }
+      if (dhFromStr && dhFromStr.toLowerCase() !== origin.toLowerCase()) {
+        const dhRoute = await gmapsRoute(dhFromStr, origin, { avoidTolls: false });
+        const miDh = document.getElementById('mi_dh');
+        if (miDh && dhRoute && dhRoute.miles > 0) {
+          miDh.value = dhRoute.miles;
+          miDh.dispatchEvent(new Event('input'));
+        }
+      }
+    } catch(e) { /* DH calc is best-effort */ }
+
+    // Show result overlay
+    const fmtTime = min => { const h = Math.floor(min/60), m = min%60; return h > 0 ? `${h}h ${m}m` : `${m}m`; };
+    const overlayId = 'multiStopResultOverlay';
+    document.getElementById(overlayId)?.remove();
+    document.body.insertAdjacentHTML('beforeend', `
+      <div id="${overlayId}" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:20000;display:flex;align-items:center;justify-content:center;padding:16px;" onclick="if(event.target===this)this.remove()">
+        <div style="background:var(--bg-elevated);border:1px solid var(--border-medium);border-radius:16px;width:100%;max-width:520px;box-shadow:0 12px 48px rgba(0,0,0,0.6);" onclick="event.stopPropagation()">
+          <div style="padding:20px 24px;border-bottom:1px solid var(--border-subtle);">
+            <div style="font-size:16px;font-weight:900;color:var(--text-primary);">🚛 Multi-Stop Route</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${allCities.join(' → ')}</div>
+          </div>
+          <div style="padding:20px 24px;">
+            <div style="display:flex;gap:20px;margin-bottom:16px;">
+              <div>
+                <div style="font-size:32px;font-weight:900;color:var(--text-primary);">${miles.toLocaleString()} <span style="font-size:14px;color:var(--text-muted);">mi</span></div>
+                <div style="font-size:12px;color:var(--text-muted);">Total loaded miles</div>
+              </div>
+              <div>
+                <div style="font-size:32px;font-weight:900;color:var(--accent-cyan);">~${fmtTime(durMin)}</div>
+                <div style="font-size:12px;color:var(--text-muted);">Est. drive time</div>
+              </div>
+            </div>
+            ${legHTML ? `<div style="background:rgba(0,0,0,0.2);border-radius:10px;padding:12px 14px;margin-bottom:16px;">${legHTML}</div>` : ''}
+            <div style="background:rgba(63,185,80,0.08);border:1px solid rgba(63,185,80,0.25);border-radius:10px;padding:10px 14px;font-size:12px;color:var(--success);margin-bottom:16px;">
+              ✅ ${miles} miles filled into Loaded Miles field
+            </div>
+            <button onclick="document.getElementById('${overlayId}').remove()" style="width:100%;padding:12px;background:var(--accent-blue);color:#000;border:none;border-radius:10px;font-weight:800;font-size:14px;cursor:pointer;">
+              Done
+            </button>
+          </div>
+        </div>
+      </div>`);
+
+    if (typeof preview === 'function') preview();
+
+  } catch(e) {
+    alert('Route error: ' + e.message);
+  } finally {
+    if (btn) { btn.textContent = origText; btn.disabled = false; }
+  }
 }
 
 resolveAllDriverWeeks();
@@ -8441,6 +8908,196 @@ const GMAPS_KEY_STORAGE = 'gmaps_api_key_v1';
 function gmapsGetKey() {
   return localStorage.getItem(GMAPS_KEY_STORAGE) || '';
 }
+
+// ════════════════════════════════════════════
+// EIA DIESEL PRICE — weekly auto-fetch
+// Series: EMD_EPD2D_PTE_NUS_DPG (on-highway diesel, national avg)
+// ════════════════════════════════════════════
+(function() {
+  var EIA_KEY_STORAGE   = 'eia_api_key_v1';
+  var EIA_CACHE_STORAGE = 'eia_diesel_cache_v1';
+  var EIA_SERIES        = 'EMD_EPD2D_PTE_NUS_DPG';
+
+  function eiaGetKey()  { return localStorage.getItem(EIA_KEY_STORAGE) || ''; }
+  function eiaGetCache(){ try { return JSON.parse(localStorage.getItem(EIA_CACHE_STORAGE) || 'null'); } catch(e) { return null; } }
+
+
+
+  window.eiaApplyToSettings = function() {
+    var cache = eiaGetCache();
+    if (!cache || !cache.price) return;
+    var price = cache.price;
+
+    // 1. Update the settings input field
+    var fuelEl = document.getElementById('s_fuel');
+    if (fuelEl) {
+      fuelEl.value = price.toFixed(3);
+      fuelEl.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    // 2. Update settings object in memory and persist to Firebase
+    if (typeof settings !== 'undefined') {
+      settings.s_fuel = price;
+      if (typeof persistSettings === 'function') persistSettings(settings);
+    }
+
+    // 3. Recalc all drivers' open-week loads with the new fuel price
+    //    — skips any load that already has a real Samsara fuel cost (samsaraFuel flag)
+    var driverCount = 0;
+    var loadCount   = 0;
+    if (typeof state !== 'undefined' && state.drivers) {
+      Object.values(state.drivers).forEach(function(driver) {
+        if (!driver || !driver.weeks) return;
+        // Count loads before recalc to give meaningful feedback
+        Object.values(driver.weeks).forEach(function(wk) {
+          if (!wk || wk.closed) return;
+          (wk.loads || []).forEach(function(l) {
+            if (l && !l.details.samsaraFuel) loadCount++;
+          });
+        });
+        if (typeof recalcDriverFuelOpenWeeks === 'function') {
+          recalcDriverFuelOpenWeeks(driver);
+          driverCount++;
+        }
+      });
+    }
+
+    // 4. Refresh the current view
+    if (typeof renderDispatchView === 'function') renderDispatchView();
+    if (typeof updateUI         === 'function') updateUI();
+
+    var msg = '✅ $' + price.toFixed(3) + '/gal applied — ' +
+      loadCount + ' load(s) across ' + driverCount + ' driver(s) recalculated' +
+      (loadCount < (loadCount + 0) ? '' : ' (Samsara real fuel preserved)');
+    eiaSetStatus(msg, 'var(--success)');
+
+    // Update the apply button text briefly
+    var btn = document.getElementById('eia_apply_btn');
+    if (btn) {
+      btn.textContent = '✅ Applied!';
+      setTimeout(function() { btn.textContent = '✅ Apply to Fuel Price'; }, 2000);
+    }
+  };
+
+  window.eiaSaveKey = function() {
+    var keyEl = document.getElementById('eia_api_key');
+    var raw   = (keyEl ? keyEl.value.trim() : '');
+    if (!raw) { eiaSetStatus('Key cleared', 'var(--text-muted)'); localStorage.removeItem(EIA_KEY_STORAGE); return; }
+    // Sanity check — reject if it looks like an iframe/URL (real keys are short alphanumeric)
+    if (raw.length > 60 || raw.includes('<') || raw.includes('%3C') || raw.includes('http') || raw.includes('iframe')) {
+      eiaSetStatus('That looks like an embed snippet, not a key. Go to eia.gov/opendata/register.php and copy just the API key string (letters and numbers only).', 'var(--danger)');
+      return;
+    }
+    localStorage.setItem(EIA_KEY_STORAGE, raw);
+    eiaSetStatus('Key saved — fetching…', 'var(--success)');
+    eiaFetchNow();
+  };
+
+  async function eiaDoFetch(url) {
+    // Try direct first, then fall back to CORS proxy for local-file null-origin blocks
+    try {
+      var r = await fetch(url);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return await r.json();
+    } catch(e) {
+      // CORS or network error — try via corsproxy.io
+      eiaSetStatus('Direct fetch blocked (CORS) — retrying via proxy…', 'var(--text-muted)');
+      var proxied = 'https://corsproxy.io/?' + encodeURIComponent(url);
+      var r2 = await fetch(proxied);
+      if (!r2.ok) throw new Error('Proxy returned HTTP ' + r2.status);
+      return await r2.json();
+    }
+  }
+
+  window.eiaFetchNow = async function() {
+    eiaSetStatus('Fetching from EIA…', 'var(--text-muted)');
+    try {
+      var key = eiaGetKey();
+      // Build URL — key is optional, EIA allows keyless access
+      var url = 'https://api.eia.gov/v2/petroleum/pri/gnd/data/' +
+        '?frequency=weekly' +
+        '&data[0]=value' +
+        '&facets[product][]=EPD2D' +
+        '&facets[duoarea][]=NUS' +
+        '&facets[process][]=PTE' +
+        '&sort[0][column]=period&sort[0][direction]=desc' +
+        '&offset=0&length=1';
+      if (key) url += '&api_key=' + encodeURIComponent(key);
+
+      var data = await eiaDoFetch(url);
+
+      if (data.response && data.response.data && data.response.data.length > 0) {
+        var row    = data.response.data[0];
+        var price  = parseFloat(row.value);
+        var period = row.period;
+        if (isNaN(price)) throw new Error('Unexpected value: ' + row.value);
+        var prevCache  = eiaGetCache();
+        var cacheObj   = { price: price, period: period, fetchedAt: Date.now() };
+        localStorage.setItem(EIA_CACHE_STORAGE, JSON.stringify(cacheObj));
+        eiaDisplayCached(cacheObj);
+        // If price changed since last fetch, auto-apply to settings and recalc
+        if (prevCache && prevCache.price !== price) {
+          eiaApplyToSettings();
+        }
+      } else if (data.error) {
+        throw new Error(data.error.message || 'EIA API error');
+      } else {
+        throw new Error('No data returned — series may have changed');
+      }
+    } catch(e) {
+      eiaSetStatus('Error: ' + e.message, 'var(--danger)');
+    }
+  };
+
+  function eiaDisplayCached(cache) {
+    if (!cache) return;
+    var badge  = document.getElementById('eia_price_badge');
+    var applyBtn = document.getElementById('eia_apply_btn');
+    if (badge)  { badge.textContent = '$' + cache.price.toFixed(3) + '/gal'; badge.style.display = 'block'; }
+    if (applyBtn) applyBtn.style.display = 'block';
+
+    var ageMs  = Date.now() - cache.fetchedAt;
+    var ageDay = Math.floor(ageMs / 86400000);
+    var ageStr = ageDay < 1 ? 'today' : ageDay === 1 ? 'yesterday' : ageDay + ' days ago';
+    eiaSetStatus(
+      'Week of ' + cache.period + ' · fetched ' + ageStr +
+      (ageDay >= 7 ? ' · ⚠️ over a week old — consider refreshing' : ''),
+      ageDay >= 7 ? 'var(--warning)' : 'var(--success)'
+    );
+  }
+
+  function eiaSetStatus(msg, color) {
+    var el = document.getElementById('eia_status');
+    if (el) { el.textContent = msg; el.style.color = color || 'var(--text-muted)'; }
+  }
+
+  // Auto-refresh: once per week (7 days)
+  function eiaAutoRefresh() {
+    var cache = eiaGetCache();
+    if (cache) {
+      // Display cached value immediately
+      eiaDisplayCached(cache);
+      // Refresh if > 7 days old
+      var ageMs = Date.now() - cache.fetchedAt;
+      if (ageMs > 7 * 24 * 60 * 60 * 1000 && eiaGetKey()) {
+        eiaFetchNow();
+      }
+    } else if (eiaGetKey()) {
+      // Have a key but no cache — fetch immediately
+      eiaFetchNow();
+    }
+  }
+
+  // Init: restore saved key to input, display cached data, maybe auto-fetch
+  window.addEventListener('load', function() {
+    setTimeout(function() {
+      var keyEl = document.getElementById('eia_api_key');
+      if (keyEl) keyEl.value = eiaGetKey();
+      eiaAutoRefresh();
+    }, 600);
+  });
+
+})();
 
 function gmapsSaveKey() {
   const key = document.getElementById('gmapsApiKey')?.value.trim();
@@ -8699,6 +9356,11 @@ async function gmapsGetMiles(origin, destination, key) {
 
 // ── calcRoute: wired to the "Get Miles" button on the dashboard load form ──
 async function calcRoute() {
+  // If multi-stop panel is open and has stops, use multi-stop route instead
+  const multiSec = document.getElementById('multiStopSection');
+  if (multiSec && multiSec.style.display !== 'none' && multiStops.filter(s => s.city && s.city.trim()).length > 0) {
+    return calcMultiStopRoute();
+  }
   const originEl = document.getElementById('origin');
   const destEl   = document.getElementById('dest');
   const origin   = originEl ? originEl.value.trim() : '';
