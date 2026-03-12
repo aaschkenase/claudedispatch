@@ -1738,6 +1738,7 @@ td {
 </style>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.js"></script>
+<!-- SheetJS loaded on demand in mcleodHandleFile -->
 </head>
 <body>
 
@@ -3125,6 +3126,8 @@ td {
         <div class="snav-item" onclick="snavShow('spane-pay',this)">👤 Pay Structure</div>
         <div class="snav-item" onclick="snavShow('spane-truck',this)">🚛 Truck &amp; Trailer</div>
         <div class="snav-item" onclick="snavShow('spane-status',this)">📋 Driver Status</div>
+        <div class="snav-group">Data</div>
+        <div class="snav-item" onclick="snavShow('spane-mcleod',this);mcleodRenderStats();">📊 McLeod Import</div>
       </div>
 
       <!-- ── PANE: DEFAULTS & FUEL ── -->
@@ -3363,9 +3366,41 @@ td {
         <div class="spane-save-row">
           <button class="spane-save-btn no-print" onclick="saveDriverStatus()">Save Driver Status</button>
         </div>
-      </div>
 
-    </div><!-- end .settings-layout -->
+      </div><!-- close spane-status -->
+
+      <!-- ── PANE: McLEOD IMPORT ── -->
+      <div class="settings-pane" id="spane-mcleod">
+        <div class="spane-title">McLeod Import</div>
+        <div class="spane-sub">Upload McLeod Excel exports to keep your historical lane data current. New loads merge with the built-in dataset and power both Load Analysis and the Lane Simulator.</div>
+
+        <div id="mcleodDropZone" onclick="document.getElementById('mcleodFileInput').click()"
+          ondragover="event.preventDefault();this.style.borderColor='#4f9ef8'"
+          ondragleave="this.style.borderColor='rgba(79,158,248,0.4)'"
+          ondrop="event.preventDefault();this.style.borderColor='rgba(79,158,248,0.4)';mcleodHandleFile(event.dataTransfer.files[0])"
+          style="border:2px dashed rgba(79,158,248,0.4);border-radius:12px;padding:36px;text-align:center;cursor:pointer;background:rgba(79,158,248,0.04);margin-bottom:16px;">
+          <div style="font-size:36px;margin-bottom:10px;">&#128202;</div>
+          <div style="font-size:14px;font-weight:700;color:var(--text-primary);margin-bottom:6px;">Drop McLeod Excel file here</div>
+          <div style="font-size:12px;color:var(--text-muted);">or click to browse &nbsp;&mdash;&nbsp; .xlsx or .xls</div>
+          <input type="file" id="mcleodFileInput" accept=".xlsx,.xls" style="display:none" onchange="mcleodHandleFile(this.files[0])">
+        </div>
+
+        <div id="mcleodStatus" style="display:none;padding:13px 15px;border-radius:9px;margin-bottom:14px;font-size:13px;font-weight:600;"></div>
+
+        <div id="mcleodMapping" style="display:none;padding:16px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:10px;margin-bottom:16px;">
+          <div style="font-size:13px;font-weight:700;color:var(--text-primary);margin-bottom:6px;">Map Columns</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:14px;line-height:1.5;">Auto-detected columns from your file. Adjust if needed, then Import.</div>
+          <div class="s-field-row cols2" id="mcleodColMapGrid"></div>
+          <div style="display:flex;gap:10px;margin-top:16px;">
+            <button onclick="mcleodDoImport()" style="padding:9px 20px;background:var(--accent-blue);border:none;border-radius:8px;color:#fff;font-weight:700;font-size:13px;cursor:pointer;">&#10003; Import Loads</button>
+            <button onclick="mcleodCancelMapping()" style="padding:9px 16px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:var(--text-muted);font-weight:600;font-size:13px;cursor:pointer;">Cancel</button>
+          </div>
+        </div>
+
+        <div style="font-size:12px;font-weight:700;color:var(--text-primary);margin-bottom:10px;text-transform:uppercase;letter-spacing:1px;">Current Dataset</div>
+        <div id="mcleodStatsBody"></div>
+
+      </div></div><!-- end .settings-layout -->
 
     <div class="hint-text" style="margin-top: 14px;">
       Privacy: this tool stores data in the cloud (Firebase). All users with login credentials share the same company data.
@@ -3581,6 +3616,8 @@ function getEnteredLoadsForHistoryReload() {
 function getUnifiedHistoryLoadsReload() {
   const fromSheet = (typeof historicalLoads !== 'undefined' && historicalLoads) ? historicalLoads : [];
   const fromApp = getEnteredLoadsForHistoryReload();
+  // Also pull in any McLeod uploads saved to localStorage
+  const fromMcleod = mcleodGetStoredLoads();
   // Normalize sheet records defensively
   const normalizedSheet = fromSheet.map(l => ({
     origin: (l.origin || '').toString().trim(),
@@ -3594,7 +3631,20 @@ function getUnifiedHistoryLoadsReload() {
     date: (l.date || '')
   })).filter(l => l.origin && l.originState && l.destination && l.destState);
 
-  return [...normalizedSheet, ...fromApp];
+  // Normalize McLeod loads same way
+  const normalizedMcleod = fromMcleod.map(l => ({
+    origin: (l.origin || '').toString().toUpperCase().trim(),
+    originState: (l.originState || '').toString().toUpperCase().trim(),
+    destination: (l.destination || l.dest || '').toString().toUpperCase().trim(),
+    destState: (l.destState || '').toString().toUpperCase().trim(),
+    revenue: Number(l.revenue ?? l.gross ?? 0) || 0,
+    miles: Number(l.miles ?? 0) || 0,
+    rpm: Number(l.rpm ?? 0) || 0,
+    customer: (l.customer || ''),
+    date: (l.date || '')
+  })).filter(l => l.origin && l.originState && l.destination && l.destState);
+
+  return [...normalizedSheet, ...fromApp, ...normalizedMcleod];
 }
 
 // Lightweight geocoding (online) + caching
@@ -3973,133 +4023,134 @@ function analyzeMarketFromHistory(city, state) {
 
 function renderReloadIntelligence(destCity, destState) {
   if (!destCity || !destState) return '';
-  
-  const intel = analyzeMarketFromHistory(destCity, destState);
-  
-  if (!intel.hasData) {
-    return `
-      <div style="background: rgba(255,184,0,0.05); border: 1px solid rgba(255,184,0,0.3); border-radius: 8px; padding: 16px; margin-top: 16px;">
-        <div style="font-size: 13px; color: var(--text-muted);">
-          📊 No historical reload data from ${destCity}, ${destState}
-        </div>
-      </div>
-    `;
+
+  // Use the same data + scoring as the Lane Simulator
+  const allLoads  = getUnifiedHistoryLoadsReload();
+  const markets   = buildMarketStatsByOriginReload(allLoads);
+  const laneStats = buildLaneStatsFromOrigin(allLoads, destCity, destState);
+
+  // Find this market in the market stats
+  const dc = (destCity  || '').toUpperCase().trim();
+  const ds = (destState || '').toUpperCase().trim();
+
+  // Exact city match first, then state-expanded
+  let market = markets.find(m => m.city.toUpperCase().trim() === dc && m.state.toUpperCase().trim() === ds);
+  let isExpanded = false;
+  if (!market) {
+    // Expand to state
+    const stateMarkets = markets.filter(m => m.state.toUpperCase().trim() === ds);
+    if (stateMarkets.length) {
+      // Synthesize a combined market for the state
+      const count    = stateMarkets.reduce((s,m) => s + m.count, 0);
+      const sumRev   = stateMarkets.reduce((s,m) => s + m.avgRevenue * m.count, 0);
+      const sumRpm   = stateMarkets.reduce((s,m) => s + m.avgRpm   * m.count, 0);
+      const allDests = {};
+      stateMarkets.forEach(m => (m.topDests || []).forEach(d => {
+        const k = d.city + ',' + d.state;
+        if (!allDests[k]) allDests[k] = { ...d, count: 0, sumRev: 0 };
+        allDests[k].count  += d.count;
+        allDests[k].sumRev += d.avgRevenue * d.count;
+      }));
+      market = {
+        city: destCity, state: destState,
+        count, avgRevenue: count ? sumRev/count : 0, avgRpm: count ? sumRpm/count : 0,
+        score: stateMarkets.reduce((s,m) => s + m.score, 0),
+        topDests: Object.values(allDests)
+          .map(d => ({ ...d, avgRevenue: d.count ? d.sumRev/d.count : 0 }))
+          .sort((a,b) => b.count - a.count).slice(0, 4)
+      };
+      isExpanded = true;
+    }
   }
-  
-  // Build recommendation text
-  let recommendation = '';
-  if (intel.rating === 'HOT') {
-    recommendation = '✅ Excellent reload market! Easy to find high-paying loads out.';
-  } else if (intel.rating === 'WARM') {
-    recommendation = '👍 Good reload opportunities available.';
+
+  if (!market || !market.count) {
+    return `<div style="background:rgba(255,184,0,0.05);border:1px solid rgba(255,184,0,0.3);border-radius:8px;padding:16px;margin-top:16px;">
+      <div style="font-size:13px;color:var(--text-muted);">📊 No historical reload data from ${destCity}, ${destState}</div>
+    </div>`;
+  }
+
+  // Rating — same thresholds as buildMarketStatsByOriginReload scoring
+  let rating, icon, color, rec;
+  if (market.count >= 50 && market.avgRpm >= 3.00) {
+    rating='HOT';   icon='🟢'; color='var(--success)';
+    rec='✅ Excellent reload market — high frequency, strong rates.';
+  } else if (market.count >= 15 && market.avgRpm >= 2.50) {
+    rating='WARM';  icon='🟡'; color='var(--warning)';
+    rec='👍 Good reload opportunities available from this market.';
   } else {
-    recommendation = '⚠️ Limited reload history. Consider if rate compensates for positioning.';
+    rating='COLD';  icon='🔴'; color='var(--danger)';
+    rec='⚠️ Limited reload history. Make sure the rate compensates for repositioning.';
   }
-  
+
+  // Top lanes out of this market
+  const topLanes = laneStats.sort((a,b) => (b.avgRevenue * b.count) - (a.avgRevenue * a.count)).slice(0, 5);
+
+  // Top destinations from market stats
+  const topDests = (market.topDests || []).slice(0, 4);
+
   let html = `
-    <div style="background: rgba(79,158,248,0.04); border: 1px solid var(--border-medium); border-radius: 12px; padding: 20px; margin-top: 16px;">
-      <div style="font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 16px;">
-        🔄 RELOAD INTELLIGENCE: ${destCity.toUpperCase()}, ${destState}
-        ${intel.isExpanded ? `<span style="color: var(--accent-cyan); font-size: 11px;"> • Expanded to ${destState} Area</span>` : ''}
+    <div style="background:rgba(79,158,248,0.04);border:1px solid var(--border-medium);border-radius:12px;padding:20px;margin-top:16px;">
+      <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:1.2px;color:var(--text-muted);margin-bottom:14px;">
+        🔄 RELOAD MARKET: ${destCity.toUpperCase()}, ${destState}
+        ${isExpanded ? `<span style="color:var(--accent-cyan);font-size:10px;"> • Expanded to ${destState} area</span>` : ''}
       </div>
-      
-      <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 16px;">
-        <div>
-          <div style="color: var(--text-muted); font-size: 11px;">Market Rating</div>
-          <div style="font-size: 20px; font-weight: 700; color: ${intel.color}; margin-top: 4px;">
-            ${intel.icon} ${intel.rating}
-          </div>
+
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px;">
+        <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border-subtle);border-radius:8px;padding:10px;text-align:center;">
+          <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.8px;">Rating</div>
+          <div style="font-size:18px;font-weight:800;color:${color};margin-top:4px;">${icon} ${rating}</div>
         </div>
-        <div>
-          <div style="color: var(--text-muted); font-size: 11px;">Historical Loads</div>
-          <div style="font-size: 20px; font-weight: 700; color: var(--text-primary); margin-top: 4px;">
-            ${intel.loadCount}
-          </div>
-          ${intel.isExpanded ? `<div style="font-size: 10px; color: var(--text-muted); margin-top: 2px;">${intel.exactCityCount} from ${destCity}, ${intel.loadCount - intel.exactCityCount} from ${destState}</div>` : ''}
+        <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border-subtle);border-radius:8px;padding:10px;text-align:center;">
+          <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.8px;">Loads on File</div>
+          <div style="font-size:18px;font-weight:800;color:var(--text-primary);font-family:'DM Mono',monospace;margin-top:4px;">${market.count}</div>
         </div>
-        <div>
-          <div style="color: var(--text-muted); font-size: 11px;">Avg Reload Revenue</div>
-          <div style="font-size: 16px; font-weight: 700; color: var(--text-primary); margin-top: 4px;">
-            ${money(intel.avgRevenue)}
-          </div>
-        </div>
-        <div>
-          <div style="color: var(--text-muted); font-size: 11px;">Avg Rate Out</div>
-          <div style="font-size: 16px; font-weight: 700; color: var(--text-primary); margin-top: 4px;">
-            $${intel.avgRPM.toFixed(2)}/mi
-          </div>
+        <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border-subtle);border-radius:8px;padding:10px;text-align:center;">
+          <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.8px;">Avg RPM</div>
+          <div style="font-size:18px;font-weight:800;color:var(--accent-cyan);font-family:'DM Mono',monospace;margin-top:4px;">$${(market.avgRpm||0).toFixed(2)}</div>
         </div>
       </div>
-      
-      <div style="padding: 12px; background: rgba(79,158,248,0.06); border-radius: 6px; font-size: 13px; color: var(--text-primary); margin-bottom: 16px;">
-        ${recommendation}
-      </div>
-  `;
-  
-  // Show top reloads
-  if (intel.topReloads.length > 0) {
-    html += `
-      <div style="margin-bottom: 12px;">
-        <div style="font-size: 12px; font-weight: 700; color: var(--text-muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px;">
-          🏆 Top Reload Examples:
+
+      <div style="padding:11px 13px;background:rgba(79,158,248,0.06);border-radius:7px;font-size:13px;color:var(--text-primary);margin-bottom:14px;">
+        ${rec}
+        <span style="color:var(--text-muted);font-size:11px;margin-left:8px;">Avg revenue: ${money(market.avgRevenue)}</span>
+      </div>`;
+
+  // Top lanes table
+  if (topLanes.length) {
+    html += `<div style="margin-bottom:14px;">
+      <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:8px;">🏆 Best Lanes Out</div>`;
+    topLanes.forEach(lane => {
+      const rpmColor = lane.avgRpm >= 3 ? 'var(--success)' : lane.avgRpm >= 2.5 ? 'var(--warning)' : 'var(--danger)';
+      html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:var(--bg-primary);border-radius:7px;margin-bottom:5px;border-left:3px solid ${rpmColor};">
+        <div>
+          <div style="font-size:13px;font-weight:700;color:var(--text-primary);">${lane.city}, ${lane.state}</div>
+          <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">${lane.count} load${lane.count>1?'s':''}</div>
         </div>
-    `;
-    
-    intel.topReloads.slice(0, 5).forEach((load, idx) => {
-      // Check if this is from exact city or nearby
-      const locationLabel = load.isNearby ? 
-        `📍 ${load.origin}, ${load.originState} (nearby in ${destState})` : 
-        `📍 ${load.origin}, ${load.originState}`;
-      
-      html += `
-        <div style="background: var(--bg-primary); padding: 10px 12px; border-radius: 6px; margin-bottom: 8px; border-left: 3px solid var(--accent-cyan);">
-          <div style="font-size: 13px; font-weight: 700; color: var(--text-primary);">
-            ${idx + 1}. ${load.destination}, ${load.destState}
-          </div>
-          <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
-            ${locationLabel}
-          </div>
-          <div style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">
-            💰 ${money(load.revenue)} | 📏 ${load.miles.toLocaleString()} mi | 📊 $${load.rpm.toFixed(2)}/mi
-          </div>
-          <div style="font-size: 11px; color: var(--accent-cyan); margin-top: 4px;">
-            🏢 ${load.customer}
-          </div>
+        <div style="text-align:right;">
+          <div style="font-size:13px;font-weight:800;color:var(--text-primary);font-family:'DM Mono',monospace;">${money(lane.avgRevenue)}</div>
+          <div style="font-size:11px;font-weight:700;color:${rpmColor};font-family:'DM Mono',monospace;">$${(lane.avgRpm||0).toFixed(2)}/mi</div>
         </div>
-      `;
+      </div>`;
     });
-    
     html += '</div>';
   }
-  
-  // Show top customers
-  if (intel.topCustomers.length > 0) {
-    html += `
-      <div>
-        <div style="font-size: 12px; font-weight: 700; color: var(--text-muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px;">
-          📞 Top Customers from ${destCity}:
-        </div>
-    `;
-    
-    intel.topCustomers.forEach(cust => {
-      html += `
-        <div style="font-size: 12px; color: var(--text-secondary); padding: 6px 0; border-bottom: 1px solid var(--border-subtle);">
-          <strong style="color: var(--text-primary);">${cust.name}</strong>
-          <span style="color: var(--text-muted);"> • ${cust.loads} load${cust.loads > 1 ? 's' : ''} • Avg ${money(cust.avgRevenue)}</span>
-        </div>
-      `;
+
+  // Common destinations (from market stat topDests)
+  if (topDests.length) {
+    html += `<div>
+      <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:6px;">📍 Common Destinations</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;">`;
+    topDests.forEach(d => {
+      html += `<div style="padding:5px 10px;background:rgba(79,158,248,0.08);border:1px solid rgba(79,158,248,0.2);border-radius:20px;font-size:11px;font-weight:700;color:var(--accent-blue);">
+        ${d.city}, ${d.state} <span style="opacity:.6;font-weight:500;">(${d.count})</span></div>`;
     });
-    
-    html += '</div>';
+    html += '</div></div>';
   }
-  
-  html += `
-      <div style="font-size: 11px; color: var(--text-muted); margin-top: 12px; text-align: center;">
-        Based on ${intel.loadCount} loads from last 5 months
-      </div>
-    </div>
-  `;
-  
+
+  html += `<div style="font-size:10px;color:var(--text-muted);margin-top:12px;text-align:center;">
+    Based on ${market.count} load${market.count>1?'s':''} · Same intelligence as Lane Simulator
+  </div></div>`;
+
   return html;
 }
 
@@ -6880,6 +6931,23 @@ function populateDayPickersForOffset(offset) {
   }
   buildSel('pickup_day');
   buildSel('delivery_day');
+
+  // Add "Next Week Mon" option to delivery_day only
+  var deliverySel = document.getElementById('delivery_day');
+  if (deliverySel) {
+    var sep = document.createElement('option');
+    sep.disabled = true;
+    sep.textContent = '── Next Week ──';
+    sep.style.color = '#6e7681';
+    deliverySel.appendChild(sep);
+
+    var nextMonOpt = document.createElement('option');
+    nextMonOpt.value = 'Next Monday';
+    nextMonOpt.textContent = '📅 Next Week Mon';
+    nextMonOpt.style.fontWeight = '700';
+    nextMonOpt.style.color = '#fbbf24';
+    deliverySel.appendChild(nextMonOpt);
+  }
 }
 
 function getTargetWeek() {
@@ -6988,6 +7056,7 @@ function addLoad(){
   };
   
   wk.loads.push(loadData);
+  clearPreviewRoute();
   
   if (Number.isFinite(dLat) && Number.isFinite(dLon)) 
     wk.lastDropCoords = { lat: dLat, lon: dLon };
@@ -9516,9 +9585,18 @@ async function gmapsTestKey() {
 var _leafletMap = null;
 
 // Route colors: gradient from cyan → blue → purple as loads progress through the week
-var _routeColors = ['#4f9ef8','#38bdf8','#818cf8','#a78bfa','#c084fc','#e879f9','#f472b6'];
+var _routeColors = ['#60a5fa','#34d399','#fbbf24','#f87171','#a78bfa','#38bdf8','#fb923c'];
+var _previewLayer = null;
 
 function _makeNumberIcon(num, color) {
+  // Concept C: hollow ring — dark bg, colored border + number
+  return L.divIcon({
+    className: '',
+    html: '<div style="width:30px;height:30px;background:#0d1117;border:2.5px solid ' + color + ';border-radius:50%;line-height:25px;text-align:center;font-size:12px;font-weight:900;color:' + color + ';font-family:DM Mono,monospace;box-shadow:0 2px 12px rgba(0,0,0,0.8),0 0 0 4px ' + color + '22;">' + num + '</div>',
+    iconSize:[30,30], iconAnchor:[15,15], popupAnchor:[0,-18]
+  });
+}
+function _makeNumberIcon_UNUSED(num, color) {
   // line-height trick for vertical centering (flex unreliable in Leaflet divIcon)
   return L.divIcon({
     className: '',
@@ -9530,9 +9608,17 @@ function _makeNumberIcon(num, color) {
 }
 
 function _makeDestIcon(num, color) {
+  // Concept C: solid filled circle with checkmark
   return L.divIcon({
     className: '',
-    html: '<div style="position:relative;width:26px;height:34px;">' +
+    html: '<div style="width:26px;height:26px;background:' + color + ';border:2.5px solid #fff;border-radius:50%;line-height:21px;text-align:center;font-size:14px;font-weight:900;color:#0d1117;font-family:sans-serif;box-shadow:0 2px 12px rgba(0,0,0,0.7);">✓</div>',
+    iconSize:[26,26], iconAnchor:[13,13], popupAnchor:[0,-16]
+  });
+}
+function _makeDestIcon_UNUSED(num, color) {
+  return L.divIcon({
+    className: '',
+    html: '<div style="position:relative;width:26px;height:34px;">'   +
           '<div style="width:26px;height:26px;background:' + color + ';border:2.5px solid rgba(255,255,255,0.9);border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:0 2px 10px rgba(0,0,0,0.7);position:absolute;top:0;left:0;"></div>' +
           '<div style="position:absolute;top:2px;left:2px;width:22px;height:22px;line-height:22px;text-align:center;font-size:10px;font-weight:800;color:#0d1117;font-family:sans-serif;">' + num + '</div>' +
           '</div>',
@@ -9550,19 +9636,27 @@ function initMap() {
     try { _leafletMap.remove(); } catch(e) {}
     _leafletMap = null;
   }
+  _previewLayer = null;
 
   var wk;
   try { wk = getCurrentWeek(); } catch(e) { return; }
   var loads = (wk && wk.loads) ? wk.loads : [];
 
-  var points = [];
+  var points   = [];
   var segments = [];
 
   loads.forEach(function(load) {
     if (!load) return;
-    if (load.routeGeo && typeof load.routeGeo === 'string' && load.routeGeo.length > 0) {
+    if (load.routeGeo) {
       try {
-        var pts = gmapsDecodePolyline(load.routeGeo);
+        var pts;
+        if (Array.isArray(load.routeGeo)) {
+          pts = load.routeGeo;
+        } else if (typeof load.routeGeo === 'string' && load.routeGeo[0] === '[') {
+          pts = JSON.parse(load.routeGeo);
+        } else if (typeof load.routeGeo === 'string') {
+          pts = gmapsDecodePolyline(load.routeGeo);
+        }
         if (pts && pts.length > 1) {
           segments.push({ pts: pts, load: load });
           pts.forEach(function(p) { points.push(p); });
@@ -9571,10 +9665,9 @@ function initMap() {
       } catch(e) {}
     }
     if (load.coords && load.coords.start && load.coords.end) {
-      var s = load.coords.start;
-      var e = load.coords.end;
+      var s = load.coords.start, e = load.coords.end;
       if (s.lat && s.lon && e.lat && e.lon) {
-        segments.push({ pts: [[s.lat,s.lon],[e.lat,e.lon]], load: load });
+        segments.push({ pts: [[s.lat,s.lon],[e.lat,e.lon]], load: load, isStraight: true });
         points.push([s.lat,s.lon]);
         points.push([e.lat,e.lon]);
       }
@@ -9584,81 +9677,130 @@ function initMap() {
   var defaultCenter = [39.5, -98.35];
   var defaultZoom   = 4;
 
-  // Dark map tile — matches midnight blue theme
-  _leafletMap = L.map('map', {
-    zoomControl: false,
-    attributionControl: true
-  });
+  _leafletMap = L.map('map', { zoomControl:false, attributionControl:true });
+  L.control.zoom({ position:'topright' }).addTo(_leafletMap);
 
-  // Custom zoom control position
-  L.control.zoom({ position: 'topright' }).addTo(_leafletMap);
-
-  // OSM tiles with CSS inversion filter to create dark map matching app theme
-  var tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; OpenStreetMap contributors',
-    maxZoom: 19
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap', maxZoom: 19
   }).addTo(_leafletMap);
-  // Apply dark inversion filter to tile pane only (markers pane stays normal)
-  _leafletMap.getPane('tilePane').style.filter = 'invert(1) hue-rotate(180deg) brightness(0.85) saturate(0.6)';
-  // Re-invert the shadow pane so it isn't double-inverted
-  if (_leafletMap.getPane('shadowPane')) {
-    _leafletMap.getPane('shadowPane').style.filter = 'invert(1) hue-rotate(180deg)';
-  }
+  _leafletMap.getPane('tilePane').style.filter =
+    'invert(1) hue-rotate(185deg) brightness(0.78) saturate(0.32) contrast(1.05)';
+  if (_leafletMap.getPane('shadowPane'))
+    _leafletMap.getPane('shadowPane').style.filter = 'invert(1) hue-rotate(185deg)';
 
   if (points.length === 0) {
     _leafletMap.setView(defaultCenter, defaultZoom);
     return;
   }
 
-  // Draw each route segment with sequential color and numbered markers
   segments.forEach(function(seg, i) {
-    var color = _routeColors[i % _routeColors.length];
-    var load  = seg.load;
-    var n     = i + 1;
-    var origin = load ? (load.origin || 'Stop ' + n) : ('Stop ' + n);
-    var dest   = load ? (load.dest   || 'Stop ' + (n+1)) : ('Stop ' + (n+1));
-    var money  = function(v) { return v ? '$' + Math.round(v).toLocaleString() : '—'; };
-    var gross  = load ? money(load.gross) : '—';
+    var color  = _routeColors[i % _routeColors.length];
+    var load   = seg.load;
+    var n      = i + 1;
+    var origin = load ? (load.origin || 'Stop ' + n) : 'Stop ' + n;
+    var dest   = load ? (load.dest   || 'Stop ' + (n+1)) : 'Stop ' + (n+1);
+    var gross  = load && load.gross ? '$' + Math.round(load.gross).toLocaleString() : '—';
     var miles  = load ? (load.miles || load.loadedMiles || '—') : '—';
-
-    // Draw route line with slight glow effect (thick dim underline + sharp bright line)
-    L.polyline(seg.pts, { color: color, weight: 5, opacity: 0.18 }).addTo(_leafletMap);
-    L.polyline(seg.pts, { color: color, weight: 2.5, opacity: 0.92,
-      dashArray: null }).addTo(_leafletMap);
-
-    // Origin marker: numbered circle
+    var rpm    = (load && load.gross && load.miles) ? '$' + (load.gross/load.miles).toFixed(2) + '/mi' : '';
     var startPt = seg.pts[0];
     var endPt   = seg.pts[seg.pts.length - 1];
+
+    L.polyline(seg.pts, { color:color, weight:10, opacity:0.07 }).addTo(_leafletMap);
+    var line = L.polyline(seg.pts, {
+      color:color, weight:3.5, opacity:0.92, lineJoin:'round', lineCap:'round',
+      dashArray: seg.isStraight ? '6 5' : null
+    }).addTo(_leafletMap);
+
+    line.bindPopup(
+      '<div style="font-family:DM Sans,sans-serif;min-width:160px;">' +
+      '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:' + color + ';margin-bottom:6px;">Load ' + n + '</div>' +
+      '<div style="font-size:13px;font-weight:700;color:#e6edf3;margin-bottom:2px;">' + origin + '</div>' +
+      '<div style="font-size:11px;color:#8b949e;margin-bottom:6px;">↓ ' + miles + ' mi</div>' +
+      '<div style="font-size:13px;font-weight:700;color:#e6edf3;">' + dest + '</div>' +
+      '<div style="display:flex;gap:10px;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.07);">' +
+      '<span style="font-size:12px;font-weight:700;color:' + color + ';">' + gross + '</span>' +
+      (rpm ? '<span style="font-size:11px;color:#8b949e;">' + rpm + '</span>' : '') +
+      '</div></div>', { className:'map-popup' }
+    );
 
     L.marker(startPt, { icon: _makeNumberIcon(n, color) })
       .bindPopup(
         '<div style="font-family:DM Sans,sans-serif;min-width:140px;">' +
-        '<div style="font-size:11px;font-weight:700;color:' + color + ';margin-bottom:4px;">LOAD ' + n + ' · ORIGIN</div>' +
-        '<div style="font-size:13px;font-weight:600;color:#e6edf3;">' + origin + '</div>' +
-        '</div>',
-        { className: 'map-popup' }
+        '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:' + color + ';margin-bottom:4px;">Load ' + n + ' · Pickup</div>' +
+        '<div style="font-size:13px;font-weight:700;color:#e6edf3;">' + origin + '</div></div>',
+        { className:'map-popup' }
       ).addTo(_leafletMap);
 
-    // Destination marker: teardrop pin
     L.marker(endPt, { icon: _makeDestIcon(n, color) })
       .bindPopup(
-        '<div style="font-family:DM Sans,sans-serif;min-width:160px;">' +
-        '<div style="font-size:11px;font-weight:700;color:' + color + ';margin-bottom:4px;">LOAD ' + n + ' · DEST</div>' +
-        '<div style="font-size:13px;font-weight:600;color:#e6edf3;margin-bottom:6px;">' + dest + '</div>' +
-        '<div style="display:flex;gap:12px;">' +
-        '<span style="font-size:11px;color:#8b949e;">💰 ' + gross + '</span>' +
-        '<span style="font-size:11px;color:#8b949e;">📍 ' + miles + ' mi</span>' +
-        '</div></div>',
-        { className: 'map-popup' }
+        '<div style="font-family:DM Sans,sans-serif;min-width:170px;">' +
+        '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:' + color + ';margin-bottom:4px;">Load ' + n + ' · Delivery</div>' +
+        '<div style="font-size:13px;font-weight:700;color:#e6edf3;margin-bottom:8px;">' + dest + '</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">' +
+        '<div style="background:rgba(255,255,255,0.04);border-radius:6px;padding:6px 8px;"><div style="font-size:9px;color:#6e7681;text-transform:uppercase;letter-spacing:.8px;margin-bottom:2px;">Revenue</div><div style="font-size:13px;font-weight:800;color:' + color + ';">' + gross + '</div></div>' +
+        '<div style="background:rgba(255,255,255,0.04);border-radius:6px;padding:6px 8px;"><div style="font-size:9px;color:#6e7681;text-transform:uppercase;letter-spacing:.8px;margin-bottom:2px;">Miles</div><div style="font-size:13px;font-weight:800;color:#c9d1d9;">' + miles + '</div></div>' +
+        '</div></div>', { className:'map-popup' }
       ).addTo(_leafletMap);
+
+    var midPt = seg.pts[Math.floor(seg.pts.length / 2)];
+    var badge = L.divIcon({
+      className: '',
+      html: '<div style="background:rgba(13,17,23,0.82);border:1px solid ' + color + '55;border-radius:6px;padding:3px 7px;font-size:10px;font-weight:800;color:' + color + ';font-family:DM Mono,monospace;white-space:nowrap;backdrop-filter:blur(4px);box-shadow:0 2px 6px rgba(0,0,0,0.5);">' + gross + ' · ' + miles + ' mi</div>',
+      iconSize:null, iconAnchor:[0,0]
+    });
+    L.marker(midPt, { icon:badge, interactive:false }).addTo(_leafletMap);
   });
 
   try {
-    _leafletMap.fitBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: 10 });
+    _leafletMap.fitBounds(L.latLngBounds(points), { padding:[48,48], maxZoom:9 });
   } catch(e) {
     _leafletMap.setView(defaultCenter, defaultZoom);
   }
 }
+
+// ── Route preview: dotted amber line shown after Get Miles ────────────────
+function showPreviewRoute(pts) {
+  if (!_leafletMap) return;
+  clearPreviewRoute();
+  var color = '#fbbf24';
+  var layers = [
+    L.polyline(pts, { color:color, weight:10, opacity:0.07 }),
+    L.polyline(pts, { color:color, weight:3, opacity:0.78, dashArray:'10 7', lineJoin:'round', lineCap:'round' })
+  ];
+  // Ghost origin
+  layers.push(L.marker(pts[0], { icon: L.divIcon({
+    className:'',
+    html:'<div style="width:28px;height:28px;background:#0d1117;border:2px dashed #fbbf24;border-radius:50%;line-height:24px;text-align:center;font-size:11px;font-weight:900;color:#fbbf24;font-family:DM Mono,monospace;opacity:0.85;">?</div>',
+    iconSize:[28,28], iconAnchor:[14,14]
+  })}));
+  // Ghost destination
+  layers.push(L.marker(pts[pts.length-1], { icon: L.divIcon({
+    className:'',
+    html:'<div style="width:22px;height:22px;border:2px dashed #fbbf2488;border-radius:50%;background:rgba(251,191,36,0.08);"></div>',
+    iconSize:[22,22], iconAnchor:[11,11]
+  })}));
+  // Floating label midway
+  var mid = pts[Math.floor(pts.length/2)];
+  layers.push(L.marker(mid, { icon: L.divIcon({
+    className:'',
+    html:'<div style="background:rgba(13,17,23,0.85);border:1px dashed #fbbf2466;border-radius:6px;padding:3px 9px;font-size:10px;font-weight:700;color:#fbbf24;font-family:DM Mono,monospace;white-space:nowrap;">Preview — not added yet</div>',
+    iconSize:null, iconAnchor:[0,0]
+  }), interactive:false }));
+
+  _previewLayer = L.layerGroup(layers).addTo(_leafletMap);
+  try {
+    _leafletMap.fitBounds(L.latLngBounds(pts), { padding:[60,60], maxZoom:8 });
+  } catch(e) {}
+}
+
+function clearPreviewRoute() {
+  if (_previewLayer && _leafletMap) {
+    try { _leafletMap.removeLayer(_previewLayer); } catch(e) {}
+    _previewLayer = null;
+  }
+}
+
+
 
 function gmapsDecodePolyline(encoded) {
   const pts = [];
@@ -9789,6 +9931,19 @@ async function calcRoute() {
       }
 
       if (typeof preview === 'function') preview();
+
+      // Show dotted preview route on map immediately
+      try {
+        var previewPts = route.polylineLatLngs;
+        if (!previewPts && route.originCoord && route.destCoord) {
+          previewPts = [[route.originCoord.lat, route.originCoord.lng],
+                        [route.destCoord.lat,   route.destCoord.lng]];
+        }
+        if (previewPts && previewPts.length > 1) {
+          if (!_leafletMap) initMap();
+          showPreviewRoute(previewPts);
+        }
+      } catch(epr) {}
     }
   });
 }
@@ -14899,6 +15054,409 @@ function exportCSV(mode) {
   if (typeof window.toast === 'function') window.toast('⬇️ CSV exported', 'success');
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════════
+// McLEOD IMPORT — Settings pane logic
+// ═══════════════════════════════════════════════════════════════════════════
+
+const MCLEOD_STORAGE_KEY = 'tag_mcleod_loads_v1';
+const MCLEOD_META_KEY    = 'tag_mcleod_meta_v1';
+
+// ── Storage helpers ──────────────────────────────────────────────────────
+function mcleodGetStoredLoads() {
+  try {
+    return JSON.parse(localStorage.getItem(MCLEOD_STORAGE_KEY) || '[]');
+  } catch(e) { return []; }
+}
+
+function mcleodGetMeta() {
+  try {
+    return JSON.parse(localStorage.getItem(MCLEOD_META_KEY) || '{}');
+  } catch(e) { return {}; }
+}
+
+function mcleodSaveLoads(loads, meta) {
+  try {
+    localStorage.setItem(MCLEOD_STORAGE_KEY, JSON.stringify(loads));
+    localStorage.setItem(MCLEOD_META_KEY, JSON.stringify(meta));
+    return true;
+  } catch(e) {
+    if (e.name === 'QuotaExceededError') return 'quota';
+    return false;
+  }
+}
+
+// ── Column detection ─────────────────────────────────────────────────────
+// McLeod exports have inconsistent column names — try many variants
+const MCLEOD_COL_ALIASES = {
+  originCity:   ['Origin','Origin City','Orig City','Pickup City','PU City','From City','Shipper City'],
+  originState:  ['Origin State','Orig State','Pickup State','PU State','From State','Shipper State','Orig St','PU St'],
+  destCity:     ['Destination','Destination City','Dest City','Delivery City','Del City','To City','Consignee City'],
+  destState:    ['Destination State','Dest State','Delivery State','Del State','To State','Consignee State','Dest St'],
+  revenue:      ['Total Revenue','Revenue','Charge','Total Charge','Gross Revenue','Line Haul','Linehaul','Bill Amount','Total Amount','Rate','Freight'],
+  miles:        ['Loaded Miles','Miles','Bill Miles','Total Miles','Trip Miles','Distance','Mileage'],
+  rpm:          ['Rev/loaded mile','Rev/total mile','RPM','Rate Per Mile','Revenue Per Mile','Rev Per Mile'],
+  customer:     ['Customer','Customer Name','Bill To','Bill To Name','Shipper','Company','Account'],
+  date:         ['Delivery Date','Pickup Date','PU Date','Ship Date','Date','Origin Date','Load Date','Dispatch Date','Actual Pickup Date'],
+};
+
+function mcleodDetectColumns(headers) {
+  const map = {};
+  const hNorm = headers.map(h => (h || '').toString().trim());
+
+  for (const [field, aliases] of Object.entries(MCLEOD_COL_ALIASES)) {
+    for (const alias of aliases) {
+      const idx = hNorm.findIndex(h => h.toLowerCase() === alias.toLowerCase());
+      if (idx >= 0) { map[field] = headers[idx]; break; }
+    }
+    // Fuzzy fallback: partial match
+    if (!map[field]) {
+      const keywords = { originCity:['origin','pickup','pu','from','shipper'],
+        originState:['origin st','orig st','pu st','from st','shipper st'],
+        destCity:['dest','delivery','del','to','consignee'],
+        destState:['dest st','del st','to st','consignee st'],
+        revenue:['revenue','charge','gross','haul','amount','rate'],
+        miles:['miles','mile','distance','mileage'],
+        customer:['customer','bill','shipper','company','account'],
+        date:['date','pickup','ship'] };
+      const kws = keywords[field] || [];
+      for (const kw of kws) {
+        const idx = hNorm.findIndex(h => h.toLowerCase().includes(kw));
+        if (idx >= 0 && !Object.values(map).includes(headers[idx])) {
+          map[field] = headers[idx]; break;
+        }
+      }
+    }
+  }
+  return map;
+}
+
+// ── State for current parse session ─────────────────────────────────────
+let _mcleodParsedRows = [];
+let _mcleodHeaders    = [];
+let _mcleodColMap     = {};
+
+// ── File handler ─────────────────────────────────────────────────────────
+function mcleodHandleFile(file) {
+  if (!file) return;
+  const status = document.getElementById('mcleodStatus');
+  const mapping = document.getElementById('mcleodMapping');
+
+  mcleodShowStatus('loading', '⏳ Reading file: ' + file.name + '...');
+
+  // Load SheetJS on demand if not already present
+  function doRead() {
+    if (typeof XLSX === 'undefined') {
+      mcleodShowStatus('error', '❌ Could not load Excel reader. Check your internet connection and try again, or convert the file to .csv first.');
+      return;
+    }
+  mapping.style.display = 'none';
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const wb   = XLSX.read(e.target.result, { type: 'binary', cellDates: true });
+      const ws   = wb.Sheets[wb.SheetNames[0]]; // First sheet
+      const json = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, dateNF: 'yyyy-mm-dd' });
+
+      if (!json.length || !json[0].length) {
+        mcleodShowStatus('error', '❌ File appears empty or unreadable.');
+        return;
+      }
+
+      _mcleodHeaders    = json[0].map(h => (h || '').toString().trim());
+      _mcleodParsedRows = json.slice(1).filter(row => row.some(cell => cell !== '' && cell != null));
+      _mcleodColMap     = mcleodDetectColumns(_mcleodHeaders);
+
+      mcleodShowStatus('info',
+        '📄 <strong>' + file.name + '</strong> — ' + _mcleodParsedRows.length.toLocaleString() +
+        ' data rows, ' + _mcleodHeaders.length + ' columns. Review column mapping below.');
+
+      mcleodRenderMapping();
+      mapping.style.display = 'block';
+    } catch(err) {
+      mcleodShowStatus('error', '❌ Parse error: ' + err.message);
+    }
+  };
+  reader.onerror = function() { mcleodShowStatus('error', '❌ Could not read file.'); };
+  reader.readAsBinaryString(file);
+  } // end doRead
+
+  if (typeof XLSX !== 'undefined') {
+    doRead();
+  } else {
+    var s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.onload = function() { doRead(); };
+    s.onerror = function() {
+      mcleodShowStatus('error', '❌ Could not load Excel reader (SheetJS). If using this file offline, you may need an internet connection for the first Excel upload.');
+    };
+    document.head.appendChild(s);
+  }
+  // Reset input so same file can be re-uploaded
+  document.getElementById('mcleodFileInput').value = '';
+}
+
+// ── Column mapping UI ─────────────────────────────────────────────────────
+function mcleodRenderMapping() {
+  const grid = document.getElementById('mcleodColMapGrid');
+  if (!grid) return;
+
+  const LABELS = {
+    originCity:  'Origin City *',
+    originState: 'Origin State *',
+    destCity:    'Destination City *',
+    destState:   'Destination State *',
+    revenue:     'Revenue ($) *',
+    miles:       'Miles',
+    rpm:         'RPM (auto-calc if blank)',
+    customer:    'Customer / Broker',
+    date:        'Date'
+  };
+
+  grid.innerHTML = Object.entries(LABELS).map(([field, label]) => {
+    const detected = _mcleodColMap[field] || '';
+    const opts = ['(skip)', ..._mcleodHeaders]
+      .map(h => '<option value="' + h + '"' + (h === detected ? ' selected' : '') + '>' + (h === '(skip)' ? '— skip —' : h) + '</option>')
+      .join('');
+    return '<div><span class="s-field-label">' + label + '</span>' +
+           '<select class="s-field-select" id="mcleod_col_' + field + '">' + opts + '</select></div>';
+  }).join('');
+}
+
+function mcleodGetMappingValues() {
+  const fields = ['originCity','originState','destCity','destState','revenue','miles','rpm','customer','date'];
+  const map = {};
+  fields.forEach(f => {
+    const el = document.getElementById('mcleod_col_' + f);
+    map[f] = el ? el.value : '';
+  });
+  return map;
+}
+
+function mcleodCancelMapping() {
+  document.getElementById('mcleodMapping').style.display = 'none';
+  document.getElementById('mcleodStatus').style.display = 'none';
+  _mcleodParsedRows = []; _mcleodHeaders = []; _mcleodColMap = {};
+}
+
+// ── Import ─────────────────────────────────────────────────────────────────
+function mcleodDoImport() {
+  const colMap = mcleodGetMappingValues();
+
+  // Validate required fields
+  const required = ['originCity','originState','destCity','destState','revenue'];
+  for (const f of required) {
+    if (!colMap[f] || colMap[f] === '(skip)') {
+      mcleodShowStatus('error', '❌ "' + f.replace(/([A-Z])/g,' $1') + '" column is required. Please map it.');
+      return;
+    }
+  }
+
+  const STATE_ABBR = new Set(['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA',
+    'KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND',
+    'OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC']);
+
+  function getCell(row, colName) {
+    if (!colName || colName === '(skip)') return '';
+    const idx = _mcleodHeaders.indexOf(colName);
+    return idx >= 0 ? (row[idx] || '').toString().trim() : '';
+  }
+
+  function parseStateFromCity(cityStr) {
+    // Handle "CITY, ST" format common in McLeod
+    const m = cityStr.match(/,\s*([A-Z]{2})$/);
+    return m && STATE_ABBR.has(m[1]) ? m[1] : '';
+  }
+
+  function cleanCity(str) {
+    // Remove trailing state if embedded: "CHICAGO, IL" -> "CHICAGO"
+    return str.replace(/,\s*[A-Z]{2}$/, '').toUpperCase().trim();
+  }
+
+  function parseDate(str) {
+    if (!str) return '';
+    // Handle various date formats from McLeod
+    try {
+      if (/^\d{4}-\d{2}-\d{2}/.test(str)) return str.slice(0,10);
+      const d = new Date(str);
+      if (!isNaN(d)) return d.toISOString().slice(0,10);
+    } catch(e) {}
+    return str.slice(0,10);
+  }
+
+  const newLoads = [];
+  let skipped = 0;
+
+  for (const row of _mcleodParsedRows) {
+    let origCity  = getCell(row, colMap.originCity).toUpperCase().trim();
+    let origState = getCell(row, colMap.originState).toUpperCase().trim();
+    let destCity  = getCell(row, colMap.destCity).toUpperCase().trim();
+    let destState = getCell(row, colMap.destState).toUpperCase().trim();
+
+    // Always strip embedded state from city ("GREEN BAY, WI" → "GREEN BAY")
+    // whether or not a separate state column is provided
+    if (origCity.includes(',')) {
+      if (!origState) origState = parseStateFromCity(origCity);
+      origCity = cleanCity(origCity);
+    }
+    if (destCity.includes(',')) {
+      if (!destState) destState = parseStateFromCity(destCity);
+      destCity = cleanCity(destCity);
+    }
+
+    // Normalize state: handle full names -> abbrev (basic)
+    if (origState.length > 2) origState = origState.slice(0,2);
+    if (destState.length > 2) destState = destState.slice(0,2);
+
+    const revenueRaw = getCell(row, colMap.revenue).replace(/[$,]/g,'');
+    const revenue    = parseFloat(revenueRaw) || 0;
+    const miles      = parseFloat(getCell(row, colMap.miles).replace(/[,]/g,'')) || 0;
+    const rpmRaw     = getCell(row, colMap.rpm || '').replace(/[$,]/g,'');
+    const rpmParsed  = parseFloat(rpmRaw) || 0;
+    const rpm        = rpmParsed > 0 ? +rpmParsed.toFixed(3) : (miles > 0 ? +(revenue / miles).toFixed(3) : 0);
+    const customer   = getCell(row, colMap.customer);
+    const date       = parseDate(getCell(row, colMap.date));
+
+    if (!origCity || !origState || !destCity || !destState || revenue <= 0) { skipped++; continue; }
+    if (!STATE_ABBR.has(origState) || !STATE_ABBR.has(destState)) { skipped++; continue; }
+
+    newLoads.push({ origin: origCity, originState: origState,
+      destination: destCity, destState: destState,
+      revenue, miles, rpm, customer, date });
+  }
+
+  if (!newLoads.length) {
+    mcleodShowStatus('error', '❌ No valid loads found. Check column mapping — Origin, Destination, and Revenue are required.');
+    return;
+  }
+
+  // Merge with existing: deduplicate by origin+dest+revenue+date
+  const existing  = mcleodGetStoredLoads();
+  const existMeta = mcleodGetMeta();
+
+  function loadKey(l) {
+    return [l.origin, l.originState, l.destination, l.destState, l.revenue, l.date].join('|');
+  }
+  const existKeys = new Set(existing.map(loadKey));
+  const dedupedNew = newLoads.filter(l => !existKeys.has(loadKey(l)));
+  const merged     = [...existing, ...dedupedNew];
+
+  const meta = {
+    totalLoads:   merged.length,
+    lastUpload:   new Date().toISOString(),
+    lastFile:     document.getElementById('mcleodFileInput').value || 'mcleod_export.xlsx',
+    uploadCount:  (existMeta.uploadCount || 0) + 1,
+    addedThisUpload: dedupedNew.length,
+    dateRange:    mcleodDateRange(merged)
+  };
+
+  const saveResult = mcleodSaveLoads(merged, meta);
+  if (saveResult === 'quota') {
+    // Try saving just the newest 3000 loads if storage is full
+    const trimmed = merged.sort((a,b) => b.date.localeCompare(a.date)).slice(0,3000);
+    mcleodSaveLoads(trimmed, { ...meta, totalLoads: trimmed.length, trimmed: true });
+    mcleodShowStatus('warn',
+      '⚠️ Storage almost full — kept newest 3,000 loads. Added ' + dedupedNew.length +
+      ' new, skipped ' + (newLoads.length - dedupedNew.length) + ' duplicates.');
+  } else if (!saveResult) {
+    mcleodShowStatus('error', '❌ Failed to save to localStorage. Try clearing old data first.');
+    return;
+  } else {
+    mcleodShowStatus('success',
+      '✅ Imported ' + dedupedNew.length.toLocaleString() + ' new loads' +
+      (newLoads.length - dedupedNew.length > 0 ? ' (' + (newLoads.length - dedupedNew.length) + ' duplicates skipped)' : '') +
+      '. Total dataset: ' + merged.length.toLocaleString() + ' loads.');
+  }
+
+  document.getElementById('mcleodMapping').style.display = 'none';
+  _mcleodParsedRows = []; _mcleodHeaders = []; _mcleodColMap = {};
+  mcleodRenderStats();
+}
+
+function mcleodDateRange(loads) {
+  const dates = loads.map(l => l.date).filter(Boolean).sort();
+  if (!dates.length) return '';
+  return dates[0] + ' to ' + dates[dates.length-1];
+}
+
+// ── Stats panel ───────────────────────────────────────────────────────────
+function mcleodRenderStats() {
+  try {
+    var body = document.getElementById('mcleodStatsBody');
+    if (!body) return;
+
+    var stored  = mcleodGetStoredLoads();
+    var meta    = mcleodGetMeta();
+    var builtin = (typeof historicalLoads !== 'undefined' && Array.isArray(historicalLoads)) ? historicalLoads.length : 0;
+    var total   = builtin + stored.length;
+
+    if (!stored.length) {
+      body.innerHTML =
+        '<div style="background:rgba(255,255,255,0.03);border:1px solid var(--border-medium);border-radius:10px;padding:18px;">' +
+          '<div style="font-size:13px;font-weight:700;color:var(--text-primary);margin-bottom:6px;">Built-in data only</div>' +
+          '<div style="font-size:12px;color:var(--text-muted);line-height:1.6;">' + builtin.toLocaleString() + ' loads in baseline dataset &mdash; no McLeod uploads yet.<br>Drop a McLeod .xls or .xlsx file in the box above to add your own data.</div>' +
+        '</div>';
+      return;
+    }
+
+    var dr        = meta.dateRange || '';
+    var lastUp    = meta.lastUpload ? new Date(meta.lastUpload).toLocaleDateString() : '';
+    var uploadCt  = meta.uploadCount || 1;
+
+    body.innerHTML =
+      '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px;">' +
+        '<div style="background:rgba(255,255,255,0.03);border:1px solid var(--border-subtle);border-radius:9px;padding:12px;text-align:center;">' +
+          '<div style="font-size:9px;color:var(--text-muted);font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;">Total Loads</div>' +
+          '<div style="font-size:22px;font-weight:900;color:var(--accent-cyan);font-family:DM Mono,monospace;">' + total.toLocaleString() + '</div>' +
+          '<div style="font-size:10px;color:var(--text-muted);margin-top:2px;">built-in + uploaded</div>' +
+        '</div>' +
+        '<div style="background:rgba(255,255,255,0.03);border:1px solid var(--border-subtle);border-radius:9px;padding:12px;text-align:center;">' +
+          '<div style="font-size:9px;color:var(--text-muted);font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;">McLeod Loads</div>' +
+          '<div style="font-size:22px;font-weight:900;color:var(--success);font-family:DM Mono,monospace;">' + stored.length.toLocaleString() + '</div>' +
+          '<div style="font-size:10px;color:var(--text-muted);margin-top:2px;">' + uploadCt + ' upload' + (uploadCt > 1 ? 's' : '') + '</div>' +
+        '</div>' +
+        '<div style="background:rgba(255,255,255,0.03);border:1px solid var(--border-subtle);border-radius:9px;padding:12px;text-align:center;">' +
+          '<div style="font-size:9px;color:var(--text-muted);font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;">Baseline</div>' +
+          '<div style="font-size:22px;font-weight:900;color:var(--text-muted);font-family:DM Mono,monospace;">' + builtin.toLocaleString() + '</div>' +
+          '<div style="font-size:10px;color:var(--text-muted);margin-top:2px;">5-month hardcoded</div>' +
+        '</div>' +
+      '</div>' +
+      (dr ? '<div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;">Date range: ' + dr + (lastUp ? ' &nbsp;·&nbsp; Last upload: ' + lastUp : '') + '</div>' : '') +
+      '<button onclick="mcleodClearUploads()" style="padding:7px 14px;background:rgba(255,68,85,0.08);border:1px solid rgba(255,68,85,0.2);border-radius:7px;color:#ff4455;font-weight:700;font-size:12px;cursor:pointer;">' +
+        '&#128465; Clear uploaded data (' + stored.length.toLocaleString() + ' loads)' +
+      '</button>';
+  } catch(e) {
+    var body = document.getElementById('mcleodStatsBody');
+    if (body) body.innerHTML = '<div style="color:#ff4455;font-size:12px;">Error loading stats: ' + e.message + '</div>';
+  }
+}
+
+
+function mcleodClearUploads() {
+  if (!confirm('Clear all uploaded McLeod data? The built-in 5-month dataset will remain. This cannot be undone.')) return;
+  localStorage.removeItem(MCLEOD_STORAGE_KEY);
+  localStorage.removeItem(MCLEOD_META_KEY);
+  mcleodShowStatus('info', 'ℹ️ Uploaded loads cleared. Built-in dataset still active.');
+  mcleodRenderStats();
+}
+
+function mcleodShowStatus(type, html) {
+  const el = document.getElementById('mcleodStatus');
+  if (!el) return;
+  const styles = {
+    success: 'background:rgba(63,185,80,0.1);border:1px solid rgba(63,185,80,0.3);color:var(--success)',
+    error:   'background:rgba(255,68,85,0.1);border:1px solid rgba(255,68,85,0.3);color:#ff4455',
+    warn:    'background:rgba(255,184,0,0.08);border:1px solid rgba(255,184,0,0.3);color:var(--warning)',
+    info:    'background:rgba(79,158,248,0.08);border:1px solid rgba(79,158,248,0.2);color:var(--accent-blue)',
+    loading: 'background:rgba(255,255,255,0.04);border:1px solid var(--border-medium);color:var(--text-muted)',
+  };
+  el.style.cssText = 'display:block;padding:14px 16px;border-radius:10px;margin-bottom:20px;font-size:13px;font-weight:600;' + (styles[type] || styles.info);
+  el.innerHTML = html;
+}
+
+// mcleodRenderStats() is called directly from the nav item onclick
+
 </script>
 
   <!-- ═══════════════════════════════════════════════════════════
@@ -15101,6 +15659,8 @@ function exportCSV(mode) {
         <!-- Load schedule table -->
         <div id="ls_schedule_table" style="background:var(--bg-elevated);border:1px solid var(--border-medium);border-radius:14px;padding:22px;"></div>
       </div>
+
+
 
     </div>
   </div>
