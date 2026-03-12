@@ -2619,7 +2619,27 @@ td {
               </div>
             </div>
 
-            <button class="btn-primary" onclick="addLoad()">Add Load to Week</button>
+            <!-- WEEK TARGET TOGGLE -->
+            <div id="weekTargetWrap" style="margin-bottom:10px;">
+              <div style="font-size:10px;font-weight:800;letter-spacing:1px;color:var(--text-muted);text-transform:uppercase;margin-bottom:7px;">Add load to:</div>
+              <div style="display:flex;gap:6px;">
+                <button id="wt_btn_0" onclick="setWeekTarget(0)" class="wt-btn wt-active"
+                  style="flex:1;padding:8px 6px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1.5px solid var(--accent-cyan);background:rgba(79,158,248,0.12);color:var(--accent-cyan);transition:all .15s;">
+                  📅 This Week
+                </button>
+                <button id="wt_btn_1" onclick="setWeekTarget(1)"
+                  style="flex:1;padding:8px 6px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1.5px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.04);color:var(--text-muted);transition:all .15s;">
+                  📆 Next Week
+                </button>
+                <button id="wt_btn_2" onclick="setWeekTarget(2)"
+                  style="flex:1;padding:8px 6px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1.5px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.04);color:var(--text-muted);transition:all .15s;">
+                  🗓️ In 2 Weeks
+                </button>
+              </div>
+              <div id="weekTargetLabel" style="display:none;margin-top:7px;padding:6px 10px;border-radius:7px;background:rgba(255,184,0,0.08);border:1px solid rgba(255,184,0,0.2);font-size:11px;font-weight:700;color:var(--warning);"></div>
+            </div>
+
+            <button class="btn-primary" id="addLoadBtn" onclick="addLoad()">Add Load to Week</button>
 
             <div class="hint-text">
               Tip: Each driver can have their own split % and target net configured in Settings → Driver Overrides
@@ -6798,6 +6818,86 @@ function fillFromRecentLoad(){
 /************************* 
  * LOAD CRUD 
  *************************/
+// ── Week Target (This / Next / +2) ──────────────────────────────────────
+var _weekTargetOffset = 0;
+
+function setWeekTarget(offset) {
+  _weekTargetOffset = offset;
+  var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var LABELS = ['This Week', 'Next Week', 'In 2 Weeks'];
+  // Update pill styles
+  [0,1,2].forEach(function(i) {
+    var btn = document.getElementById('wt_btn_' + i);
+    if (!btn) return;
+    if (i === offset) {
+      btn.style.border = '1.5px solid var(--accent-cyan)';
+      btn.style.background = 'rgba(79,158,248,0.12)';
+      btn.style.color = 'var(--accent-cyan)';
+    } else {
+      btn.style.border = '1.5px solid rgba(255,255,255,0.1)';
+      btn.style.background = 'rgba(255,255,255,0.04)';
+      btn.style.color = 'var(--text-muted)';
+    }
+  });
+  // Update add button text and label
+  var addBtn = document.getElementById('addLoadBtn');
+  var labelEl = document.getElementById('weekTargetLabel');
+  if (offset === 0) {
+    if (addBtn) addBtn.textContent = 'Add Load to Week';
+    if (labelEl) labelEl.style.display = 'none';
+  } else {
+    var weekId = getWeekIdForOffset(offset);
+    var monday = new Date(weekId + 'T00:00:00');
+    var friday = new Date(monday); friday.setDate(monday.getDate() + 4);
+    var dateStr = MONTHS[monday.getMonth()] + ' ' + monday.getDate() + ' – ' + MONTHS[friday.getMonth()] + ' ' + friday.getDate();
+    if (addBtn) addBtn.textContent = 'Schedule for ' + LABELS[offset];
+    if (labelEl) {
+      labelEl.style.display = 'block';
+      labelEl.textContent = '⏳ Planned load — will appear in week of ' + dateStr + ' with status "Planned"';
+    }
+  }
+  // Repopulate day pickers for the selected week
+  populateDayPickersForOffset(offset);
+}
+
+function populateDayPickersForOffset(offset) {
+  var days = getWeekDaysForPicker(offset);
+  var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function buildSel(selId) {
+    var sel = document.getElementById(selId);
+    if (!sel) return;
+    sel.innerHTML = '<option value="">Select day...</option>';
+    days.forEach(function(d) {
+      var opt = document.createElement('option');
+      opt.value = d.value;
+      opt.textContent = (d.isToday && offset===0 ? '[Today] ' : '') + d.label;
+      if (d.isToday && offset===0) opt.style.fontWeight = '800';
+      sel.appendChild(opt);
+    });
+    // Default pickup to Monday of that week, delivery to Friday
+    if (selId === 'pickup_day') sel.value = days[0] ? days[0].value : '';
+    if (selId === 'delivery_day') sel.value = days[4] ? days[4].value : '';
+  }
+  buildSel('pickup_day');
+  buildSel('delivery_day');
+}
+
+function getTargetWeek() {
+  if (_weekTargetOffset === 0) return getCurrentWeek();
+  var weekId = getWeekIdForOffset(_weekTargetOffset);
+  var driver = getDriver();
+  if (!driver.weeks[weekId]) {
+    var monday = new Date(weekId + 'T00:00:00');
+    driver.weeks[weekId] = {
+      start: weekId,
+      label: fmtWeekLabel(monday),
+      loads: [],
+      lastDropCoords: null
+    };
+  }
+  return driver.weeks[weekId];
+}
+
 function addLoad(){
   try {
   const originEl = document.getElementById('origin');
@@ -6847,8 +6947,10 @@ function addLoad(){
     routeGeo = JSON.parse(originEl.dataset.routeGeo || "null");
   } catch(e){ routeGeo=null; }
   
-  const wk = getCurrentWeek();
-  const loadStatus = document.getElementById('load_status').value || 'confirmed';
+  const wk = getTargetWeek();
+  const isFutureWeek = _weekTargetOffset > 0;
+  const targetWeekId = isFutureWeek ? getWeekIdForOffset(_weekTargetOffset) : null;
+  const loadStatus = isFutureWeek ? 'planned' : (document.getElementById('load_status').value || 'confirmed');
   const loadData = {
     origin,
     dest,
@@ -6857,6 +6959,7 @@ function addLoad(){
     loadedMiles,
     net,
     status: loadStatus,
+    plannedForWeek: isFutureWeek ? targetWeekId : null,
     createdAt: new Date().toISOString(),
     pickupDay,
     deliveryDay: deliversNextWeek ? "Monday" : deliveryDay, // Store as Monday for next week
@@ -6893,6 +6996,14 @@ function addLoad(){
   
   saveState();
   saveRecentLoad(origin, dest); // Add to recent loads dropdown
+
+  // Toast feedback — different message for future weeks
+  if (isFutureWeek) {
+    var WEEK_LABELS = ['This Week', 'Next Week', 'In 2 Weeks'];
+    var wkLabel = wk.label || WEEK_LABELS[_weekTargetOffset] || 'Future Week';
+    toast('📆 Load scheduled for ' + wkLabel, 'success');
+  }
+
   updateUI();
   initMap();
   
@@ -6901,6 +7012,8 @@ function addLoad(){
   );
   // Re-populate day pickers with dates and default pickup to today
   if (typeof populateDayPickers === 'function') populateDayPickers();
+  // Reset week target back to This Week
+  if (typeof setWeekTarget === 'function') setWeekTarget(0);
   document.getElementById('load_status').value = 'confirmed';
   originEl.dataset.lat="";
   originEl.dataset.lon="";
@@ -8932,6 +9045,17 @@ function getLoadStatusBadge(load) {
   if (todayIdx===-1) return '';
   var pickIdx = ORDER.indexOf(load.pickupDay);
   var delIdx  = load.deliversNextWeek ? 99 : ORDER.indexOf(load.deliveryDay);
+  if (load.status==='planned' && load.plannedForWeek) {
+    // This is a future-week planned load - show which week
+    try {
+      var mon = new Date(load.plannedForWeek + 'T00:00:00');
+      var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      var wkStr = MONTHS[mon.getMonth()] + ' ' + mon.getDate();
+      return ' <span style="padding:1px 7px;border-radius:10px;font-size:9px;font-weight:800;background:rgba(255,184,0,0.12);border:1px solid rgba(255,184,0,0.3);color:var(--warning);">📆 Planned · Wk of ' + wkStr + '</span>';
+    } catch(e) {
+      return ' <span style="padding:1px 7px;border-radius:10px;font-size:9px;font-weight:800;background:rgba(255,184,0,0.12);border:1px solid rgba(255,184,0,0.3);color:var(--warning);">📆 Planned</span>';
+    }
+  }
   if (load.status==='planned') return '';
   if (todayIdx > delIdx)
     return ' <span style="padding:1px 7px;border-radius:10px;font-size:9px;font-weight:800;background:rgba(63,185,80,0.12);border:1px solid rgba(63,185,80,0.25);color:#3fb950;">Delivered</span>';
