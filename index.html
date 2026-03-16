@@ -2284,39 +2284,19 @@ td {
               </div>
             </div>
 
-            <!-- DAY PICKERS -->
+            <!-- DAY PICKERS — populated dynamically by populateDaySelectors() -->
             <div class="input-row">
               <div class="input-group">
                 <label>Pickup Day</label>
-                <select id="pickup_day">
-                  <option value="">Select day...</option>
-                  <option value="Monday">Monday</option>
-                  <option value="Tuesday">Tuesday</option>
-                  <option value="Wednesday">Wednesday</option>
-                  <option value="Thursday">Thursday</option>
-                  <option value="Friday">Friday</option>
-                  <option value="Saturday">Saturday</option>
-                  <option value="Sunday">Sunday</option>
-                </select>
+                <select id="pickup_day"><option value="">Select day...</option></select>
               </div>
               <div class="input-group">
                 <label>Delivery Day</label>
-                <select id="delivery_day">
-                  <option value="">Select day...</option>
-                  <option value="Monday">Monday</option>
-                  <option value="Tuesday">Tuesday</option>
-                  <option value="Wednesday">Wednesday</option>
-                  <option value="Thursday">Thursday</option>
-                  <option value="Friday">Friday</option>
-                  <option value="Saturday">Saturday</option>
-                  <option value="Sunday">Sunday</option>
-                  <option value="Next Monday" style="background: rgba(255,184,0,0.2); font-weight: 700;">📅 Next Monday (Next Week)</option>
-                </select>
+                <select id="delivery_day"><option value="">Select day...</option></select>
               </div>
             </div>
-            
             <div class="hint-text" style="font-size: 12px; margin-top: 8px; color: var(--text-muted);">
-              💡 Select "Next Monday" for loads that pick up this week but deliver next week. Revenue will count toward next week.
+              💡 Select <strong style="color:var(--warning);">Next Monday</strong> for loads that pick up this week but deliver next week — revenue counts toward next week.
             </div>
 
             <div class="input-row" style="margin-top: 10px;">
@@ -7787,8 +7767,54 @@ function calculateDriverRankings() {
 /************************* 
  * UI RENDER 
  *************************/
+/*************************
+ * DAY SELECTOR POPULATION
+ * Fills pickup_day / delivery_day with real dates for the active week
+ *************************/
+function populateDaySelectors() {
+  var pickupSel   = document.getElementById('pickup_day');
+  var deliverySel = document.getElementById('delivery_day');
+  if (!pickupSel || !deliverySel) return;
+
+  var savedPickup   = pickupSel.value;
+  var savedDelivery = deliverySel.value;
+
+  // Determine Monday of the active week
+  var weekId = null;
+  try { var drv = getDriver(); weekId = drv && drv.currentWeekId ? drv.currentWeekId.split('_')[0] : null; } catch(e) {}
+  var monday = (weekId && weekId.length === 10) ? new Date(weekId + 'T00:00:00') : startOfWeekMonday(new Date());
+
+  var days   = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+  var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var today  = new Date(); today.setHours(0,0,0,0);
+
+  function mkOptions(withNextMonday) {
+    var html = '<option value="">Select day...</option>';
+    for (var i = 0; i < 7; i++) {
+      var dt   = new Date(monday); dt.setDate(monday.getDate() + i);
+      var name = days[i];
+      var date = months[dt.getMonth()] + ' ' + dt.getDate();
+      var tod  = dt.getTime() === today.getTime() ? ' \u2014 Today' : '';
+      html += '<option value="' + name + '">' + name + '  ' + date + tod + '</option>';
+    }
+    if (withNextMonday) {
+      var nm = new Date(monday); nm.setDate(monday.getDate() + 7);
+      var nmDate = months[nm.getMonth()] + ' ' + nm.getDate();
+      html += '<option value="Next Monday" style="background:rgba(255,184,0,0.15);font-weight:700;">'
+            + '\ud83d\udcc5 Next Monday  ' + nmDate + '  \u2014 next week revenue</option>';
+    }
+    return html;
+  }
+
+  pickupSel.innerHTML   = mkOptions(false);
+  deliverySel.innerHTML = mkOptions(true);
+  if (savedPickup)   pickupSel.value   = savedPickup;
+  if (savedDelivery) deliverySel.value = savedDelivery;
+}
+
 function updateUI(){
-  renderRecentLoads(); // Update recent loads dropdown
+  renderRecentLoads();
+  populateDaySelectors(); // refresh day selects with real dates for active week
   
   const d = getDriver();
   const wk = getCurrentWeek();
@@ -8433,16 +8459,27 @@ function initMap() {
 
   loads.forEach(function(load) {
     if (!load) return;
-    if (load.routeGeo && typeof load.routeGeo === 'string' && load.routeGeo.length > 0) {
-      try {
-        var pts = gmapsDecodePolyline(load.routeGeo);
-        if (pts && pts.length > 1) {
-          segments.push({ pts: pts, load: load });
-          pts.forEach(function(p) { points.push(p); });
-          return;
-        }
-      } catch(e) {}
+
+    // routeGeo is stored as a decoded [[lat,lng],...] array (or a JSON string of same
+    // if it comes back from Firebase before desanitization runs).
+    // Do NOT pass through gmapsDecodePolyline — that expects a Google encoded polyline
+    // string, not an already-decoded coordinate array.
+    var pts = null;
+    if (load.routeGeo) {
+      if (Array.isArray(load.routeGeo) && load.routeGeo.length > 1) {
+        pts = load.routeGeo;
+      } else if (typeof load.routeGeo === 'string' && load.routeGeo.startsWith('[')) {
+        try { pts = JSON.parse(load.routeGeo); } catch(e) {}
+      }
     }
+
+    if (pts && pts.length > 1) {
+      segments.push({ pts: pts, load: load });
+      pts.forEach(function(p) { points.push(p); });
+      return;
+    }
+
+    // Fallback: straight line between stored coords (no route shape available)
     if (load.coords && load.coords.start && load.coords.end) {
       var s = load.coords.start;
       var e = load.coords.end;
