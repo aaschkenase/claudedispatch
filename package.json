@@ -2,7 +2,7 @@
   "name": "claudedispatch",
   "version": "1.0.0",
   "scripts": {
-    "build": "node build.js",
+    "stitch": "node build.js",
     "watch": "node --watch build.js"
   }
 }
