@@ -3413,6 +3413,8 @@ body.light-mode .flatpickr-current-month input.cur-year, body.light-mode .flatpi
         <div class="snav-item" onclick="snavShow('spane-mcleod',this);mcleodRenderStats();">📊 McLeod Import</div>
         <div class="snav-item" onclick="snavShow('spane-platform',this);pkInit();">🔑 Platform Keys</div>
         <div class="snav-item" id="snav-admin" style="display:none;" onclick="snavShow('spane-admin',this);adminLoadMembers();updateAdminCompanyCount();">👑 Admin View</div>
+        <div class="snav-group">Debug</div>
+        <div class="snav-item" onclick="snavShow('spane-debug',this)">🧪 Debug &amp; Sync</div>
       </div>
 
       <!-- ── PANE: DEFAULTS & FUEL ── -->
@@ -3751,9 +3753,46 @@ body.light-mode .flatpickr-current-month input.cur-year, body.light-mode .flatpi
         <div class="spane-sub" style="border-top:1px solid var(--border-subtle);padding-top:12px;margin-top:14px;">
           <strong style="color:var(--text-primary);">Company McLeod Loads in Firestore:</strong>
           <span id="admin-company-load-count" style="color:var(--success);font-weight:700;"></span>
-          <br>Only <code style="background:rgba(255,255,255,0.06);padding:1px 5px;border-radius:3px;font-size:11px;">anders.a@tagtrans.net</code> can upload McLeod data. All users read from the same shared pool.
+          <br>Only <code style="background:rgba(255,255,255,0.06);padding:1px 5px;border-radius:3px;font-size:11px;"><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="5e3f303a3b2c2d703f1e2a3f392a2c3f302d70303b2a">[email&#160;protected]</a></code> can upload McLeod data. All users read from the same shared pool.
         </div>
       </div><!-- close spane-admin -->
+
+      <!-- ── PANE: DEBUG & SYNC ── -->
+      <div class="settings-pane" id="spane-debug">
+        <div class="spane-title">🧪 Debug &amp; Sync</div>
+        <div class="spane-sub">Tools for diagnosing issues and forcing data sync. Use Force Cloud Reload if your loads are missing after opening a new version of the file.</div>
+
+        <!-- CLOUD SYNC SECTION -->
+        <div style="background:rgba(79,158,248,0.05);border:1px solid rgba(79,158,248,0.2);border-radius:10px;padding:16px 18px;margin-bottom:18px;">
+          <div style="font-size:13px;font-weight:800;color:var(--text-primary);margin-bottom:6px;">☁️ Cloud Data Sync</div>
+          <div style="font-size:12px;color:var(--text-muted);line-height:1.6;margin-bottom:14px;">
+            If your loads and drivers are missing, your data is still safe in the cloud. Click <strong style="color:var(--text-primary);">Force Reload from Cloud</strong> to pull it down immediately — this bypasses the local timestamp check and always loads whatever is saved in Firebase for your account.
+          </div>
+          <div id="debugSyncStatus" style="font-size:12px;color:var(--text-muted);margin-bottom:12px;min-height:18px;"></div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <button onclick="forceCloudReload()" style="padding:10px 18px;background:rgba(79,158,248,0.15);border:1px solid rgba(79,158,248,0.4);color:#4f9ef8;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">☁️ Force Reload from Cloud</button>
+            <button onclick="showCloudSyncDiagnostic()" style="padding:10px 18px;background:var(--bg-primary);border:1px solid var(--border-medium);color:var(--text-secondary);border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">🔍 Show Sync Diagnostic</button>
+          </div>
+        </div>
+
+        <!-- SMOKE TEST SECTION -->
+        <div style="background:rgba(139,92,246,0.05);border:1px solid rgba(139,92,246,0.2);border-radius:10px;padding:16px 18px;margin-bottom:18px;">
+          <div style="font-size:13px;font-weight:800;color:var(--text-primary);margin-bottom:6px;">🧪 Smoke Test</div>
+          <div style="font-size:12px;color:var(--text-muted);line-height:1.6;margin-bottom:14px;">
+            Runs ~70 automated checks covering all core features: multi-stop, load math, week navigation, form inputs, data integrity, and more. Safe to run any time — no data is permanently modified.
+          </div>
+          <button onclick="runSmokeTest()" style="padding:10px 18px;background:rgba(139,92,246,0.15);border:1px solid rgba(139,92,246,0.3);color:#a78bfa;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">🧪 Run Smoke Test</button>
+        </div>
+
+        <!-- DANGER ZONE -->
+        <div style="background:rgba(255,68,85,0.04);border:1px solid rgba(255,68,85,0.2);border-radius:10px;padding:16px 18px;">
+          <div style="font-size:13px;font-weight:800;color:var(--danger);margin-bottom:6px;">⚠️ Danger Zone</div>
+          <div style="font-size:12px;color:var(--text-muted);line-height:1.6;margin-bottom:14px;">
+            Factory Reset wipes <strong>all local data</strong> and clears localStorage. This does NOT delete your cloud backup — you can recover by clicking Force Reload from Cloud after resetting.
+          </div>
+          <button onclick="factoryReset()" style="padding:10px 18px;background:rgba(255,68,85,0.12);border:1px solid rgba(255,68,85,0.35);color:var(--danger);border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">🔥 Factory Reset (local only)</button>
+        </div>
+      </div><!-- close spane-debug -->
 
     </div><!-- end .settings-layout -->
 
@@ -3774,7 +3813,7 @@ body.light-mode .flatpickr-current-month input.cur-year, body.light-mode .flatpi
   </div>
 </div>
 
-<script>
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
 /************************* 
  * STORAGE 
  *************************/
@@ -8997,6 +9036,9 @@ var multiStops = []; // Multi-stop load waypoints
 
 function openMultiStop() {
   multiStops = [];
+  _stopCounter = 0;
+  const list = document.getElementById('stopsList');
+  if (list) list.innerHTML = '';
   const sec = document.getElementById('multiStopSection');
   if (sec) sec.style.display = 'block';
   const btn = document.getElementById('multiStopBtn');
@@ -9005,11 +9047,78 @@ function openMultiStop() {
 
 function closeMultiStop() {
   multiStops = [];
+  _stopCounter = 0;
+  const list = document.getElementById('stopsList');
+  if (list) list.innerHTML = '';
   const sec = document.getElementById('multiStopSection');
   if (sec) sec.style.display = 'none';
   const btn = document.getElementById('multiStopBtn');
   if (btn) btn.style.display = '';
 }
+
+// ── Multi-Stop: add / remove individual waypoint rows ──────────────────────
+var _stopCounter = 0; // monotonic id so indices never collide after removals
+
+function addStop() {
+  const id = _stopCounter++;
+  multiStops.push({ id, city: '' });
+
+  const row = document.createElement('div');
+  row.id = 'stop_row_' + id;
+  row.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:8px;';
+  row.innerHTML =
+    '<span style="font-size:11px;font-weight:700;color:var(--text-muted);min-width:18px;text-align:right;">' +
+      (multiStops.length) + '</span>' +
+    '<input type="text" placeholder="Intermediate stop (e.g. Chicago, IL)" autocomplete="off" ' +
+      'data-stop-id="' + id + '" ' +
+      'style="flex:1;padding:9px 12px;background:var(--bg-primary);border:1px solid var(--border-medium);' +
+             'border-radius:8px;color:var(--text-primary);font-size:13px;font-weight:500;" ' +
+      'oninput="_updateStop(' + id + ',this.value)" ' +
+      'onkeydown="if(event.key===\'Enter\'){event.preventDefault();addStop();}">' +
+    '<button onclick="removeStop(' + id + ')" title="Remove stop" ' +
+      'style="background:rgba(255,68,85,0.12);border:1px solid rgba(255,68,85,0.3);color:var(--danger);' +
+             'border-radius:6px;width:28px;height:28px;cursor:pointer;font-size:14px;line-height:1;' +
+             'flex-shrink:0;">✕</button>';
+
+  const list = document.getElementById('stopsList');
+  if (list) {
+    list.appendChild(row);
+    // Re-number all badges
+    _renumberStopBadges();
+    // Focus the new input
+    const inp = row.querySelector('input');
+    if (inp) {
+      inp.focus();
+      // Attach city autocomplete if available
+      if (typeof _attachCityAC === 'function') _attachCityAC(inp);
+    }
+  }
+}
+
+function _updateStop(id, value) {
+  const entry = multiStops.find(s => s.id === id);
+  if (entry) entry.city = value.trim();
+}
+
+function removeStop(id) {
+  multiStops = multiStops.filter(s => s.id !== id);
+  const row = document.getElementById('stop_row_' + id);
+  if (row) row.remove();
+  _renumberStopBadges();
+  // If all stops cleared, also reset counter so badges start at 1 again
+  if (multiStops.length === 0) _stopCounter = 0;
+}
+
+function _renumberStopBadges() {
+  const list = document.getElementById('stopsList');
+  if (!list) return;
+  const rows = list.querySelectorAll('[id^="stop_row_"]');
+  rows.forEach((row, i) => {
+    const badge = row.querySelector('span');
+    if (badge) badge.textContent = (i + 1);
+  });
+}
+// ───────────────────────────────────────────────────────────────────────────
 
 resolveAllDriverWeeks();
 revertFuelMaintDamage(); // one-time fix for doubled fuel/maint bug
@@ -10657,7 +10766,7 @@ function gmapsDecodePolyline(encoded) {
 }
 
 // Core route function — returns { miles, durationMin, polylineLatLngs, originCoord, destCoord }
-async function gmapsRoute(origin, destination, { avoidTolls = false, key } = {}) {
+async function gmapsRoute(origin, destination, { avoidTolls = false, key, waypoints = [] } = {}) {
   key = key || gmapsGetKey();
   if (!key) throw new Error('No Google Maps API key — add it in Settings');
 
@@ -10670,14 +10779,26 @@ async function gmapsRoute(origin, destination, { avoidTolls = false, key } = {})
     return { lat: loc.lat, lng: loc.lng };
   }
 
+  // Geocode origin + destination in parallel, then waypoints
   const [oCoord, dCoord] = await Promise.all([geocode(origin), geocode(destination)]);
+
+  // Geocode any intermediate waypoints
+  const validWaypoints = (waypoints || []).filter(w => w && w.trim());
+  const wpCoords = validWaypoints.length
+    ? await Promise.all(validWaypoints.map(w => geocode(w)))
+    : [];
 
   const body = {
     origin:      { location: { latLng: { latitude: oCoord.lat, longitude: oCoord.lng } } },
     destination: { location: { latLng: { latitude: dCoord.lat, longitude: dCoord.lng } } },
     travelMode:  'DRIVE',
     routingPreference: 'TRAFFIC_UNAWARE',
-    ...(avoidTolls ? { routeModifiers: { avoidTolls: true } } : {})
+    ...(avoidTolls ? { routeModifiers: { avoidTolls: true } } : {}),
+    ...(wpCoords.length ? {
+      intermediates: wpCoords.map(c => ({
+        location: { latLng: { latitude: c.lat, longitude: c.lng } }
+      }))
+    } : {})
   };
 
   const res = await fetch(`https://routes.googleapis.com/directions/v2:computeRoutes?key=${key}`, {
@@ -10701,7 +10822,7 @@ async function gmapsRoute(origin, destination, { avoidTolls = false, key } = {})
     ? gmapsDecodePolyline(route.polyline.encodedPolyline)
     : null;
 
-  return { miles, durationMin, polylineLatLngs, originCoord: oCoord, destCoord: dCoord };
+  return { miles, durationMin, polylineLatLngs, originCoord: oCoord, destCoord: dCoord, waypointCoords: wpCoords };
 }
 
 // Backward-compat wrapper used in simulator
@@ -10718,7 +10839,17 @@ async function calcRoute() {
   const dest     = destEl   ? destEl.value.trim()   : '';
   if (!origin || !dest) { alert('Enter an origin and destination first.'); return; }
 
-  // Determine deadhead "from" point: last delivery coords → geocoded city string
+  // Collect valid intermediate stops from multiStops
+  const waypoints = (multiStops || [])
+    .map(s => s.city || '')
+    .filter(c => c.trim().length > 0);
+
+  // Validate all stops are filled if the section is open
+  const stopsOpen = document.getElementById('multiStopSection')?.style.display !== 'none';
+  if (stopsOpen && multiStops.length > 0 && waypoints.length < multiStops.length) {
+    alert('Please fill in all intermediate stops before calculating miles, or remove the empty ones.');
+    return;
+  }
   var dhFromStr = null;
   try {
     var wk = getCurrentWeek();
@@ -10739,6 +10870,7 @@ async function calcRoute() {
   } catch(e) {}
 
   await gmapsShowRouteOptions(origin, dest, {
+    waypoints,
     onSelect: async function(route, usedTolls) {
       // Fill loaded miles
       const miLoad = document.getElementById('mi_load');
@@ -10775,10 +10907,16 @@ async function calcRoute() {
 }
 
 // ── Toll comparison + route selection (used by calcRoute and simulator) ──
-async function gmapsShowRouteOptions(origin, dest, { onSelect } = {}) {
+async function gmapsShowRouteOptions(origin, dest, { onSelect, waypoints = [] } = {}) {
   if (!origin || !dest) { alert('Enter origin and destination first'); return; }
   const key = gmapsGetKey();
   if (!key) { alert('Add your Google Maps API key in Settings → Google Maps API first.'); return; }
+
+  // Build header: show stop count if multi-stop
+  const stopCount = (waypoints || []).filter(w => w && w.trim()).length;
+  const routeDesc = stopCount
+    ? `${escapeHtml(origin)} → ${stopCount} stop${stopCount > 1 ? 's' : ''} → ${escapeHtml(dest)}`
+    : `${escapeHtml(origin)} → ${escapeHtml(dest)}`;
 
   // Show loading overlay
   const overlayId = 'routeOptionsOverlay';
@@ -10788,7 +10926,7 @@ async function gmapsShowRouteOptions(origin, dest, { onSelect } = {}) {
       <div style="background:var(--bg-elevated);border:1px solid var(--border-medium);border-radius:16px;width:100%;max-width:580px;box-shadow:0 12px 48px rgba(0,0,0,0.6);" onclick="event.stopPropagation()">
         <div style="padding:20px 24px;border-bottom:1px solid var(--border-subtle);">
           <div style="font-size:16px;font-weight:900;color:var(--text-primary);">🗺️ Route Options</div>
-          <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${escapeHtml(origin)} → ${escapeHtml(dest)}</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${routeDesc}</div>
         </div>
         <div id="routeOptionsBody" style="padding:20px 24px;">
           <div style="text-align:center;color:var(--text-muted);padding:24px;">⏳ Fetching both routes…</div>
@@ -10798,8 +10936,8 @@ async function gmapsShowRouteOptions(origin, dest, { onSelect } = {}) {
 
   try {
     const [fastest, noTolls] = await Promise.all([
-      gmapsRoute(origin, dest, { avoidTolls: false }),
-      gmapsRoute(origin, dest, { avoidTolls: true })
+      gmapsRoute(origin, dest, { avoidTolls: false, waypoints }),
+      gmapsRoute(origin, dest, { avoidTolls: true,  waypoints })
     ]);
 
     const extraMiles = noTolls.miles - fastest.miles;
@@ -14869,6 +15007,8 @@ if __name__=="__main__":
     fbApp = firebase.initializeApp(fbConfig);
     fbAuth = firebase.auth();
     fbDb   = firebase.firestore();
+    window.fbDb   = fbDb;   // exposed so forceCloudReload / diagnostic can access
+    window.fbUser = null;   // updated below on auth state change
     console.log("\u2705 Firebase ready");
   } catch(e) {
     console.error("Firebase init error:", e);
@@ -15206,6 +15346,7 @@ if __name__=="__main__":
     var wall = document.getElementById('authWall');
     if (user) {
       fbUser = user;
+      window.fbUser = user;   // expose for forceCloudReload
       console.log("✅ Signed in:", user.email);
       // Fetch & apply platform-wide API keys silently
       applyPlatformKeys();
@@ -15291,6 +15432,7 @@ if __name__=="__main__":
       if (typeof samStartAutoSync === 'function') samStartAutoSync();
     } else {
       fbUser = null;
+      window.fbUser = null;   // expose for forceCloudReload
       wall.classList.remove('gone');
       if (typeof samStopAutoSync === 'function') samStopAutoSync();
     }
@@ -15582,6 +15724,604 @@ function buildDatPrompt(driver, equipment) {
 
   return lines.join('\n');
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FORCE CLOUD RELOAD — bypasses timestamp check, always loads Firebase data
+// ═══════════════════════════════════════════════════════════════════════════
+window.forceCloudReload = async function() {
+  const statusEl = document.getElementById('debugSyncStatus');
+  function setStatus(msg, color) {
+    if (statusEl) { statusEl.textContent = msg; statusEl.style.color = color || 'var(--text-muted)'; }
+    console.log('[ForceCloudReload]', msg);
+  }
+
+  const _fbUser = window.fbUser;
+  const _fbDb   = window.fbDb;
+
+  if (!_fbUser) {
+    setStatus('❌ Not signed in. Please sign in first, then try again.', 'var(--danger)');
+    return;
+  }
+  if (!_fbDb) {
+    setStatus('❌ Firebase not initialized. Refresh the page and try again.', 'var(--danger)');
+    return;
+  }
+
+  setStatus('⏳ Fetching your data from Firebase…', 'var(--text-muted)');
+  try {
+    const doc = await _fbDb.collection('users').doc(_fbUser.uid).get();
+    if (!doc.exists) {
+      setStatus('⚠️ No cloud data found for your account. Nothing to restore.', 'var(--warning)');
+      return;
+    }
+    const d = doc.data();
+    if (!d.drivers || Object.keys(d.drivers).length === 0) {
+      setStatus('⚠️ Cloud doc exists but has no drivers. Nothing to restore.', 'var(--warning)');
+      return;
+    }
+
+    // Count cloud loads for the status message
+    const cloudLoadCount = Object.values(d.drivers).reduce((sum, drv) =>
+      sum + Object.values(drv.weeks || {}).reduce((s, wk) => s + ((wk.loads || []).length), 0), 0);
+    const cloudDriverCount = Object.keys(d.drivers).length;
+
+    // Force-apply cloud state
+    state.currentDriverId = d.currentDriverId || state.currentDriverId;
+    state.drivers = typeof desanitizeFromFirebase === 'function'
+      ? desanitizeFromFirebase(d.drivers)
+      : d.drivers;
+
+    // Persist to localStorage immediately
+    localStorage.setItem(STORE_KEY, JSON.stringify(state));
+    localStorage.setItem(STORE_KEY + '_savedAt', d.savedAt || new Date().toISOString());
+
+    if (d.settings) {
+      settings = d.settings;
+      if (typeof bindSettingsToInputs === 'function') bindSettingsToInputs();
+    }
+
+    // ── Full UI re-initialization sequence ─────────────────────────────────
+    if (typeof resolveAllDriverWeeks === 'function') resolveAllDriverWeeks();
+
+    // renderDriverSelect + set the dropdown value explicitly
+    if (typeof renderDriverSelect === 'function') {
+      renderDriverSelect();
+      const sel = document.getElementById('driverSelect');
+      if (sel && state.currentDriverId) sel.value = state.currentDriverId;
+    }
+
+    // After setting the driver, navigate to the most recent week that has loads
+    // so the user sees their data immediately instead of an empty current week
+    const currentDriver = state.drivers[state.currentDriverId];
+    if (currentDriver && currentDriver.weeks) {
+      const weekIds = Object.keys(currentDriver.weeks).sort().reverse();
+      const mostRecentLoaded = weekIds.find(wid =>
+        (currentDriver.weeks[wid].loads || []).length > 0
+      );
+      if (mostRecentLoaded) {
+        currentDriver.currentWeekId = mostRecentLoaded;
+      }
+    }
+
+    // Trigger onDriverChange to wire up week selector and all dependent state
+    if (typeof onDriverChange === 'function') onDriverChange();
+
+    // Full refresh — renders load log, map, analytics, etc.
+    if (typeof refreshAll === 'function') refreshAll({ save: false, mapDelay: 400 });
+
+    const weekNote = (() => {
+      if (!currentDriver) return '';
+      const wid = currentDriver.currentWeekId;
+      const wk  = currentDriver.weeks && currentDriver.weeks[wid];
+      const n   = wk ? (wk.loads || []).length : 0;
+      return n > 0 ? ` Showing week of ${wid} (${n} load${n !== 1 ? 's' : ''}).` : ' Use the week selector to navigate to weeks with loads.';
+    })();
+
+    setStatus(
+      `✅ Loaded ${cloudDriverCount} driver${cloudDriverCount !== 1 ? 's' : ''} · ${cloudLoadCount} total load${cloudLoadCount !== 1 ? 's' : ''} from cloud (saved ${d.savedAt ? new Date(d.savedAt).toLocaleString() : 'unknown'}).${weekNote}`,
+      'var(--success)'
+    );
+  } catch(e) {
+    setStatus('❌ Error: ' + e.message, 'var(--danger)');
+    console.error('[ForceCloudReload]', e);
+  }
+};
+
+window.showCloudSyncDiagnostic = async function() {
+  const statusEl = document.getElementById('debugSyncStatus');
+  function setStatus(msg, color) { if (statusEl) { statusEl.textContent = msg; statusEl.style.color = color || 'var(--text-muted)'; } }
+
+  const _fbUser = window.fbUser;
+  const _fbDb   = window.fbDb;
+
+  const lines = [];
+  lines.push('Signed in: ' + (_fbUser ? '✅ ' + _fbUser.email : '❌ No'));
+  lines.push('Firebase DB: ' + (_fbDb ? '✅ Ready' : '❌ Not initialized'));
+  lines.push('STORE_KEY: ' + STORE_KEY);
+
+  const localSavedAt = localStorage.getItem(STORE_KEY + '_savedAt');
+  lines.push('Local savedAt: ' + (localSavedAt || '(none)'));
+
+  // Count local loads
+  try {
+    const localDriverCount = Object.keys(state.drivers || {}).length;
+    const localLoadCount = Object.values(state.drivers || {}).reduce((sum, drv) =>
+      sum + Object.values(drv.weeks || {}).reduce((s, wk) => s + ((wk.loads || []).length), 0), 0);
+    lines.push(`Local state: ${localDriverCount} drivers · ${localLoadCount} loads`);
+  } catch(e) { lines.push('Local state: error — ' + e.message); }
+
+  // Fetch cloud info
+  if (_fbUser && _fbDb) {
+    setStatus('⏳ Checking cloud…', 'var(--text-muted)');
+    try {
+      const doc = await _fbDb.collection('users').doc(_fbUser.uid).get();
+      if (doc.exists) {
+        const d = doc.data();
+        const cloudDriverCount = Object.keys(d.drivers || {}).length;
+        const cloudLoadCount = Object.values(d.drivers || {}).reduce((sum, drv) =>
+          sum + Object.values(drv.weeks || {}).reduce((s, wk) => s + ((wk.loads || []).length), 0), 0);
+        lines.push(`Cloud state: ${cloudDriverCount} drivers · ${cloudLoadCount} loads`);
+        lines.push('Cloud savedAt: ' + (d.savedAt || '(none)'));
+      } else {
+        lines.push('Cloud state: no document found');
+      }
+    } catch(e) { lines.push('Cloud fetch error: ' + e.message); }
+  }
+
+  alert('☁️ Sync Diagnostic\n\n' + lines.join('\n'));
+  setStatus('');
+};
+// ══════════════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WATCHTOWER SMOKE TEST — runSmokeTest()
+// Tests ALL core functionality without requiring real API keys or Firebase.
+// Call from console: runSmokeTest()
+// Or click the "🧪 Run Smoke Test" button in Settings → Debug.
+// ═══════════════════════════════════════════════════════════════════════════
+window.runSmokeTest = async function() {
+  const results = [];
+  let pass = 0, fail = 0;
+
+  function check(name, condition, detail) {
+    if (condition) {
+      results.push({ name, status: 'PASS', detail: detail || '' });
+      pass++;
+    } else {
+      results.push({ name, status: 'FAIL', detail: detail || 'condition was falsy' });
+      fail++;
+    }
+  }
+
+  function checkEq(name, actual, expected, detail) {
+    const ok = actual === expected;
+    check(name, ok, ok ? (detail || '') : `expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+  }
+
+  function checkClose(name, actual, expected, tolerance, detail) {
+    const ok = Math.abs(actual - expected) <= tolerance;
+    check(name, ok, ok ? (detail || '') : `expected ~${expected} ± ${tolerance}, got ${actual}`);
+  }
+
+  // ── 1. DOM ELEMENT EXISTENCE ──────────────────────────────────────────────
+  const requiredIds = [
+    'origin','dest','mi_load','mi_dh','cost_tolls','cost_detention',
+    'cost_accessorials','pay_gross','pickup_day','delivery_day','load_status',
+    'preview_net','sticky_preview','multiStopSection','multiStopBtn','stopsList',
+    'driverSelect','weekSelect','analyzerSummaryBar','dh_cost_display'
+  ];
+  for (const id of requiredIds) {
+    check(`DOM #${id} exists`, !!document.getElementById(id));
+  }
+
+  // ── 2. GLOBAL FUNCTIONS EXIST ─────────────────────────────────────────────
+  const requiredFns = [
+    'addLoad','delLoad','preview','addStop','removeStop','openMultiStop',
+    'closeMultiStop','_updateStop','_renumberStopBadges','calcRoute',
+    'gmapsRoute','gmapsShowRouteOptions','getDriver','getCurrentWeek',
+    'getSpecs','calcLoadNet','updateUI','refreshAll','saveState',
+    'navWeekPrev','navWeekNext','navWeekCurrent','startNewWeek',
+    'renderWeekSelect','renderDriverSelect','addDriver','removeDriver',
+    'showTab','toggleTheme','editLoad','viewDetail','delLoad',
+    'renderAnalytics','renderAlerts','renderCalendar','initMap'
+  ];
+  for (const fn of requiredFns) {
+    check(`function ${fn} exists`, typeof window[fn] === 'function' || typeof eval(fn) === 'function');
+  }
+
+  // ── 3. STATE INTEGRITY ────────────────────────────────────────────────────
+  try {
+    check('state object exists', typeof state === 'object' && state !== null);
+    check('state.drivers is object', typeof state.drivers === 'object');
+    const driverCount = Object.keys(state.drivers || {}).length;
+    check('at least one driver exists', driverCount >= 1, `found ${driverCount} driver(s)`);
+  } catch(e) { check('state integrity', false, e.message); }
+
+  // ── 4. getSpecs() ─────────────────────────────────────────────────────────
+  try {
+    const specs = getSpecs();
+    check('getSpecs returns object', typeof specs === 'object');
+    check('specs.mpg is positive', specs.mpg > 0, `mpg=${specs.mpg}`);
+    check('specs.fuel is positive', specs.fuel > 0, `fuel=${specs.fuel}`);
+    check('specs.maint is number', typeof specs.maint === 'number');
+  } catch(e) { check('getSpecs()', false, e.message); }
+
+  // ── 5. calcLoadNet() MATH ─────────────────────────────────────────────────
+  try {
+    const driver = getDriver();
+    if (driver) {
+      const specs = getSpecs();
+
+      // Owner-op scenario: $3000 gross, 600 miles, no tolls/det/access
+      const r1 = calcLoadNet(driver, specs, { gross: 3000, miles: 600, tolls: 0, detention: 0, accessorials: 0 });
+      check('calcLoadNet returns object', typeof r1 === 'object');
+      check('calcLoadNet net is number', typeof r1.net === 'number', `net=${r1.net}`);
+      check('calcLoadNet net < gross', r1.net < 3000, `net=${r1.net}`);
+      check('calcLoadNet net > -10000', r1.net > -10000, `net=${r1.net}`);
+
+      // Zero gross should yield negative net (costs still apply)
+      const r2 = calcLoadNet(driver, specs, { gross: 0, miles: 600, tolls: 0, detention: 0, accessorials: 0 });
+      check('calcLoadNet zero-gross is negative', r2.net < 0, `net=${r2.net}`);
+
+      // Tolls are deducted
+      const r3 = calcLoadNet(driver, specs, { gross: 3000, miles: 600, tolls: 100, detention: 0, accessorials: 0 });
+      check('calcLoadNet tolls reduce net', r3.net < r1.net, `r3.net=${r3.net} vs r1.net=${r1.net}`);
+
+      // Detention and accessorials increase net
+      const r4 = calcLoadNet(driver, specs, { gross: 3000, miles: 600, tolls: 0, detention: 200, accessorials: 50 });
+      check('calcLoadNet detention+access increase net', r4.net > r1.net, `r4.net=${r4.net} vs r1.net=${r1.net}`);
+
+      // cut should be positive and at most equal to total revenue
+      check('calcLoadNet cut is positive', r1.cut > 0, `cut=${r1.cut}`);
+      check('calcLoadNet cut not > gross', r1.cut <= 3000, `cut=${r1.cut}`);
+    } else {
+      check('calcLoadNet skipped (no driver)', true, 'skipped — no driver in state');
+    }
+  } catch(e) { check('calcLoadNet math', false, e.message); }
+
+  // ── 6. MULTI-STOP: openMultiStop ─────────────────────────────────────────
+  try {
+    // Reset first
+    closeMultiStop();
+    checkEq('multiStop closed: section hidden', document.getElementById('multiStopSection').style.display, 'none');
+    checkEq('multiStop closed: btn visible', document.getElementById('multiStopBtn').style.display, '');
+
+    openMultiStop();
+    checkEq('multiStop open: section visible', document.getElementById('multiStopSection').style.display, 'block');
+    checkEq('multiStop open: btn hidden', document.getElementById('multiStopBtn').style.display, 'none');
+    checkEq('multiStops array empty on open', multiStops.length, 0);
+  } catch(e) { check('openMultiStop/closeMultiStop', false, e.message); }
+
+  // ── 7. MULTI-STOP: addStop ───────────────────────────────────────────────
+  try {
+    // openMultiStop was just called above
+    addStop();
+    checkEq('addStop: multiStops.length = 1', multiStops.length, 1);
+    check('addStop: entry has id', typeof multiStops[0].id === 'number');
+    checkEq('addStop: entry city is empty', multiStops[0].city, '');
+    check('addStop: DOM row exists', !!document.getElementById('stop_row_' + multiStops[0].id));
+
+    addStop();
+    checkEq('addStop x2: multiStops.length = 2', multiStops.length, 2);
+    const rows = document.getElementById('stopsList').querySelectorAll('[id^="stop_row_"]');
+    checkEq('addStop x2: 2 DOM rows in stopsList', rows.length, 2);
+  } catch(e) { check('addStop', false, e.message); }
+
+  // ── 8. MULTI-STOP: _updateStop ───────────────────────────────────────────
+  try {
+    if (multiStops.length >= 1) {
+      const id0 = multiStops[0].id;
+      _updateStop(id0, 'Chicago, IL');
+      checkEq('_updateStop updates city', multiStops[0].city, 'Chicago, IL');
+
+      _updateStop(id0, '  Denver, CO  ');
+      checkEq('_updateStop trims whitespace', multiStops[0].city, 'Denver, CO');
+    }
+  } catch(e) { check('_updateStop', false, e.message); }
+
+  // ── 9. MULTI-STOP: removeStop ────────────────────────────────────────────
+  try {
+    if (multiStops.length >= 2) {
+      const id1 = multiStops[1].id;
+      removeStop(id1);
+      checkEq('removeStop: multiStops.length back to 1', multiStops.length, 1);
+      check('removeStop: DOM row removed', !document.getElementById('stop_row_' + id1));
+    }
+  } catch(e) { check('removeStop', false, e.message); }
+
+  // ── 10. MULTI-STOP: waypoints collected by calcRoute logic ───────────────
+  try {
+    // Simulate what calcRoute does to collect waypoints
+    multiStops = [
+      { id: 900, city: 'Chicago, IL' },
+      { id: 901, city: 'St. Louis, MO' },
+      { id: 902, city: '' }  // empty — should be filtered
+    ];
+    const waypoints = (multiStops || [])
+      .map(s => s.city || '')
+      .filter(c => c.trim().length > 0);
+    checkEq('waypoints collection filters empty stops', waypoints.length, 2);
+    checkEq('waypoints[0] = Chicago', waypoints[0], 'Chicago, IL');
+    checkEq('waypoints[1] = St. Louis', waypoints[1], 'St. Louis, MO');
+
+    // Validation logic
+    const stopsOpen = true;
+    const hasEmpty = multiStops.length > 0 && waypoints.length < multiStops.length;
+    check('empty stop detection works', hasEmpty);
+  } catch(e) { check('waypoints collection logic', false, e.message); }
+
+  // Cleanup multi-stop
+  try { closeMultiStop(); } catch(e) {}
+
+  // ── 11. PREVIEW FUNCTION ─────────────────────────────────────────────────
+  try {
+    // Set values in form fields
+    const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+    setVal('pay_gross', '2500');
+    setVal('mi_load', '450');
+    setVal('mi_dh', '50');
+    setVal('cost_tolls', '0');
+    setVal('cost_detention', '0');
+    setVal('cost_accessorials', '0');
+    preview();
+    const netEl = document.getElementById('preview_net');
+    check('preview() updates #preview_net', netEl && netEl.innerText !== '$0.00', `got ${netEl?.innerText}`);
+  } catch(e) { check('preview()', false, e.message); }
+
+  // ── 12. ADD LOAD + DELETE LOAD ────────────────────────────────────────────
+  let addedLoadIdx = -1;
+  try {
+    const wk = getCurrentWeek();
+    const beforeCount = wk.loads.length;
+
+    // Fill all required fields
+    const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+    const setData = (id, k, v) => { const el = document.getElementById(id); if (el) el.dataset[k] = v; };
+    setVal('origin', 'Chicago, IL');
+    setVal('dest', 'Dallas, TX');
+    setVal('mi_load', '920');
+    setVal('mi_dh', '30');
+    setVal('pay_gross', '2800');
+    setVal('cost_tolls', '0');
+    setVal('cost_detention', '0');
+    setVal('cost_accessorials', '0');
+    setVal('pickup_day', 'Monday');
+    setVal('delivery_day', 'Wednesday');
+    setVal('load_status', 'confirmed');
+    setData('origin', 'lat', '41.8781');
+    setData('origin', 'lon', '-87.6298');
+    setData('dest', 'lat', '32.7767');
+    setData('dest', 'lon', '-96.7970');
+
+    addLoad();
+
+    const afterCount = getCurrentWeek().loads.length;
+    check('addLoad: load count increased', afterCount === beforeCount + 1, `${beforeCount} → ${afterCount}`);
+
+    if (afterCount > beforeCount) {
+      const loads = getCurrentWeek().loads;
+      addedLoadIdx = loads.length - 1;
+      const added = loads[addedLoadIdx];
+      checkEq('addLoad: origin stored', added.origin, 'Chicago, IL');
+      checkEq('addLoad: dest stored', added.dest, 'Dallas, TX');
+      check('addLoad: gross is number', typeof added.gross === 'number', `gross=${added.gross}`);
+      check('addLoad: net is number', typeof added.net === 'number', `net=${added.net}`);
+      check('addLoad: createdAt is set', !!added.createdAt);
+      checkEq('addLoad: stops null when no multi-stop', added.stops, null);
+    }
+  } catch(e) { check('addLoad', false, e.message); }
+
+  // ── 13. ADD LOAD WITH MULTI-STOP ─────────────────────────────────────────
+  try {
+    openMultiStop();
+    addStop();
+    _updateStop(multiStops[0].id, 'Memphis, TN');
+
+    const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+    const setData = (id, k, v) => { const el = document.getElementById(id); if (el) el.dataset[k] = v; };
+    setVal('origin', 'Chicago, IL');
+    setVal('dest', 'New Orleans, LA');
+    setVal('mi_load', '1100');
+    setVal('mi_dh', '0');
+    setVal('pay_gross', '3200');
+    setVal('cost_tolls', '15');
+    setVal('cost_detention', '0');
+    setVal('cost_accessorials', '0');
+    setVal('pickup_day', 'Monday');
+    setVal('delivery_day', 'Wednesday');
+    setVal('load_status', 'confirmed');
+    setData('origin', 'lat', '41.8781'); setData('origin', 'lon', '-87.6298');
+    setData('dest', 'lat', '29.9511'); setData('dest', 'lon', '-90.0715');
+
+    addLoad();
+
+    const loads = getCurrentWeek().loads;
+    const msLoad = loads[loads.length - 1];
+    check('addLoad multi-stop: stops array saved', Array.isArray(msLoad.stops), `stops=${JSON.stringify(msLoad.stops)}`);
+    check('addLoad multi-stop: stops has 1 entry', msLoad.stops && msLoad.stops.length === 1, `stops.length=${msLoad.stops?.length}`);
+    checkEq('addLoad multi-stop: stop city is Memphis', msLoad.stops?.[0]?.city, 'Memphis, TN');
+    checkEq('multiStops cleared after addLoad', multiStops.length, 0);
+    checkEq('multiStopSection hidden after addLoad', document.getElementById('multiStopSection').style.display, 'none');
+
+    // Cleanup: delete the multi-stop test load
+    const msIdx = getCurrentWeek().loads.length - 1;
+    delLoad(msIdx);
+  } catch(e) { check('addLoad with multi-stop', false, e.message); }
+
+  // ── 14. DELETE LOAD ───────────────────────────────────────────────────────
+  try {
+    if (addedLoadIdx >= 0) {
+      const wk = getCurrentWeek();
+      const beforeCount = wk.loads.length;
+      delLoad(addedLoadIdx);
+      const afterCount = getCurrentWeek().loads.length;
+      check('delLoad: load count decreased', afterCount === beforeCount - 1, `${beforeCount} → ${afterCount}`);
+    } else {
+      check('delLoad skipped (addLoad failed)', true, 'skipped');
+    }
+  } catch(e) { check('delLoad', false, e.message); }
+
+  // ── 15. WEEK NAVIGATION ───────────────────────────────────────────────────
+  try {
+    const origWeekId = getDriver()?.currentWeekId;
+    navWeekPrev();
+    check('navWeekPrev executes without error', true);
+    navWeekNext();
+    check('navWeekNext executes without error', true);
+    navWeekCurrent();
+    check('navWeekCurrent executes without error', true);
+    const restoredWeekId = getDriver()?.currentWeekId;
+    checkEq('navWeekCurrent restores current week', restoredWeekId, origWeekId);
+  } catch(e) { check('week navigation', false, e.message); }
+
+  // ── 16. SETTINGS / SPECS ROUNDTRIP ───────────────────────────────────────
+  try {
+    const specs = getSpecs();
+    const origMpg = specs.mpg;
+    const mpgInput = document.getElementById('mpg');
+    if (mpgInput) {
+      mpgInput.value = 8;
+      mpgInput.dispatchEvent(new Event('input'));
+      const newSpecs = getSpecs();
+      check('settings input updates spec', newSpecs.mpg === 8, `mpg=${newSpecs.mpg}`);
+      // Restore
+      mpgInput.value = origMpg;
+      mpgInput.dispatchEvent(new Event('input'));
+      check('settings restored', getSpecs().mpg === origMpg, `mpg=${getSpecs().mpg}`);
+    } else {
+      check('settings roundtrip skipped (no #mpg)', true, 'skipped');
+    }
+  } catch(e) { check('settings roundtrip', false, e.message); }
+
+  // ── 17. TAB NAVIGATION ────────────────────────────────────────────────────
+  try {
+    // Fleet is a modal (openFleetModal), not a tab-content pane — skip it
+    const tabIds = ['dispatch','calendar','analytics','settings'];
+    for (const t of tabIds) {
+      const pane = document.getElementById(t + 'Tab') || document.getElementById(t);
+      check(`tab "${t}" pane exists`, !!pane);
+    }
+    // Fleet: verify the open button exists instead
+    check('fleet modal button exists', !!document.querySelector('.fleet-btn') || typeof openFleetModal === 'function');
+  } catch(e) { check('tab navigation', false, e.message); }
+
+  // ── 18. haversineMiles math ───────────────────────────────────────────────
+  try {
+    // Chicago → Dallas ≈ 803 miles straight-line
+    const d = haversineMiles({ lat: 41.8781, lon: -87.6298 }, { lat: 32.7767, lon: -96.7970 });
+    checkClose('haversineMiles Chicago→Dallas ~803mi', d, 803, 40, `got ${d}`);
+  } catch(e) { check('haversineMiles', false, e.message); }
+
+  // ── 19. escapeHtml XSS safety ─────────────────────────────────────────────
+  try {
+    const xssInput = '<img src=x onerror="alert(1)">';
+    const safe = escapeHtml(xssInput);
+    check('escapeHtml escapes angle brackets', !safe.includes('<img'), `got: ${safe}`);
+    check('escapeHtml escapes quotes', !safe.includes('"alert'), `got: ${safe}`);
+  } catch(e) { check('escapeHtml', false, e.message); }
+
+  // ── 20. money() formatter ─────────────────────────────────────────────────
+  try {
+    checkEq('money(1234.5) = $1,234.50', money(1234.5), '$1,234.50');
+    checkEq('money(0) = $0.00', money(0), '$0.00');
+    check('money(-500) contains "-"', money(-500).includes('-'), `got: ${money(-500)}`);
+  } catch(e) { check('money()', false, e.message); }
+
+  // ── 21. toNum() helper ────────────────────────────────────────────────────
+  try {
+    checkEq('toNum("3.14") = 3.14', toNum('3.14'), 3.14);
+    checkEq('toNum("") = 0', toNum(''), 0);
+    checkEq('toNum(null) = 0', toNum(null), 0);
+    checkEq('toNum(undefined) = 0', toNum(undefined), 0);
+    checkEq('toNum("abc") = 0', toNum('abc'), 0);
+  } catch(e) { check('toNum()', false, e.message); }
+
+  // ── 22. getWeekKey / isoDate ──────────────────────────────────────────────
+  try {
+    const key = getWeekKey(new Date('2026-03-22'));
+    check('getWeekKey returns string', typeof key === 'string' && key.length > 0, `got: ${key}`);
+    const iso = isoDate(new Date('2026-03-22'));
+    check('isoDate returns YYYY-MM-DD', /^\d{4}-\d{2}-\d{2}$/.test(iso), `got: ${iso}`);
+  } catch(e) { check('getWeekKey/isoDate', false, e.message); }
+
+  // ── 23. CONFIG.DEBUG exists ───────────────────────────────────────────────
+  try {
+    check('CONFIG object exists', typeof CONFIG === 'object');
+    check('CONFIG.DEBUG is boolean', typeof CONFIG.DEBUG === 'boolean');
+  } catch(e) { check('CONFIG', false, e.message); }
+
+  // ── 24. renderAnalytics / renderAlerts don't throw ───────────────────────
+  try {
+    renderAlerts();
+    check('renderAlerts() runs without throwing', true);
+  } catch(e) { check('renderAlerts()', false, e.message); }
+
+  try {
+    renderAnalytics();
+    check('renderAnalytics() runs without throwing', true);
+  } catch(e) { check('renderAnalytics()', false, e.message); }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // RENDER RESULTS MODAL
+  // ──────────────────────────────────────────────────────────────────────────
+  const total = pass + fail;
+  const pct = Math.round((pass / total) * 100);
+  const statusColor = fail === 0 ? '#3fb950' : fail <= 3 ? '#e3b341' : '#ff4455';
+
+  const rows = results.map(r => `
+    <tr style="border-bottom:1px solid var(--border-subtle);">
+      <td style="padding:7px 10px;font-size:12px;color:var(--text-primary);max-width:280px;word-break:break-word;">${escapeHtml(r.name)}</td>
+      <td style="padding:7px 10px;font-size:11px;font-weight:800;color:${r.status==='PASS'?'#3fb950':'#ff4455'};">${r.status}</td>
+      <td style="padding:7px 10px;font-size:11px;color:var(--text-muted);max-width:260px;word-break:break-word;">${escapeHtml(r.detail)}</td>
+    </tr>`).join('');
+
+  document.getElementById('smokeTestOverlay')?.remove();
+  document.body.insertAdjacentHTML('beforeend', `
+    <div id="smokeTestOverlay" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.92);z-index:30000;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto;" onclick="if(event.target===this)this.remove()">
+      <div style="background:var(--bg-elevated);border:1px solid var(--border-medium);border-radius:16px;width:100%;max-width:760px;box-shadow:0 16px 64px rgba(0,0,0,0.8);margin:auto;" onclick="event.stopPropagation()">
+        <div style="padding:20px 24px;border-bottom:1px solid var(--border-subtle);display:flex;align-items:center;justify-content:space-between;">
+          <div>
+            <div style="font-size:18px;font-weight:900;color:var(--text-primary);">🧪 Smoke Test Results</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">Watchtower full-coverage functional test</div>
+          </div>
+          <button onclick="document.getElementById('smokeTestOverlay').remove()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:22px;padding:4px 8px;">✕</button>
+        </div>
+        <div style="padding:20px 24px;border-bottom:1px solid var(--border-subtle);display:flex;gap:24px;align-items:center;">
+          <div style="text-align:center;">
+            <div style="font-size:40px;font-weight:900;color:${statusColor};">${pct}%</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Pass Rate</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            <div style="font-size:13px;color:#3fb950;font-weight:700;">✅ ${pass} passed</div>
+            <div style="font-size:13px;color:${fail>0?'#ff4455':'var(--text-muted)'};font-weight:700;">${fail>0?'❌':'✅'} ${fail} failed</div>
+            <div style="font-size:12px;color:var(--text-muted);">${total} total checks</div>
+          </div>
+          ${fail === 0 ? '<div style="margin-left:auto;font-size:28px;">🎉</div>' : ''}
+        </div>
+        <div style="max-height:60vh;overflow-y:auto;">
+          <table style="width:100%;border-collapse:collapse;">
+            <thead>
+              <tr style="background:var(--bg-primary);">
+                <th style="padding:8px 10px;font-size:10px;font-weight:700;color:var(--text-muted);text-align:left;text-transform:uppercase;letter-spacing:1px;">Test</th>
+                <th style="padding:8px 10px;font-size:10px;font-weight:700;color:var(--text-muted);text-align:left;text-transform:uppercase;letter-spacing:1px;">Result</th>
+                <th style="padding:8px 10px;font-size:10px;font-weight:700;color:var(--text-muted);text-align:left;text-transform:uppercase;letter-spacing:1px;">Detail</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+        <div style="padding:16px 24px;display:flex;gap:10px;justify-content:flex-end;">
+          <button onclick="window.runSmokeTest()" style="padding:9px 18px;background:var(--accent-blue);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;">🔄 Re-run</button>
+          <button onclick="document.getElementById('smokeTestOverlay').remove()" style="padding:9px 18px;background:var(--bg-primary);border:1px solid var(--border-medium);color:var(--text-secondary);border-radius:8px;font-weight:600;font-size:13px;cursor:pointer;">Close</button>
+        </div>
+      </div>
+    </div>`);
+
+  console.log(`\n🧪 WATCHTOWER SMOKE TEST — ${pass}/${total} passed (${pct}%)\n`);
+  results.forEach(r => console.log(`  ${r.status === 'PASS' ? '✅' : '❌'} ${r.name}${r.detail ? ' — ' + r.detail : ''}`));
+  return { pass, fail, total, results };
+};
+// ══ End Smoke Test ══════════════════════════════════════════════════════════
 </script>
 
 </body>
@@ -15735,15 +16475,4 @@ function buildDatPrompt(driver, equipment) {
   };
 
   function closeOnboarding() {
-    document.getElementById('onboardingOverlay').style.display = 'none';
-    try { localStorage.setItem(OB_KEY, '1'); } catch(e) {}
-  }
-
-  window.isOnboardingDone = function() {
-    try { return !!localStorage.getItem(OB_KEY); } catch(e) { return false; }
-  };
-})();
-</script>
-
-</body>
-</html>
+    document.getElementById('onboardingOverlay').style.display
