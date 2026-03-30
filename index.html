@@ -10853,19 +10853,70 @@ async function calcRoute() {
   var dhFromStr = null;
   try {
     var wk = getCurrentWeek();
-    if (wk && wk.lastDropCoords && wk.lastDropCoords.lat && wk.lastDropCoords.lon) {
-      // Reverse-geocode last drop to a city string for the DH route call
-      var ldc = wk.lastDropCoords;
-      var rgUrl = 'https://nominatim.openstreetmap.org/reverse?format=json&lat=' + ldc.lat + '&lon=' + ldc.lon;
+
+    // ── Find DH origin coords ───────────────────────────────────────────────
+    // Primary: current week's lastDropCoords (set when a load was added this week)
+    var dhCoords = (wk && wk.lastDropCoords && wk.lastDropCoords.lat && wk.lastDropCoords.lon)
+      ? wk.lastDropCoords : null;
+
+    // If current week is empty (first load of the week), walk back through prior
+    // weeks to find where the driver last dropped — critical for "delivers next
+    // Monday" loads whose coords live on the previous week.
+    if (!dhCoords) {
+      var driver = getDriver();
+      if (driver && driver.weeks) {
+        var sortedWeekIds = Object.keys(driver.weeks).sort().reverse(); // newest first
+        var curWeekId = driver.currentWeekId;
+        for (var wi = 0; wi < sortedWeekIds.length; wi++) {
+          var wid = sortedWeekIds[wi];
+          if (wid === curWeekId) continue; // skip current (already checked)
+          var prevWk = driver.weeks[wid];
+          if (!prevWk) continue;
+          // Check lastDropCoords first
+          if (prevWk.lastDropCoords && prevWk.lastDropCoords.lat && prevWk.lastDropCoords.lon) {
+            dhCoords = prevWk.lastDropCoords;
+            break;
+          }
+          // Fallback: last load in that week with coords
+          var prevLoads = prevWk.loads || [];
+          for (var li = prevLoads.length - 1; li >= 0; li--) {
+            var pl = prevLoads[li];
+            if (pl && pl.coords && pl.coords.end && pl.coords.end.lat && pl.coords.end.lon) {
+              dhCoords = { lat: pl.coords.end.lat, lon: pl.coords.end.lon };
+              break;
+            }
+          }
+          if (dhCoords) break;
+        }
+      }
+    }
+
+    // Reverse-geocode coords → city string
+    if (dhCoords) {
+      var rgUrl = 'https://nominatim.openstreetmap.org/reverse?format=json&lat=' + dhCoords.lat + '&lon=' + dhCoords.lon;
       var rgResp = await fetch(rgUrl, { headers: { 'Accept-Language': 'en' } });
       var rgData = await rgResp.json();
       var city  = rgData.address?.city || rgData.address?.town || rgData.address?.village || '';
       var state2 = rgData.address?.state || '';
       if (city) dhFromStr = city + (state2 ? ', ' + state2 : '');
     }
-    // Fallback: last load's dest text
+
+    // Final fallback: last load's dest text from current week
     if (!dhFromStr && wk && wk.loads && wk.loads.length > 0) {
       dhFromStr = wk.loads[wk.loads.length - 1].dest || null;
+    }
+    // Final fallback: last load's dest text from previous weeks
+    if (!dhFromStr) {
+      var driver2 = getDriver();
+      if (driver2 && driver2.weeks) {
+        var swIds = Object.keys(driver2.weeks).sort().reverse();
+        for (var wi2 = 0; wi2 < swIds.length; wi2++) {
+          if (swIds[wi2] === driver2.currentWeekId) continue;
+          var pw = driver2.weeks[swIds[wi2]];
+          var pl2 = pw && pw.loads && pw.loads.length > 0 ? pw.loads[pw.loads.length - 1] : null;
+          if (pl2 && pl2.dest) { dhFromStr = pl2.dest; break; }
+        }
+      }
     }
   } catch(e) {}
 
