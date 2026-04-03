@@ -12819,415 +12819,273 @@ window.showLoadSimulator = function(driverId) {
     return combos;
   }
 
-  // Send combo to Lane Sim: fills the 2-leg lane sim form
-  window._lmSendToLaneSim = function(comboIdx) {
-    var c = window._lmCombosCache && window._lmCombosCache[comboIdx];
-    if (!c) return;
-    function s(id, val) { var el = document.getElementById(id); if (el) { el.value = val || ''; } }
-
-    var l1 = c.legs[0], l2 = c.legs[1];
-    // Get a representative city for each state from the loads
-    function repCity(ln, side) {
-      var l = ln.loads[0];
-      if (!l) return '';
-      return side === 'origin' ? (l.origin||'') : (l.dest||'');
-    }
-
-    s('ls_out_origin', repCity(l1,'origin'));
-    s('ls_out_dest',   repCity(l1,'dest'));
-    s('ls_out_gross',  Math.round(l1.avgGross));
-    s('ls_out_miles',  l1.avgMiles);
-    s('ls_out_dh',     0);
-    s('ls_out_transit', Math.ceil((l1.avgMiles||500)/500));
-
-    s('ls_rel_origin', repCity(l2,'origin'));
-    s('ls_rel_dest',   repCity(l2,'dest'));
-    s('ls_rel_gross',  Math.round(l2.avgGross));
-    s('ls_rel_miles',  l2.avgMiles);
-    s('ls_rel_dh',     c.dhs[0] || 0);
-    s('ls_rel_transit', Math.ceil((l2.avgMiles||500)/500));
-
-    // Fire change/input events so lane sim recalculates
-    ['ls_out_origin','ls_out_dest','ls_out_gross','ls_out_miles','ls_rel_origin','ls_rel_dest','ls_rel_gross','ls_rel_miles','ls_rel_dh'].forEach(function(id) {
-      var el = document.getElementById(id);
-      if (el) { el.dispatchEvent(new Event('input', {bubbles:true})); }
-    });
-    if (typeof laneSimBadgeUpdate === 'function') laneSimBadgeUpdate();
-    if (typeof laneSimSyncCities  === 'function') laneSimSyncCities();
-
-    // Close the modal and navigate
-    document.getElementById('lmComboOverlay')?.remove();
-    var lsTab = document.querySelector('[onclick*="lanesim"]');
-    if (lsTab && typeof showTab === 'function') showTab('lanesim', lsTab);
-
-    if (c.legs.length > 2) {
-      setTimeout(function() {
-        var l3 = c.legs[2];
-        alert('Lane Sim filled with legs 1 & 2.\n\nLeg 3 (' + l3.origin + '→' + l3.dest + ', avg $' + Math.round(l3.avgGross).toLocaleString() + ' / ' + l3.avgMiles + 'mi) needs to be added manually — Lane Sim currently supports 2 legs.');
-      }, 300);
-    }
-  };
-
-  // Toggle expand/collapse individual loads for a combo row
+  // ── Mini Sim: toggle expand per combo row ─────────────────────────────────
   window._lmToggleComboExpand = function(idx) {
-    var el = document.getElementById('lm-combo-expand-' + idx);
+    var el  = document.getElementById('lm-combo-expand-' + idx);
     var btn = document.getElementById('lm-combo-expand-btn-' + idx);
     if (!el) return;
     var open = el.style.display !== 'none';
     el.style.display = open ? 'none' : 'block';
-    if (btn) btn.textContent = open ? '▼ Show loads' : '▲ Hide loads';
+    if (btn) btn.textContent = open ? '▼ Simulate' : '▲ Close';
   };
+
+  // ── Mini Sim: run calculation using selected loads + driver ───────────────
+  window._lmRunMiniSim = function(idx) {
+    var c = window._lmCombosCache && window._lmCombosCache[idx];
+    if (!c) return;
+
+    var driverSel = document.getElementById('lm-mini-driver-' + idx);
+    var driver = null;
+    if (driverSel && driverSel.value && state.drivers && state.drivers[driverSel.value]) {
+      driver = state.drivers[driverSel.value];
+    }
+
+    // calcLoadNet expects the same shape as getSpecs(): .fuel .maint .loadsPerWeek etc.
+    // Build that shape, then override with per-driver values where set.
+    var specs = typeof getSpecs === 'function' ? getSpecs() : { fuel:3.60, mpg:6.5, maint:0.17, loadsPerWeek:5, split:0.80 };
+    if (driver) {
+      var ds = typeof buildDriverSpecs === 'function' ? buildDriverSpecs(driver) : {};
+      if (ds.fuelPrice  > 0) specs.fuel  = ds.fuelPrice;
+      if (ds.mpg        > 0) specs.mpg   = ds.mpg;
+      if (ds.maintenance > 0) specs.maint = ds.maintenance;
+      if (ds.split      > 0) specs.split = ds.split;
+    }
+
+    var fuelPrice = specs.fuel  || 3.60;
+    var mpg       = specs.mpg   || 6.5;
+    var maintRate = specs.maint || 0.17;
+    var cpmDh     = fuelPrice / mpg + maintRate;
+
+    var legResults = [];
+    var totalGross = 0, totalLoaded = 0, totalDH = 0;
+    var totalFuel = 0, totalMaint = 0, totalFixed = 0, totalDriverPay = 0, totalTolls = 0;
+
+    c.legs.forEach(function(ln, i) {
+      var sel     = document.getElementById('lm-leg-sel-' + idx + '-' + i);
+      var loadIdx = sel ? parseInt(sel.value, 10) : 0;
+      var sortedLoads = ln.loads.slice().sort(function(a,b){ return b.gross - a.gross; });
+      var load    = sortedLoads[loadIdx];
+      if (!load) return;
+
+      var gross = load.gross || 0;
+      var miles = load.miles || 0;
+      var dh    = i > 0 ? (c.dhs[i-1] || 0) : 0;
+      var days  = Math.max(1, Math.ceil(miles / 500));
+      var r     = { load:load, gross:gross, miles:miles, dh:dh, days:days,
+                    fuel:0, maint:0, fixed:0, driverPay:0, tolls:0, net:0,
+                    split:null, isCompany:false, dhCost: Math.round(dh * cpmDh) };
+
+      if (driver && specs) {
+        var cn = calcLoadNet(driver, specs, { gross:gross, miles:miles, tolls:0, detention:0, accessorials:0 });
+        r.fuel = cn.fuel; r.maint = cn.maint; r.fixed = cn.fixed;
+        r.driverPay = cn.driverPay; r.tolls = cn.tolls; r.net = cn.net;
+        r.split = cn.split; r.isCompany = cn.isCompany;
+        totalFuel += cn.fuel; totalMaint += cn.maint; totalFixed += cn.fixed;
+        totalDriverPay += cn.driverPay; totalTolls += cn.tolls;
+      } else {
+        r.fuel  = (miles / mpg) * fuelPrice;
+        r.maint = miles * maintRate;
+        r.net   = -(r.fuel + r.maint);
+        totalFuel += r.fuel; totalMaint += r.maint;
+      }
+
+      totalGross += gross; totalLoaded += miles; totalDH += dh;
+      legResults.push(r);
+    });
+
+    if (!legResults.length) return;
+
+    var legColors     = ['#38bdf8','#e85d2f','#3fb950','#a78bfa','#f59e0b'];
+    var totalDHCost   = Math.round(totalDH * cpmDh);
+    var totalAllCosts = totalFuel + totalMaint + totalFixed + totalDriverPay + totalTolls + totalDHCost;
+    var totalNet      = totalGross - totalAllCosts;
+    var allInMiles    = totalLoaded + totalDH;
+    var allInRpm      = allInMiles > 0 ? totalGross / allInMiles : 0;
+    var totalDays     = legResults.reduce(function(s,r){ return s + r.days; }, 0);
+
+    var legHtml = legResults.map(function(r, i) {
+      var rpm    = r.miles > 0 ? '$' + (r.gross / r.miles).toFixed(2) : '—';
+      var dhRow  = r.dh > 0
+        ? '<div style="padding:4px 0;font-size:11px;color:#f59e0b;display:flex;justify-content:space-between;">' +
+            '<span>↳ Deadhead to Leg ' + (i+1) + '</span>' +
+            '<span>' + r.dh.toLocaleString() + ' mi &nbsp;·&nbsp; -$' + r.dhCost + ' est cost</span>' +
+          '</div>'
+        : '';
+      var costRows = '';
+      if (driver) {
+        costRows +=
+          '<div style="display:flex;justify-content:space-between;"><span style="color:rgba(255,255,255,0.5);">Fuel</span><span style="color:#f59e0b;font-weight:700;">-$' + Math.round(r.fuel).toLocaleString() + '</span></div>' +
+          '<div style="display:flex;justify-content:space-between;"><span style="color:rgba(255,255,255,0.5);">Maint</span><span style="color:#f59e0b;font-weight:700;">-$' + Math.round(r.maint).toLocaleString() + '</span></div>' +
+          (r.fixed > 0 ? '<div style="display:flex;justify-content:space-between;"><span style="color:rgba(255,255,255,0.5);">Fixed</span><span style="color:#f59e0b;font-weight:700;">-$' + Math.round(r.fixed).toLocaleString() + '</span></div>' : '') +
+          (r.driverPay > 0 ? '<div style="display:flex;justify-content:space-between;"><span style="color:rgba(255,255,255,0.5);">' + (r.isCompany ? 'Driver Pay' : 'Split ' + (r.split ? Math.round(r.split*100)+'%' : '')) + '</span><span style="color:#818cf8;font-weight:700;">-$' + Math.round(r.driverPay).toLocaleString() + '</span></div>' : '') +
+          (r.tolls > 0 ? '<div style="display:flex;justify-content:space-between;"><span style="color:rgba(255,255,255,0.5);">Tolls</span><span style="color:#f59e0b;font-weight:700;">-$' + Math.round(r.tolls).toLocaleString() + '</span></div>' : '');
+      }
+      return dhRow +
+        '<div style="background:rgba(255,255,255,0.07);border-radius:8px;padding:10px 12px;margin-bottom:6px;border:1px solid rgba(255,255,255,0.06);">' +
+          '<div style="font-size:10px;font-weight:800;color:' + legColors[i%legColors.length] + ';letter-spacing:.7px;text-transform:uppercase;margin-bottom:6px;">' +
+            'Leg ' + (i+1) + ': ' + escapeHtml(r.load.origin||'') + ' → ' + escapeHtml(r.load.dest||'') + ' &nbsp;·&nbsp; ~' + r.days + ' day' + (r.days!==1?'s':'') +
+          '</div>' +
+          '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px 12px;font-size:11px;margin-bottom:' + (costRows?'8px':'0') + ';">' +
+            '<div><span style="color:rgba(255,255,255,0.5);">Gross</span><br><strong style="color:#3fb950;">$' + Math.round(r.gross).toLocaleString() + '</strong></div>' +
+            '<div><span style="color:rgba(255,255,255,0.5);">Miles</span><br><strong style="color:#fff;">' + r.miles.toLocaleString() + '</strong></div>' +
+            '<div><span style="color:rgba(255,255,255,0.5);">RPM</span><br><strong style="color:#38bdf8;">' + rpm + '</strong></div>' +
+          '</div>' +
+          (costRows ? '<div style="font-size:11px;border-top:1px solid rgba(255,255,255,0.08);padding-top:6px;display:flex;flex-direction:column;gap:3px;">' + costRows + '</div>' : '') +
+        '</div>';
+    }).join('');
+
+    var driverLabel = driver
+      ? ' — <strong style="color:#38bdf8;">' + escapeHtml(driver.name||'Driver') + '</strong>'
+      : ' <span style="color:rgba(255,255,255,0.4);font-weight:400;">(estimates only — no driver selected)</span>';
+
+    var html =
+      '<div style="margin-top:10px;background:rgba(0,0,0,0.45);border-radius:10px;padding:12px;border:1px solid rgba(255,255,255,0.08);">' +
+        '<div style="font-size:10px;font-weight:700;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px;">Results' + driverLabel + '</div>' +
+        legHtml +
+        (totalDH > 0
+          ? '<div style="font-size:11px;padding:5px 0;border-top:1px solid rgba(255,255,255,0.08);display:flex;justify-content:space-between;color:#f59e0b;">'+
+              '<span>Total deadhead</span><span>' + totalDH.toLocaleString() + ' mi &nbsp;·&nbsp; -$' + totalDHCost + ' est fuel+maint</span>' +
+            '</div>'
+          : '') +
+        '<div style="margin-top:10px;padding-top:10px;border-top:2px solid rgba(255,255,255,0.12);display:grid;grid-template-columns:repeat(3,1fr);gap:6px;text-align:center;">' +
+          statTile('$' + Math.round(totalGross).toLocaleString(), 'Total Gross', '#3fb950') +
+          statTile((totalNet>=0?'$':'-$') + Math.abs(Math.round(totalNet)).toLocaleString(), driver?(legResults[0]&&legResults[0].isCompany?'Co. Net':'Driver Net'):'Est Net', totalNet>=0?'#3fb950':'#ff4455') +
+          statTile('$' + allInRpm.toFixed(2), 'All-in RPM', '#38bdf8') +
+          statTile((allInMiles).toLocaleString() + ' mi', 'Total Miles', '#ffffff') +
+          statTile('~' + totalDays + ' day' + (totalDays!==1?'s':''), 'Est Transit', '#38bdf8') +
+          (driver ? statTile('$' + Math.round(totalAllCosts).toLocaleString(), 'Total Costs', '#f59e0b') : '') +
+        '</div>' +
+      '</div>';
+
+    var out = document.getElementById('lm-mini-sim-result-' + idx);
+    if (out) out.innerHTML = html;
+  };
+
+  function statTile(val, label, color) {
+    return '<div style="background:rgba(255,255,255,0.07);border-radius:7px;padding:8px 4px;border:1px solid rgba(255,255,255,0.05);">' +
+      '<div style="font-size:14px;font-weight:900;color:' + color + ';">' + val + '</div>' +
+      '<div style="font-size:9px;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:.5px;margin-top:2px;">' + label + '</div>' +
+    '</div>';
+  }
 
   window.lmOpenComboAnalyzer = function() {
     var loads = getAllMapLoads();
     var dates = lmGetDates();
 
-    var fuelPrice = 3.60, mpg = 6.5, maintRate = 0.12;
+    var fuelPrice = 3.60, mpg = 6.5, maintRate = 0.17;
     try {
+      var gs = typeof getSpecs === 'function' ? getSpecs() : null;
+      if (gs) { fuelPrice = gs.fuel||fuelPrice; mpg = gs.mpg||mpg; maintRate = gs.maint||maintRate; }
       var anyDriver = Object.values(state.drivers||{})[0];
       if (anyDriver) {
         var sp = typeof buildDriverSpecs === 'function' ? buildDriverSpecs(anyDriver) : null;
-        if (sp) { fuelPrice = sp.fuelPrice||fuelPrice; mpg = sp.mpg||mpg; maintRate = sp.maintenance||maintRate; }
+        if (sp) { if(sp.fuelPrice>0) fuelPrice=sp.fuelPrice; if(sp.mpg>0) mpg=sp.mpg; if(sp.maintenance>0) maintRate=sp.maintenance; }
       }
     } catch(e){}
-    var cpmDh = fuelPrice/mpg + maintRate;
+    var cpmDh = fuelPrice / mpg + maintRate;
 
-    var lanes = buildLaneData(loads, dates.from, dates.to);
+    var lanes   = buildLaneData(loads, dates.from, dates.to);
     var laneArr = Object.values(lanes).sort(function(a,b){ return b.count-a.count; }).slice(0,80);
-    laneArr.forEach(function(ln){
-      ln.avgMiles = ln.count > 0 ? Math.round(ln.miles/ln.count) : 0;
-    });
+    laneArr.forEach(function(ln){ ln.avgMiles = ln.count > 0 ? Math.round(ln.miles/ln.count) : 0; });
 
-    var maxDh = 250, maxLegs = 3;
-    var combos = buildCombos(laneArr, maxDh, maxLegs);
+    var combos  = buildCombos(laneArr, 250, 3);
     combos.sort(function(a,b){ return b.allInRpm-a.allInRpm; });
-    var top = combos.slice(0, 50);
-    window._lmCombosCache = top; // cache for send-to-sim
+    var top     = combos.slice(0, 50);
+    window._lmCombosCache = top;
 
     var legColors = ['#38bdf8','#e85d2f','#3fb950','#a78bfa','#f59e0b'];
 
-    function loadsExpandHtml(c) {
-      var html = '';
-      c.legs.forEach(function(ln, legIdx) {
-        var sortedLoads = ln.loads.slice().sort(function(a,b){ return b.gross-a.gross; }).slice(0,10);
-        var avgDays = Math.ceil((ln.avgMiles||500)/500);
-        html += '<div style="margin:8px 0 4px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:'+legColors[legIdx%legColors.length]+';">' +
-                  'Leg '+(legIdx+1)+': '+ln.origin+'→'+ln.dest+' &nbsp;·&nbsp; '+ln.count+' runs &nbsp;·&nbsp; avg '+ln.avgMiles+'mi &nbsp;·&nbsp; ~'+avgDays+' day'+(avgDays!==1?'s':'') +
-                '</div>' +
-                '<table style="width:100%;border-collapse:collapse;font-size:11px;">' +
-                '<tr style="color:var(--text-muted);font-size:9px;text-transform:uppercase;letter-spacing:.5px;">' +
-                  '<td style="padding:3px 6px;">Origin</td><td style="padding:3px 6px;">Destination</td>' +
-                  '<td style="padding:3px 6px;text-align:right;">Gross</td><td style="padding:3px 6px;text-align:right;">Miles</td>' +
-                  '<td style="padding:3px 6px;text-align:right;">RPM</td><td style="padding:3px 6px;">Date</td><td style="padding:3px 6px;">Driver</td>' +
-                '</tr>' +
-                sortedLoads.map(function(l) {
-                  var rpm = l.miles > 0 ? (l.gross/l.miles).toFixed(2) : '—';
-                  return '<tr style="border-top:1px solid var(--border-subtle);">' +
-                    '<td style="padding:4px 6px;color:var(--text-secondary);">' + escapeHtml(l.origin||'') + '</td>' +
-                    '<td style="padding:4px 6px;color:var(--text-secondary);">' + escapeHtml(l.dest||'') + '</td>' +
-                    '<td style="padding:4px 6px;text-align:right;color:var(--success);font-weight:700;">$' + Math.round(l.gross).toLocaleString() + '</td>' +
-                    '<td style="padding:4px 6px;text-align:right;color:var(--text-muted);">' + (l.miles||0).toLocaleString() + '</td>' +
-                    '<td style="padding:4px 6px;text-align:right;color:var(--accent-cyan);">$' + rpm + '</td>' +
-                    '<td style="padding:4px 6px;color:var(--text-muted);">' + escapeHtml(l.date||'') + '</td>' +
-                    '<td style="padding:4px 6px;color:var(--text-muted);">' + escapeHtml(l.driver||'') + '</td>' +
-                  '</tr>';
-                }).join('') +
-                (ln.loads.length > 10 ? '<tr><td colspan="7" style="padding:4px 6px;color:var(--text-muted);font-style:italic;">… and '+(ln.loads.length-10)+' more</td></tr>' : '') +
-                '</table>';
+    // Build driver dropdown (shared across all rows)
+    var driverOpts = '<option value="">— No driver (estimates only) —</option>';
+    try {
+      Object.entries(state.drivers||{}).forEach(function(kv) {
+        driverOpts += '<option value="' + kv[0] + '">' + escapeHtml(kv[1].name||kv[0]) + '</option>';
       });
-      return html;
+    } catch(e){}
+
+    function expandHtml(c, idx) {
+      var legSelects = c.legs.map(function(ln, i) {
+        var sorted = ln.loads.slice().sort(function(a,b){ return b.gross-a.gross; });
+        var opts   = sorted.map(function(l, li) {
+          var rpm  = l.miles > 0 ? ' · $'+(l.gross/l.miles).toFixed(2)+' RPM' : '';
+          var lbl  = escapeHtml(l.origin||'?') + ' → ' + escapeHtml(l.dest||'?') +
+                     ' · $' + Math.round(l.gross||0).toLocaleString() +
+                     ' · ' + (l.miles||0).toLocaleString() + ' mi' + rpm +
+                     (l.date   ? ' · ' + l.date              : '') +
+                     (l.driver ? ' · ' + escapeHtml(l.driver) : '');
+          return '<option value="' + li + '">' + lbl + '</option>';
+        }).join('');
+        return '<div style="margin-bottom:8px;">' +
+          '<div style="font-size:10px;font-weight:800;color:' + legColors[i%legColors.length] + ';text-transform:uppercase;letter-spacing:.7px;margin-bottom:4px;">' +
+            'Leg ' + (i+1) + ': ' + ln.origin + ' → ' + ln.dest + ' &nbsp;(' + ln.count + ' runs)' +
+          '</div>' +
+          '<select id="lm-leg-sel-' + idx + '-' + i + '" ' +
+            'style="width:100%;padding:7px 9px;background:var(--bg-primary);border:1px solid var(--border-medium);border-radius:7px;color:var(--text-primary);font-size:11px;">' +
+            opts +
+          '</select>' +
+        '</div>';
+      }).join('');
+
+      return '<div style="padding:12px 16px 2px;">' +
+        '<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">' +
+          '<span style="font-size:10px;font-weight:700;color:var(--text-muted);white-space:nowrap;">Driver:</span>' +
+          '<select id="lm-mini-driver-' + idx + '" ' +
+            'style="flex:1;padding:6px 8px;background:var(--bg-primary);border:1px solid var(--border-medium);border-radius:7px;color:var(--text-primary);font-size:11px;">' +
+            driverOpts +
+          '</select>' +
+        '</div>' +
+        legSelects +
+        '<button onclick="window._lmRunMiniSim(' + idx + ')" ' +
+          'style="width:100%;margin-top:2px;padding:9px;border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;' +
+          'background:linear-gradient(135deg,rgba(59,185,80,0.2),rgba(29,158,117,0.15));border:1px solid rgba(59,185,80,0.4);color:#3fb950;">▶ Calculate</button>' +
+        '<div id="lm-mini-sim-result-' + idx + '" style="padding-bottom:4px;"></div>' +
+      '</div>';
     }
 
     function comboRow(c, idx) {
-      var dhCost   = Math.round(c.totalDH * cpmDh);
-      var estNet   = c.totalGross - dhCost;
+      var dhCost    = Math.round(c.totalDH * cpmDh);
+      var estNet    = c.totalGross - dhCost;
       var totalDays = c.legs.reduce(function(s,ln){ return s + Math.ceil((ln.avgMiles||500)/500); }, 0);
 
       var legLabels = c.legs.map(function(l,i){
         var dh = i > 0 ? c.dhs[i-1] : 0;
         return (dh > 0 ? '<span style="font-size:9px;color:var(--text-muted);margin:0 2px;">~'+dh+'mi DH</span>' : '') +
                '<span style="background:rgba(255,255,255,0.08);border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;color:'+legColors[i%legColors.length]+';">'+l.origin+'→'+l.dest+'</span>' +
-               '<span style="font-size:10px;color:var(--text-muted);margin-left:4px;">×'+l.count+'</span>';
-      }).join('<span style="color:var(--text-muted);margin:0 3px;font-size:12px;">·</span>');
+               '<span style="font-size:10px;color:var(--text-muted);margin-left:3px;">×'+l.count+'</span>';
+      }).join('<span style="color:var(--text-muted);margin:0 2px;">·</span>');
 
       var dots = '';
-      for(var r=0;r<Math.min(c.reliability,5);r++) dots+='●';
-      for(var r=c.reliability;r<5;r++) dots+='○';
+      for(var r=0; r<Math.min(c.reliability,5); r++) dots += '●';
+      for(var r=c.reliability; r<5; r++) dots += '○';
 
-      return '<div style="border-bottom:1px solid var(--border-subtle);'+(idx%2===0?'':'background:rgba(255,255,255,0.015);')+'">' +
-        // Header row
+      return '<div style="border-bottom:1px solid var(--border-subtle);' + (idx%2===0?'':'background:rgba(255,255,255,0.015);') + '">' +
         '<div style="padding:12px 16px 8px;">' +
-          '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px;">' +
+          '<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-bottom:8px;">' +
             '<span style="font-size:10px;font-weight:800;color:var(--text-muted);min-width:22px;">#'+(idx+1)+'</span>' +
             legLabels +
           '</div>' +
-          // Stats grid — 5 cols now includes Days
-          '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:8px;">' +
-            '<div style="text-align:center;background:rgba(255,255,255,0.04);border-radius:6px;padding:6px 4px;">' +
-              '<div style="font-size:13px;font-weight:800;color:var(--text-primary);">'+c.totalLoaded.toLocaleString()+'</div>' +
-              '<div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Loaded mi</div>' +
-            '</div>' +
-            '<div style="text-align:center;background:rgba(255,255,255,0.04);border-radius:6px;padding:6px 4px;">' +
-              '<div style="font-size:13px;font-weight:800;color:var(--warning);">'+c.totalDH.toLocaleString()+'</div>' +
-              '<div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">DH mi</div>' +
-            '</div>' +
-            '<div style="text-align:center;background:rgba(255,255,255,0.04);border-radius:6px;padding:6px 4px;">' +
-              '<div style="font-size:13px;font-weight:800;color:var(--accent-cyan);">~'+totalDays+' day'+(totalDays!==1?'s':'')+'</div>' +
-              '<div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Transit</div>' +
-            '</div>' +
-            '<div style="text-align:center;background:rgba(255,255,255,0.04);border-radius:6px;padding:6px 4px;">' +
-              '<div style="font-size:13px;font-weight:800;color:var(--success);">$'+c.allInRpm.toFixed(2)+'</div>' +
-              '<div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">All-in RPM</div>' +
-            '</div>' +
-            '<div style="text-align:center;background:rgba(255,255,255,0.04);border-radius:6px;padding:6px 4px;">' +
-              '<div style="font-size:13px;font-weight:800;color:'+(estNet>0?'var(--success)':'var(--danger)')+';">'+(estNet>0?'$'+Math.round(estNet).toLocaleString():'-$'+Math.abs(Math.round(estNet)).toLocaleString())+'</div>' +
-              '<div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Est Net</div>' +
-            '</div>' +
+          '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-bottom:8px;">' +
+            statTile(c.totalLoaded.toLocaleString(), 'Loaded mi', 'var(--text-primary)') +
+            statTile(c.totalDH.toLocaleString(), 'DH mi', 'var(--warning)') +
+            statTile('~'+totalDays+' day'+(totalDays!==1?'s':''), 'Transit', 'var(--accent-cyan)') +
+            statTile('$'+c.allInRpm.toFixed(2), 'All-in RPM', 'var(--success)') +
+            statTile((estNet>0?'$':'-$')+Math.abs(Math.round(estNet)).toLocaleString(), 'Est Net', estNet>0?'var(--success)':'var(--danger)') +
           '</div>' +
-          // Footer row with actions
-          '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">' +
-            '<span style="font-size:10px;color:var(--text-muted);">Avg gross: <strong style="color:var(--text-primary);">$'+Math.round(c.totalGross).toLocaleString()+'</strong></span>' +
-            '<span style="font-size:10px;color:var(--text-muted);">DH fuel: <strong style="color:var(--warning);">$'+dhCost+'</strong></span>' +
-            '<span style="font-size:10px;color:var(--text-muted);">Reliability: <span style="color:var(--accent-cyan);letter-spacing:1px;">'+dots+'</span> ('+c.reliability+'x)</span>' +
-            '<div style="margin-left:auto;display:flex;gap:6px;">' +
-              '<button id="lm-combo-expand-btn-'+idx+'" onclick="window._lmToggleComboExpand('+idx+')" style="padding:4px 10px;font-size:10px;font-weight:700;border-radius:5px;border:1px solid var(--border-medium);background:var(--bg-primary);color:var(--text-secondary);cursor:pointer;">▼ Show loads</button>' +
-              '<button onclick="window._lmSendToLaneSim('+idx+')" style="padding:4px 10px;font-size:10px;font-weight:700;border-radius:5px;border:1px solid rgba(167,139,250,0.4);background:rgba(167,139,250,0.12);color:#c4b5fd;cursor:pointer;">📐 Lane Sim →</button>' +
-            '</div>' +
+          '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">' +
+            '<span style="font-size:10px;color:var(--text-muted);">Avg gross <strong style="color:var(--text-primary);">$'+Math.round(c.totalGross).toLocaleString()+'</strong></span>' +
+            '<span style="font-size:10px;color:var(--text-muted);">DH est <strong style="color:var(--warning);">-$'+dhCost+'</strong></span>' +
+            '<span style="font-size:10px;color:var(--text-muted);">Reliability <span style="color:var(--accent-cyan);letter-spacing:1px;">'+dots+'</span></span>' +
+            '<button id="lm-combo-expand-btn-'+idx+'" onclick="window._lmToggleComboExpand('+idx+')" ' +
+              'style="margin-left:auto;padding:5px 14px;font-size:11px;font-weight:700;border-radius:6px;' +
+              'border:1px solid rgba(59,185,80,0.4);background:rgba(59,185,80,0.1);color:#3fb950;cursor:pointer;">▼ Simulate</button>' +
           '</div>' +
         '</div>' +
-        // Expandable loads section (hidden by default)
-        '<div id="lm-combo-expand-'+idx+'" style="display:none;padding:0 16px 12px;background:rgba(0,0,0,0.2);border-top:1px solid var(--border-subtle);">' +
-          loadsExpandHtml(c) +
+        '<div id="lm-combo-expand-'+idx+'" style="display:none;border-top:1px solid var(--border-subtle);background:rgba(0,0,0,0.15);padding-bottom:12px;">' +
+          expandHtml(c, idx) +
         '</div>' +
       '</div>';
     }
 
-    var sortOpts = [{val:'allInRpm',label:'All-in RPM'},{val:'totalGross',label:'Gross'},{val:'estNet',label:'Est Net'},{val:'reliability',label:'Reliability'}];
-
-    function renderCombos(sortBy) {
-      var sorted = top.slice().sort(function(a,b){
-        if (sortBy==='totalGross')  return b.totalGross-a.totalGross;
-        if (sortBy==='reliability') return b.reliability-a.reliability;
-        if (sortBy==='estNet')      return (b.totalGross-b.totalDH*cpmDh)-(a.totalGross-a.totalDH*cpmDh);
-        return b.allInRpm-a.allInRpm;
-      });
-      // Rebuild cache in sorted order so send-to-sim indices match
-      window._lmCombosCache = sorted;
-      var el = document.getElementById('lm-combo-results');
-      if (el) el.innerHTML = sorted.length > 0
-        ? sorted.map(function(c,i){ return comboRow(c,i); }).join('')
-        : '<div style="padding:32px;text-align:center;color:var(--text-muted);">No combinations found — add more loads to build lane history.</div>';
-    }
-
-    document.getElementById('lmComboOverlay')?.remove();
-    document.body.insertAdjacentHTML('beforeend', `
-      <div id="lmComboOverlay" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.88);z-index:25000;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto;" onclick="if(event.target===this)this.remove()">
-        <div style="background:var(--bg-elevated);border:1px solid var(--border-medium);border-radius:16px;width:100%;max-width:760px;box-shadow:0 16px 64px rgba(0,0,0,0.8);margin:auto;" onclick="event.stopPropagation()">
-          <div style="padding:18px 20px;border-bottom:1px solid var(--border-subtle);display:flex;align-items:center;justify-content:space-between;">
-            <div>
-              <div style="font-size:17px;font-weight:900;color:var(--text-primary);">🔗 Lane Combination Analyzer</div>
-              <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${top.length} combinations · ${laneArr.length} lanes analyzed · max ${maxDh}mi deadhead between legs</div>
-            </div>
-            <button onclick="document.getElementById('lmComboOverlay').remove()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:22px;padding:4px 8px;">✕</button>
-          </div>
-          <div style="padding:10px 16px;border-bottom:1px solid var(--border-subtle);display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-            <span style="font-size:11px;color:var(--text-muted);font-weight:700;">Sort:</span>
-            ${sortOpts.map(function(o,i){
-              return '<button onclick="document.querySelectorAll(\'.lm-combo-sort\').forEach(b=>{b.style.background=\'var(--bg-primary)\';b.style.color=\'var(--text-secondary)\'});this.style.background=\'rgba(167,139,250,0.2)\';this.style.color=\'#c4b5fd\';window._lmComboSort(\''+o.val+'\')" class="lm-combo-sort" style="padding:5px 12px;border-radius:6px;font-size:11px;font-weight:700;border:1px solid var(--border-medium);cursor:pointer;background:'+(i===0?'rgba(167,139,250,0.2)':'var(--bg-primary)')+';color:'+(i===0?'#c4b5fd':'var(--text-secondary)')+';">'+o.label+'</button>';
-            }).join('')}
-            <div style="margin-left:auto;font-size:10px;color:var(--text-muted);">All-in RPM = gross ÷ (loaded + DH mi) · Transit ~500mi/day · DH cost $${fuelPrice.toFixed(2)}/gal ${mpg}mpg</div>
-          </div>
-          <div id="lm-combo-results" style="max-height:68vh;overflow-y:auto;"></div>
-        </div>
-      </div>`);
-
-    window._lmComboSort = renderCombos;
-    renderCombos('allInRpm');
-  };
-
-  // Hook into showTab to init the map when tab is first shown
-    var R = 3959;
-    var dLat = (c2[0]-c1[0]) * Math.PI/180;
-    var dLng = (c2[1]-c1[1]) * Math.PI/180;
-    var a = Math.sin(dLat/2)*Math.sin(dLat/2) +
-            Math.cos(c1[0]*Math.PI/180)*Math.cos(c2[0]*Math.PI/180)*
-            Math.sin(dLng/2)*Math.sin(dLng/2);
-    return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)) * 1.25);
-  }
-
-  function dhBetween(fromSt, toSt) {
-    if (fromSt === toSt) return 0;
-    var c1 = STATE_CENTERS[fromSt], c2 = STATE_CENTERS[toSt];
-    if (!c1 || !c2) return 9999;
-    return haversineMi(c1, c2);
-  }
-
-  function buildCombos(laneArr, maxDh, maxLegs) {
-    // Index lanes by origin state for fast chaining
-    var byOrigin = {};
-    laneArr.forEach(function(ln) {
-      if (!byOrigin[ln.origin]) byOrigin[ln.origin] = [];
-      byOrigin[ln.origin].push(ln);
-    });
-
-    var combos = [];
-
-    // 2-leg combos
-    laneArr.forEach(function(l1) {
-      var nexts = byOrigin[l1.dest] || [];
-      // Also check nearby-origin lanes (within maxDh)
-      Object.keys(byOrigin).forEach(function(st) {
-        if (st === l1.dest) return; // already covered
-        if (dhBetween(l1.dest, st) <= maxDh) {
-          nexts = nexts.concat(byOrigin[st] || []);
-        }
-      });
-      // Deduplicate
-      var seen = {};
-      nexts = nexts.filter(function(l) {
-        if (l.key === l1.key || seen[l.key]) return false;
-        seen[l.key] = true;
-        return true;
-      });
-      nexts.forEach(function(l2) {
-        var dh1 = dhBetween(l1.dest, l2.origin);
-        var totalLoaded = (l1.avgMiles || 0) + (l2.avgMiles || 0);
-        var totalGross  = (l1.avgGross  || 0) + (l2.avgGross  || 0);
-        var totalDH     = dh1;
-        var allInRpm    = (totalLoaded + totalDH) > 0 ? totalGross / (totalLoaded + totalDH) : 0;
-        combos.push({
-          legs:        [l1, l2],
-          dhs:         [dh1],
-          totalLoaded: Math.round(totalLoaded),
-          totalGross:  Math.round(totalGross),
-          totalDH:     totalDH,
-          allInRpm:    allInRpm,
-          reliability: Math.min(l1.count, l2.count)
-        });
-      });
-    });
-
-    // 3-leg combos — extend best 2-leg combos
-    if (maxLegs >= 3) {
-      var top2 = combos.slice().sort(function(a,b){ return b.allInRpm - a.allInRpm; }).slice(0, 120);
-      top2.forEach(function(c2) {
-        var lastLeg = c2.legs[c2.legs.length - 1];
-        var nexts = byOrigin[lastLeg.dest] || [];
-        Object.keys(byOrigin).forEach(function(st) {
-          if (st === lastLeg.dest) return;
-          if (dhBetween(lastLeg.dest, st) <= maxDh) {
-            nexts = nexts.concat(byOrigin[st] || []);
-          }
-        });
-        var usedKeys = c2.legs.map(function(l){ return l.key; });
-        var seen = {};
-        nexts = nexts.filter(function(l) {
-          if (usedKeys.indexOf(l.key) >= 0 || seen[l.key]) return false;
-          seen[l.key] = true;
-          return true;
-        });
-        nexts.forEach(function(l3) {
-          var dh2         = dhBetween(lastLeg.dest, l3.origin);
-          var totalLoaded = c2.totalLoaded + (l3.avgMiles || 0);
-          var totalGross  = c2.totalGross  + (l3.avgGross  || 0);
-          var totalDH     = c2.totalDH     + dh2;
-          var allInRpm    = (totalLoaded + totalDH) > 0 ? totalGross / (totalLoaded + totalDH) : 0;
-          combos.push({
-            legs:        c2.legs.concat([l3]),
-            dhs:         c2.dhs.concat([dh2]),
-            totalLoaded: Math.round(totalLoaded),
-            totalGross:  Math.round(totalGross),
-            totalDH:     totalDH,
-            allInRpm:    allInRpm,
-            reliability: Math.min(c2.reliability, l3.count)
-          });
-        });
-      });
-    }
-
-    return combos;
-  }
-
-  window.lmOpenComboAnalyzer = function() {
-    var loads = getAllMapLoads();
-    var dates = lmGetDates();
-
-    // Get driver specs for cost estimation (use first owner-op driver or defaults)
-    var fuelPrice = 3.60, mpg = 6.5, maintRate = 0.12;
-    try {
-      var anyDriver = Object.values(state.drivers || {})[0];
-      if (anyDriver) {
-        var sp = typeof buildDriverSpecs === 'function' ? buildDriverSpecs(anyDriver) : null;
-        if (sp) { fuelPrice = sp.fuelPrice || fuelPrice; mpg = sp.mpg || mpg; maintRate = sp.maintenance || maintRate; }
-      }
-    } catch(e){}
-
-    var cpmDh = fuelPrice/mpg + maintRate; // cost per DH mile
-
-    var lanes = buildLaneData(loads, dates.from, dates.to);
-    // Only consider lanes with at least 1 run; cap at top 80 by count for perf
-    var laneArr = Object.values(lanes).sort(function(a,b){ return b.count-a.count; }).slice(0,80);
-
-    // Add avgMiles to each lane
-    laneArr.forEach(function(ln){ ln.avgMiles = ln.count > 0 ? Math.round(ln.miles/ln.count) : 0; });
-
-    var maxDh   = 250;
-    var maxLegs = 3;
-    var combos  = buildCombos(laneArr, maxDh, maxLegs);
-
-    // Sort by all-in RPM, take top 50
-    combos.sort(function(a,b){ return b.allInRpm - a.allInRpm; });
-    var top = combos.slice(0, 50);
-
-    // State color palette for leg badges
-    var legColors = ['#38bdf8','#e85d2f','#3fb950','#a78bfa','#f59e0b'];
-
-    function comboRow(c, idx) {
-      var dhCost     = Math.round(c.totalDH * cpmDh);
-      var estNet     = c.totalGross - dhCost;
-      var legLabels  = c.legs.map(function(l,i){
-        var dh = i > 0 ? c.dhs[i-1] : 0;
-        return (dh > 0 ? '<span style="font-size:9px;color:var(--text-muted);margin:0 2px;">~'+dh+'mi DH</span>' : '') +
-               '<span style="background:rgba(255,255,255,0.08);border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;color:'+legColors[i%legColors.length]+';">'+l.origin+'→'+l.dest+'</span>' +
-               '<span style="font-size:10px;color:var(--text-muted);margin-left:4px;">×'+l.count+'</span>';
-      }).join('<span style="color:var(--text-muted);margin:0 3px;font-size:12px;">·</span>');
-
-      var reliabilityDots = '';
-      for(var r=0;r<Math.min(c.reliability,5);r++) reliabilityDots += '●';
-      for(var r=c.reliability;r<5;r++) reliabilityDots += '○';
-
-      return '<div style="padding:14px 16px;border-bottom:1px solid var(--border-subtle);' + (idx%2===0?'':'background:rgba(255,255,255,0.015);') + '">' +
-        '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px;">' +
-          '<span style="font-size:10px;font-weight:800;color:var(--text-muted);min-width:22px;">#'+(idx+1)+'</span>' +
-          legLabels +
-        '</div>' +
-        '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:6px;">' +
-          '<div style="text-align:center;background:rgba(255,255,255,0.04);border-radius:6px;padding:6px 4px;">' +
-            '<div style="font-size:13px;font-weight:800;color:var(--text-primary);">'+ c.totalLoaded.toLocaleString() +'</div>' +
-            '<div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Loaded mi</div>' +
-          '</div>' +
-          '<div style="text-align:center;background:rgba(255,255,255,0.04);border-radius:6px;padding:6px 4px;">' +
-            '<div style="font-size:13px;font-weight:800;color:var(--warning);">'+ c.totalDH.toLocaleString() +'</div>' +
-            '<div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">DH mi</div>' +
-          '</div>' +
-          '<div style="text-align:center;background:rgba(255,255,255,0.04);border-radius:6px;padding:6px 4px;">' +
-            '<div style="font-size:13px;font-weight:800;color:var(--success);">$'+ c.allInRpm.toFixed(2) +'</div>' +
-            '<div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">All-in RPM</div>' +
-          '</div>' +
-          '<div style="text-align:center;background:rgba(255,255,255,0.04);border-radius:6px;padding:6px 4px;">' +
-            '<div style="font-size:13px;font-weight:800;color:'+(estNet>0?'var(--success)':'var(--danger)')+';">'+ (estNet>0?'$'+Math.round(estNet).toLocaleString():'-$'+Math.abs(Math.round(estNet)).toLocaleString()) +'</div>' +
-            '<div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Est Net</div>' +
-          '</div>' +
-        '</div>' +
-        '<div style="display:flex;gap:12px;font-size:10px;color:var(--text-muted);">' +
-          '<span>Avg gross: <strong style="color:var(--text-primary);">$'+Math.round(c.totalGross).toLocaleString()+'</strong></span>' +
-          '<span>DH fuel est: <strong style="color:var(--warning);">$'+dhCost+'</strong></span>' +
-          '<span>Reliability: <span style="color:var(--accent-cyan);letter-spacing:1px;">'+reliabilityDots+'</span> ('+c.reliability+'x each)</span>' +
-        '</div>' +
-      '</div>';
-    }
-
-    // Build sort controls
     var sortOpts = [
       {val:'allInRpm',  label:'All-in RPM'},
       {val:'totalGross',label:'Gross'},
@@ -13237,42 +13095,48 @@ window.showLoadSimulator = function(driverId) {
 
     function renderCombos(sortBy) {
       var sorted = top.slice().sort(function(a,b){
-        if (sortBy === 'totalGross')  return b.totalGross  - a.totalGross;
-        if (sortBy === 'reliability') return b.reliability - a.reliability;
-        if (sortBy === 'estNet')      return (b.totalGross - b.totalDH*cpmDh) - (a.totalGross - a.totalDH*cpmDh);
-        return b.allInRpm - a.allInRpm;
+        if (sortBy==='totalGross')   return b.totalGross-a.totalGross;
+        if (sortBy==='reliability')  return b.reliability-a.reliability;
+        if (sortBy==='estNet')       return (b.totalGross-b.totalDH*cpmDh)-(a.totalGross-a.totalDH*cpmDh);
+        return b.allInRpm-a.allInRpm;
       });
+      window._lmCombosCache = sorted;
       var el = document.getElementById('lm-combo-results');
       if (el) el.innerHTML = sorted.length > 0
         ? sorted.map(function(c,i){ return comboRow(c,i); }).join('')
-        : '<div style="padding:32px;text-align:center;color:var(--text-muted);">No combinations found — add more loads to build lane history.</div>';
+        : '<div style="padding:32px;text-align:center;color:var(--text-muted);">No combinations found — run more loads to build lane history.</div>';
     }
 
-    document.getElementById('lmComboOverlay')?.remove();
-    document.body.insertAdjacentHTML('beforeend', `
-      <div id="lmComboOverlay" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.88);z-index:25000;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto;" onclick="if(event.target===this)this.remove()">
-        <div style="background:var(--bg-elevated);border:1px solid var(--border-medium);border-radius:16px;width:100%;max-width:720px;box-shadow:0 16px 64px rgba(0,0,0,0.8);margin:auto;" onclick="event.stopPropagation()">
-          <div style="padding:18px 20px;border-bottom:1px solid var(--border-subtle);display:flex;align-items:center;justify-content:space-between;">
-            <div>
-              <div style="font-size:17px;font-weight:900;color:var(--text-primary);">🔗 Lane Combination Analyzer</div>
-              <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${top.length} combinations found from ${laneArr.length} lanes · max ${maxDh}mi deadhead between legs</div>
-            </div>
-            <button onclick="document.getElementById('lmComboOverlay').remove()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:22px;padding:4px 8px;">✕</button>
-          </div>
-          <div style="padding:12px 16px;border-bottom:1px solid var(--border-subtle);display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-            <span style="font-size:11px;color:var(--text-muted);font-weight:700;">Sort:</span>
-            ${sortOpts.map(function(o){
-              return '<button onclick="document.querySelectorAll(\'.lm-combo-sort\').forEach(b=>b.style.background=\'var(--bg-primary)\');this.style.background=\'rgba(167,139,250,0.2)\';window._lmComboSort(\''+o.val+'\')" class="lm-combo-sort" style="padding:5px 12px;border-radius:6px;font-size:11px;font-weight:700;border:1px solid var(--border-medium);cursor:pointer;background:var(--bg-primary);color:var(--text-secondary);">' + o.label + '</button>';
-            }).join('')}
-            <div style="margin-left:auto;font-size:10px;color:var(--text-muted);">All-in RPM = gross ÷ (loaded + DH miles) · Est Net subtracts DH fuel at $${fuelPrice.toFixed(2)}/gal ${mpg}mpg</div>
-          </div>
-          <div id="lm-combo-results" style="max-height:65vh;overflow-y:auto;"></div>
-        </div>
-      </div>`);
+    document.getElementById('lmComboOverlay') && document.getElementById('lmComboOverlay').remove();
+    var sortBtns = sortOpts.map(function(o,i){
+      return '<button onclick="document.querySelectorAll(\'.lm-cs\').forEach(function(b){b.style.background=\'var(--bg-primary)\';b.style.color=\'var(--text-secondary)\'});this.style.background=\'rgba(167,139,250,0.2)\';this.style.color=\'#c4b5fd\';window._lmComboSort(\''+o.val+'\')" class="lm-cs" style="padding:5px 12px;border-radius:6px;font-size:11px;font-weight:700;border:1px solid var(--border-medium);cursor:pointer;background:'+(i===0?'rgba(167,139,250,0.2)':'var(--bg-primary)')+';color:'+(i===0?'#c4b5fd':'var(--text-secondary)')+';">'+o.label+'</button>';
+    }).join('');
+
+    var overlay = document.createElement('div');
+    overlay.id = 'lmComboOverlay';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.88);z-index:25000;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto;';
+    overlay.onclick = function(e){ if(e.target===overlay) overlay.remove(); };
+    overlay.innerHTML =
+      '<div style="background:var(--bg-elevated);border:1px solid var(--border-medium);border-radius:16px;width:100%;max-width:760px;box-shadow:0 16px 64px rgba(0,0,0,0.8);margin:auto;" onclick="event.stopPropagation()">' +
+        '<div style="padding:18px 20px;border-bottom:1px solid var(--border-subtle);display:flex;align-items:center;justify-content:space-between;">' +
+          '<div>' +
+            '<div style="font-size:17px;font-weight:900;color:var(--text-primary);">🔗 Lane Combination Analyzer</div>' +
+            '<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">' + top.length + ' combinations · ' + laneArr.length + ' lanes · max 250mi DH · click ▼ Simulate to pick specific loads</div>' +
+          '</div>' +
+          '<button onclick="document.getElementById(\'lmComboOverlay\').remove()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:22px;padding:4px 8px;">✕</button>' +
+        '</div>' +
+        '<div style="padding:10px 16px;border-bottom:1px solid var(--border-subtle);display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' +
+          '<span style="font-size:11px;color:var(--text-muted);font-weight:700;">Sort:</span>' +
+          sortBtns +
+        '</div>' +
+        '<div id="lm-combo-results" style="max-height:72vh;overflow-y:auto;"></div>' +
+      '</div>';
+    document.body.appendChild(overlay);
 
     window._lmComboSort = renderCombos;
     renderCombos('allInRpm');
   };
+
 
   // Hook into showTab to init the map when tab is first shown
   var _origShowTab = window.showTab;
