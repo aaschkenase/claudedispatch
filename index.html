@@ -3776,6 +3776,7 @@ body.light-mode .flatpickr-current-month input.cur-year, body.light-mode .flatpi
           <div id="debugSyncStatus" style="font-size:12px;color:var(--text-muted);margin-bottom:12px;min-height:18px;"></div>
           <div style="display:flex;gap:10px;flex-wrap:wrap;">
             <button onclick="forceCloudReload()" style="padding:10px 18px;background:rgba(79,158,248,0.15);border:1px solid rgba(79,158,248,0.4);color:#4f9ef8;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">☁️ Force Reload from Cloud</button>
+            <button onclick="forcePushLocalToCloud()" style="padding:10px 18px;background:rgba(59,185,80,0.15);border:1px solid rgba(59,185,80,0.4);color:#3fb950;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">⬆️ Force Push Local → Cloud</button>
             <button onclick="showCloudSyncDiagnostic()" style="padding:10px 18px;background:var(--bg-primary);border:1px solid var(--border-medium);color:var(--text-secondary);border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">🔍 Show Sync Diagnostic</button>
           </div>
         </div>
@@ -3904,19 +3905,21 @@ function updateSyncBanner(status, detail) {
   const el = document.getElementById('syncBanner');
   if (!el) return;
   clearTimeout(_syncBannerTimer);
+  el.style.display = '';
 
   if (status === 'offline') {
     el.className = 'offline';
     el.textContent = '⚠️ OFFLINE — Changes saved locally, will sync when connection returns';
   } else if (status === 'error') {
     el.className = 'offline';
-    el.textContent = '⚠️ Sync failed — Data saved locally. ' + (detail || '');
-    _syncBannerTimer = setTimeout(() => { el.className = ''; el.style.display = 'none'; }, 8000);
+    el.innerHTML = '⚠️ Cloud sync FAILED — data is safe locally. <strong>' + (detail || 'Unknown error') + '</strong>' +
+      ' &nbsp;<button onclick="typeof forcePushLocalToCloud===\'function\'&&forcePushLocalToCloud()" ' +
+      'style="padding:2px 10px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);color:#fff;border-radius:5px;font-size:11px;cursor:pointer;font-weight:700;margin-left:4px;">Retry ↑</button>';
+    // Never auto-hide on error — user must see this
   } else if (status === 'saved') {
     el.className = '';
     el.style.display = 'none';
   } else if (status === 'online') {
-    // Came back online — briefly show then hide
     el.className = 'syncing';
     el.textContent = '🔄 Back online — syncing…';
     _syncBannerTimer = setTimeout(() => { el.className = ''; el.style.display = 'none'; }, 3000);
@@ -16042,6 +16045,18 @@ if __name__=="__main__":
       }
 
       const sanitizedDrivers = slimForCloud(state.drivers);
+
+      // Pre-flight size check — Firestore hard limit is 1MB per document
+      var sizeTest = JSON.stringify({ drivers: sanitizedDrivers, settings: settings });
+      if (sizeTest.length > 900000) {
+        console.warn('☁️ Doc ~' + Math.round(sizeTest.length/1024) + 'KB — trimming old weeks');
+        Object.values(sanitizedDrivers).forEach(function(drv) {
+          if (!drv.weeks) return;
+          var wids = Object.keys(drv.weeks).sort();
+          while (wids.length > 8) { delete drv.weeks[wids.shift()]; }
+        });
+      }
+
       fbDb.collection('users').doc(fbUser.uid).set({
         currentDriverId: state.currentDriverId,
         drivers: sanitizedDrivers,
@@ -16557,6 +16572,84 @@ window.forceCloudReload = async function() {
   } catch(e) {
     setStatus('❌ Error: ' + e.message, 'var(--danger)');
     console.error('[ForceCloudReload]', e);
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FORCE PUSH LOCAL → CLOUD — bypasses debounce, writes current local state now
+// ═══════════════════════════════════════════════════════════════════════════
+window.forcePushLocalToCloud = async function() {
+  const statusEl = document.getElementById('debugSyncStatus');
+  function setStatus(msg, color) {
+    if (statusEl) { statusEl.textContent = msg; statusEl.style.color = color || 'var(--text-muted)'; }
+    console.log('[ForcePush]', msg);
+  }
+
+  const _fbUser = window.fbUser;
+  const _fbDb   = window.fbDb;
+
+  if (!_fbUser) { setStatus('❌ Not signed in.', '#ff4455'); return; }
+  if (!_fbDb)   { setStatus('❌ Firebase not initialized.', '#ff4455'); return; }
+
+  setStatus('⏳ Preparing…', 'var(--text-muted)');
+
+  try {
+    const drvCount = Object.keys(state.drivers || {}).length;
+    const ldCount  = Object.values(state.drivers || {}).reduce((s, d) =>
+      s + Object.values(d.weeks || {}).reduce((ss, w) => ss + (w.loads||[]).length, 0), 0);
+
+    // Deep clone + slim (same as cloudSave)
+    var slim = JSON.parse(JSON.stringify(state.drivers || {}));
+    Object.values(slim).forEach(function(drv) {
+      Object.values(drv.weeks || {}).forEach(function(wk) {
+        (wk.loads || []).forEach(function(l) {
+          delete l.routeGeo;
+          if (l.details) {
+            delete l.details.mpg; delete l.details.fuelPrice;
+            delete l.details.maintRate; delete l.details.loadsPerWeek;
+          }
+        });
+      });
+    });
+    if (typeof sanitizeForFirebase === 'function') slim = sanitizeForFirebase(slim);
+
+    // Size check
+    var kb = Math.round(JSON.stringify({drivers:slim, settings:settings}).length / 1024);
+    if (kb > 900) {
+      setStatus('⚠️ Doc is ~' + kb + 'KB — trimming to last 8 weeks/driver…', '#f59e0b');
+      Object.values(slim).forEach(function(drv) {
+        if (!drv.weeks) return;
+        var wids = Object.keys(drv.weeks).sort();
+        while (wids.length > 8) { delete drv.weeks[wids.shift()]; }
+      });
+      kb = Math.round(JSON.stringify({drivers:slim, settings:settings}).length / 1024);
+    }
+
+    setStatus('⏳ Pushing ' + drvCount + ' drivers · ' + ldCount + ' loads (~' + kb + 'KB)…', 'var(--text-muted)');
+
+    await _fbDb.collection('users').doc(_fbUser.uid).set({
+      currentDriverId: state.currentDriverId,
+      drivers: slim,
+      settings: settings,
+      savedAt: new Date().toISOString()
+    });
+
+    localStorage.setItem(STORE_KEY + '_savedAt', new Date().toISOString());
+
+    // Clear any error banner
+    const banner = document.getElementById('syncBanner');
+    if (banner) { banner.className = ''; banner.style.display = 'none'; }
+
+    setStatus(
+      '✅ Pushed ' + drvCount + ' driver' + (drvCount!==1?'s':'') +
+      ' · ' + ldCount + ' load' + (ldCount!==1?'s':'') +
+      ' (~' + kb + 'KB) at ' + new Date().toLocaleTimeString() + '.',
+      '#3fb950'
+    );
+  } catch(e) {
+    setStatus('❌ Push failed: ' + e.message, '#ff4455');
+    console.error('[ForcePush]', e);
+    updateSyncBanner('error', e.message);
   }
 };
 
