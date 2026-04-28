@@ -1984,7 +1984,7 @@ body.light-mode .flatpickr-current-month input.cur-year, body.light-mode .flatpi
   <nav class="main-nav no-print">
     <button class="nav-tab" onclick="showTab('dispatch', this)"><span class="nav-tab-icon">🚚</span><span class="nav-tab-label">Dispatch</span></button>
     <button class="nav-tab active" onclick="showTab('dashboard', this)"><span class="nav-tab-icon">🏠</span><span class="nav-tab-label">Dashboard</span></button>
-    <button class="nav-tab" onclick="showTab('analytics', this)"><span class="nav-tab-icon">📊</span><span class="nav-tab-label">Analytics</span></button>
+    <button class="nav-tab" onclick="showTab('analytics', this)"><span class="nav-tab-icon">🧠</span><span class="nav-tab-label">Intelligence</span></button>
     <button class="nav-tab" onclick="showTab('calendar', this)"><span class="nav-tab-icon">📅</span><span class="nav-tab-label">Calendar</span></button>
     <button class="nav-tab" onclick="showTab('lanesim', this)" style="background:rgba(167,139,250,0.08);border:1px solid rgba(167,139,250,0.2);color:#a78bfa;"><span class="nav-tab-icon">📐</span><span class="nav-tab-label">Lane Sim</span></button>
     <button class="nav-tab" onclick="showTab('companycut', this)"><span class="nav-tab-icon">🏢</span><span class="nav-tab-label">Company Cut</span></button>
@@ -2604,11 +2604,11 @@ body.light-mode .flatpickr-current-month input.cur-year, body.light-mode .flatpi
             <div class="input-row">
               <div class="input-group">
                 <label>Pickup Location</label>
-                <input id="origin" placeholder="City, State" autocomplete="off" />
+                <input id="origin" placeholder="City, State" autocomplete="off" oninput="rateIntelUpdate()" />
               </div>
               <div class="input-group">
                 <label>Drop Location</label>
-                <input id="dest" placeholder="City, State" autocomplete="off" />
+                <input id="dest" placeholder="City, State" autocomplete="off" oninput="rateIntelUpdate()" />
               </div>
             </div>
 
@@ -2692,6 +2692,31 @@ body.light-mode .flatpickr-current-month input.cur-year, body.light-mode .flatpi
               <div class="input-group">
                 <label>Accessorials ($)</label>
                 <input id="cost_accessorials" type="number" inputmode="decimal" min="0" step="0.01" value="0" oninput="preview()" placeholder="0.00">
+              </div>
+            </div>
+
+            <!-- ── Rate Intelligence Panel (auto-shows when origin+dest+miles filled) ── -->
+            <div id="rateIntelPanel" style="display:none;margin-bottom:10px;background:var(--bg-elevated);border:1px solid rgba(167,139,250,0.3);border-radius:10px;overflow:hidden;">
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:rgba(167,139,250,0.08);border-bottom:1px solid rgba(167,139,250,0.15);">
+                <div style="font-size:11px;font-weight:800;color:#c4b5fd;letter-spacing:.5px;">💡 RATE INTELLIGENCE</div>
+                <div id="rateIntelLane" style="font-size:10px;color:rgba(255,255,255,0.5);"></div>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;border-bottom:1px solid rgba(255,255,255,0.05);">
+                <!-- Lane history -->
+                <div style="padding:10px 12px;border-right:1px solid rgba(255,255,255,0.05);">
+                  <div style="font-size:9px;font-weight:700;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px;">Your Lane History</div>
+                  <div id="rateIntelHistory" style="font-size:11px;color:rgba(255,255,255,0.6);">—</div>
+                </div>
+                <!-- Offer analysis -->
+                <div style="padding:10px 12px;">
+                  <div style="font-size:9px;font-weight:700;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px;">This Offer</div>
+                  <div id="rateIntelOffer" style="font-size:11px;color:rgba(255,255,255,0.6);">Enter gross above ↑</div>
+                </div>
+              </div>
+              <!-- Counter-offer targets -->
+              <div style="padding:10px 12px;">
+                <div style="font-size:9px;font-weight:700;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.8px;margin-bottom:7px;">Counter-offer Targets</div>
+                <div id="rateIntelCounters" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
               </div>
             </div>
 
@@ -2787,27 +2812,34 @@ body.light-mode .flatpickr-current-month input.cur-year, body.light-mode .flatpi
   <!-- ANALYTICS TAB -->
   <div id="analytics" class="tab-content">
     <style>
-      /* ── Analytics styles ── */
+      /* ── Intelligence dashboard styles ── */
       .an-range-bar { display:flex; align-items:center; gap:6px; margin-bottom:14px; flex-wrap:wrap; }
       .an-range-pill { font-family:'DM Sans',sans-serif; font-size:11px; font-weight:600; padding:5px 13px; border-radius:6px; border:1px solid var(--border-medium); background:transparent; color:var(--text-muted); cursor:pointer; transition:all 0.15s; }
-      .an-range-pill:hover { color:var(--text-primary); border-color:var(--border-medium); background:rgba(255,255,255,0.04); }
+      .an-range-pill:hover { color:var(--text-primary); background:rgba(255,255,255,0.04); }
       .an-range-pill.on { background:var(--accent-blue); border-color:var(--accent-blue); color:#fff; }
       .an-range-label { font-family:'DM Mono',monospace; font-size:10px; color:var(--text-muted); margin-left:auto; }
 
       /* KPI strip */
-      .an-kpi-row { display:grid; grid-template-columns:repeat(5,1fr); background:var(--bg-elevated); border:1px solid var(--border-medium); border-radius:10px; overflow:hidden; margin-bottom:14px; }
+      .an-kpi-row { display:grid; grid-template-columns:repeat(6,1fr); background:var(--bg-elevated); border:1px solid var(--border-medium); border-radius:10px; overflow:hidden; margin-bottom:14px; }
       .an-kpi { padding:14px 16px; border-right:1px solid var(--border-medium); }
       .an-kpi:last-child { border-right:none; }
       .an-kpi.hi { border-top:2px solid var(--accent-blue); }
       .an-kpi-label { font-family:'DM Mono',monospace; font-size:8px; letter-spacing:2px; text-transform:uppercase; color:var(--text-muted); margin-bottom:6px; }
-      .an-kpi-value { font-size:22px; font-weight:800; color:var(--text-primary); letter-spacing:-0.5px; line-height:1; }
+      .an-kpi-value { font-size:20px; font-weight:800; color:var(--text-primary); letter-spacing:-0.5px; line-height:1; }
       .an-kpi-value.a { color:var(--accent-blue); }
       .an-kpi-value.g { color:var(--success); }
       .an-kpi-delta { font-size:11px; font-weight:700; margin-top:5px; }
       .an-kpi-delta.up { color:var(--success); }
       .an-kpi-delta.dn { color:var(--danger); }
 
-      /* Chart section */
+      /* Cards */
+      .an-card { background:var(--bg-elevated); border:1px solid var(--border-medium); border-radius:10px; overflow:hidden; margin-bottom:14px; }
+      .an-card-hdr { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:1px solid var(--border-medium); }
+      .an-card-title { font-size:13px; font-weight:700; color:var(--text-primary); }
+      .an-card-body { padding:16px; }
+      .an-two-col { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+
+      /* Chart */
       .an-chart-card { background:var(--bg-elevated); border:1px solid var(--border-medium); border-radius:10px; overflow:hidden; margin-bottom:14px; }
       .an-chart-tabs { display:flex; border-bottom:1px solid var(--border-medium); background:var(--bg-secondary); }
       .an-chart-tab { font-family:'DM Sans',sans-serif; font-size:12px; font-weight:500; padding:9px 16px; color:var(--text-muted); cursor:pointer; border-bottom:2px solid transparent; transition:all 0.15s; white-space:nowrap; }
@@ -2815,22 +2847,55 @@ body.light-mode .flatpickr-current-month input.cur-year, body.light-mode .flatpi
       .an-chart-tab.on { color:var(--accent-blue); border-bottom-color:var(--accent-blue); font-weight:600; }
       .an-chart-body { padding:16px; }
 
+      /* Waterfall */
+      .wf-row { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--border-subtle); }
+      .wf-row:last-child { border-bottom:none; }
+      .wf-label { font-size:11px; color:var(--text-secondary); width:100px; flex-shrink:0; font-weight:600; }
+      .wf-bar-wrap { flex:1; height:20px; background:rgba(255,255,255,0.04); border-radius:4px; overflow:hidden; position:relative; }
+      .wf-bar { height:100%; border-radius:4px; transition:width 0.5s ease; }
+      .wf-amt { font-size:12px; font-weight:800; width:80px; text-align:right; flex-shrink:0; }
+      .wf-pct { font-family:'DM Mono',monospace; font-size:10px; color:var(--text-muted); width:36px; text-align:right; flex-shrink:0; }
+      .wf-net-row { background:rgba(59,185,80,0.06); border-radius:7px; padding:10px 12px; margin-top:8px; display:flex; align-items:center; justify-content:space-between; border:1px solid rgba(59,185,80,0.2); }
+
+      /* Leaderboard */
+      .lb-row { display:flex; align-items:center; gap:12px; padding:11px 16px; border-bottom:1px solid var(--border-subtle); cursor:pointer; transition:background 0.1s; }
+      .lb-row:hover { background:rgba(255,255,255,0.02); }
+      .lb-row:last-child { border-bottom:none; }
+      .lb-rank { font-size:16px; width:28px; flex-shrink:0; text-align:center; }
+      .lb-name { flex:1; }
+      .lb-name-main { font-size:13px; font-weight:700; color:var(--text-primary); }
+      .lb-name-sub { font-size:10px; color:var(--text-muted); margin-top:1px; }
+      .lb-stat { text-align:center; min-width:54px; }
+      .lb-stat-val { font-size:12px; font-weight:800; color:var(--text-primary); line-height:1; }
+      .lb-stat-lbl { font-family:'DM Mono',monospace; font-size:8px; letter-spacing:.8px; text-transform:uppercase; color:var(--text-muted); margin-top:2px; }
+      .lb-trend { font-size:13px; font-weight:700; width:30px; text-align:center; flex-shrink:0; }
+      .lb-bar { height:3px; background:rgba(255,255,255,0.06); border-radius:2px; overflow:hidden; margin-top:4px; }
+      .lb-bar-fill { height:3px; border-radius:2px; }
+
       /* Cost breakdown */
-      .an-cost-row { display:flex; align-items:center; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--border-subtle); font-size:13px; }
+      .an-cost-row { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--border-subtle); font-size:12px; }
       .an-cost-row:last-child { border-bottom:none; }
-      .an-cost-name { display:flex; align-items:center; gap:9px; color:var(--text-secondary); }
-      .an-cost-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
-      .an-cost-bar-wrap { flex:1; margin:0 12px; height:4px; background:var(--bg-primary); border-radius:2px; }
+      .an-cost-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+      .an-cost-name { color:var(--text-secondary); flex:1; font-weight:600; }
+      .an-cost-bar-wrap { width:80px; height:4px; background:var(--bg-primary); border-radius:2px; overflow:hidden; }
       .an-cost-bar { height:4px; border-radius:2px; }
       .an-cost-pct { font-family:'DM Mono',monospace; font-size:10px; color:var(--text-muted); width:32px; text-align:right; }
-      .an-cost-amt { font-weight:700; color:var(--text-primary); width:60px; text-align:right; }
+      .an-cost-amt { font-weight:700; color:var(--text-primary); width:72px; text-align:right; }
 
-      /* Lane ranked list */
+      /* Alerts */
+      .an-insight { display:flex; gap:10px; align-items:flex-start; background:rgba(63,185,80,0.06); border:1px solid rgba(63,185,80,0.18); border-radius:7px; padding:10px 14px; margin:0 0 8px; }
+      .an-insight.warn { background:rgba(248,81,73,0.06); border-color:rgba(248,81,73,0.18); }
+      .an-insight.info { background:rgba(232,93,47,0.06); border-color:rgba(232,93,47,0.18); }
+      .an-insight-icon { font-size:15px; flex-shrink:0; margin-top:1px; }
+      .an-insight-txt { font-size:12px; color:var(--text-secondary); line-height:1.5; }
+      .an-insight-txt strong { color:var(--text-primary); }
+
+      /* Lane rankings */
       .an-lane-row { display:flex; align-items:center; gap:10px; padding:8px 16px; border-bottom:1px solid var(--border-subtle); }
       .an-lane-row:last-child { border-bottom:none; }
       .an-lane-rank { font-family:'DM Mono',monospace; font-size:10px; color:var(--text-muted); width:20px; flex-shrink:0; }
       .an-lane-name { flex:1; font-size:12px; font-weight:600; color:var(--text-primary); }
-      .an-lane-bar-wrap { width:70px; height:4px; background:var(--bg-primary); border-radius:2px; }
+      .an-lane-bar-wrap { width:60px; height:4px; background:var(--bg-primary); border-radius:2px; }
       .an-lane-bar { height:4px; border-radius:2px; }
       .an-lane-val { font-size:12px; font-weight:700; width:42px; text-align:right; }
       .an-lane-cnt { font-family:'DM Mono',monospace; font-size:10px; color:var(--text-muted); width:22px; text-align:right; }
@@ -2838,143 +2903,132 @@ body.light-mode .flatpickr-current-month input.cur-year, body.light-mode .flatpi
       .an-lane-sort-btn { font-size:10px; font-weight:600; padding:3px 9px; border-radius:4px; border:1px solid var(--border-medium); background:transparent; color:var(--text-muted); cursor:pointer; }
       .an-lane-sort-btn.on { background:var(--accent-blue); border-color:var(--accent-blue); color:#fff; }
 
-      /* Driver comparison */
-      .an-driver-row { display:flex; align-items:center; gap:12px; padding:10px 16px; border-bottom:1px solid var(--border-subtle); }
-      .an-driver-row:last-child { border-bottom:none; }
-      .an-d-rank { font-size:18px; width:26px; flex-shrink:0; }
-      .an-d-name { font-size:13px; font-weight:700; color:var(--text-primary); flex:1; min-width:80px; }
-      .an-d-stat { text-align:center; min-width:56px; }
-      .an-d-stat-val { font-size:13px; font-weight:700; color:var(--text-primary); line-height:1; }
-      .an-d-stat-lbl { font-family:'DM Mono',monospace; font-size:8px; letter-spacing:1px; text-transform:uppercase; color:var(--text-muted); margin-top:2px; }
-      .an-d-bar-wrap { width:80px; flex-shrink:0; }
-      .an-d-bar { height:4px; background:var(--bg-primary); border-radius:2px; overflow:hidden; margin-bottom:3px; }
-      .an-d-bar-fill { height:4px; border-radius:2px; transition:width 0.4s; }
-      .an-d-score { font-family:'DM Mono',monospace; font-size:9px; color:var(--text-muted); text-align:right; }
-
-      /* Insight callouts */
-      .an-insight { display:flex; gap:10px; align-items:flex-start; background:rgba(63,185,80,0.06); border:1px solid rgba(63,185,80,0.18); border-radius:7px; padding:10px 14px; margin:0 0 8px; }
-      .an-insight-icon { font-size:15px; flex-shrink:0; margin-top:1px; }
-      .an-insight-txt { font-size:12px; color:var(--text-secondary); line-height:1.5; }
-      .an-insight-txt strong { color:var(--text-primary); }
-      .an-insight.warn { background:rgba(248,81,73,0.06); border-color:rgba(248,81,73,0.18); }
-      .an-insight.info { background:rgba(232,93,47,0.06); border-color:rgba(232,93,47,0.18); }
-
-      /* Section cards */
-      .an-card { background:var(--bg-elevated); border:1px solid var(--border-medium); border-radius:10px; overflow:hidden; margin-bottom:14px; }
-      .an-card-hdr { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:1px solid var(--border-medium); }
-      .an-card-title { font-size:13px; font-weight:700; color:var(--text-primary); }
-      .an-card-body { padding:16px; }
-      .an-two-col { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+      /* Compat stubs */
+      .an-d-rank,.an-d-name,.an-d-stat,.an-d-stat-val,.an-d-stat-lbl,.an-d-bar-wrap,.an-d-bar,.an-d-bar-fill,.an-d-score,.an-driver-row { display:none; }
     </style>
 
+    <!-- ── HEADER ── -->
+    <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:14px;flex-wrap:wrap;">
+      <div style="font-size:20px;font-weight:900;color:var(--text-primary);letter-spacing:-0.5px;">🧠 Intelligence</div>
+      <div style="font-size:11px;color:var(--text-muted);" id="anRangeLabel"></div>
+    </div>
+
+    <!-- ── RANGE BAR ── -->
+    <div class="an-range-bar">
+      <button class="an-range-pill" onclick="anSetRange('cw',this)">This Week</button>
+      <button class="an-range-pill on" onclick="anSetRange('mtd',this)">MTD</button>
+      <button class="an-range-pill" onclick="anSetRange(30,this)">30d</button>
+      <button class="an-range-pill" onclick="anSetRange(60,this)">60d</button>
+      <button class="an-range-pill" onclick="anSetRange(90,this)">90d</button>
+      <button class="an-range-pill" onclick="anSetRange('ytd',this)">YTD</button>
+      <button class="an-range-pill" onclick="anSetRange(9999,this)">All Time</button>
+    </div>
+
+    <!-- ── 6 KPI TILES ── -->
+    <div class="an-kpi-row">
+      <div class="an-kpi hi"><div class="an-kpi-label">Total Gross</div><div class="an-kpi-value g" id="kpi_gross">$0</div><div class="an-kpi-delta" id="kpi_gross_d"></div></div>
+      <div class="an-kpi hi"><div class="an-kpi-label">Company Net</div><div class="an-kpi-value g" id="kpi_net">$0</div><div class="an-kpi-delta" id="kpi_net_d"></div></div>
+      <div class="an-kpi"><div class="an-kpi-label">Avg RPM</div><div class="an-kpi-value a" id="kpi_rpm">$0.00</div><div class="an-kpi-delta" id="kpi_rpm_d"></div></div>
+      <div class="an-kpi"><div class="an-kpi-label">Total Miles</div><div class="an-kpi-value" id="kpi_miles">0</div><div class="an-kpi-delta" id="kpi_miles_d"></div></div>
+      <div class="an-kpi"><div class="an-kpi-label">Total Loads</div><div class="an-kpi-value" id="kpi_loads">0</div><div class="an-kpi-delta" id="kpi_loads_d"></div></div>
+      <div class="an-kpi"><div class="an-kpi-label">Avg / Load</div><div class="an-kpi-value" id="kpi_per_load">$0</div><div class="an-kpi-delta" id="kpi_per_load_d"></div></div>
+    </div>
+
     <!-- ── ALERTS ── -->
-    <div class="an-card" style="border-left:3px solid var(--warning);">
+    <div class="an-card" id="alertsCard" style="border-left:3px solid var(--warning);display:none;">
       <div class="an-card-hdr" style="background:rgba(227,179,65,0.06);">
         <div class="an-card-title">🚨 Attention Needed</div>
       </div>
-      <div id="alertsContainer" style="padding:14px;">
-        <div style="text-align:center;color:var(--text-muted);padding:16px;">
-          <div style="font-size:36px;opacity:0.3;">✅</div>
-          <div style="margin-top:8px;font-size:13px;">No alerts — everything looks good.</div>
-        </div>
-      </div>
+      <div id="alertsContainer" style="padding:14px;"></div>
     </div>
 
-    <!-- ── DATE RANGE + KPIs ── -->
-    <div class="an-range-bar">
-      <button class="an-range-pill" onclick="anSetRange(7,this)">7d</button>
-      <button class="an-range-pill on" onclick="anSetRange(30,this)">30d</button>
-      <button class="an-range-pill" onclick="anSetRange(90,this)">90d</button>
-      <button class="an-range-pill" onclick="anSetRange(365,this)">YTD</button>
-      <button class="an-range-pill" onclick="anSetRange(9999,this)">All</button>
-      <div class="an-range-label" id="anRangeLabel"></div>
-    </div>
-
-    <div class="an-kpi-row">
-      <div class="an-kpi hi"><div class="an-kpi-label">Avg RPM</div><div class="an-kpi-value a" id="trend_rpm">$0.00</div><div class="an-kpi-delta" id="trend_rpm_change"></div></div>
-      <div class="an-kpi"><div class="an-kpi-label">Avg Weekly Net</div><div class="an-kpi-value g" id="trend_net">$0</div><div class="an-kpi-delta" id="trend_net_change"></div></div>
-      <div class="an-kpi"><div class="an-kpi-label">Total Loads</div><div class="an-kpi-value" id="trend_loads">0</div><div class="an-kpi-delta" id="trend_loads_change"></div></div>
-      <div class="an-kpi"><div class="an-kpi-label">Total Miles</div><div class="an-kpi-value" id="trend_miles">0</div><div class="an-kpi-delta" id="trend_miles_change"></div></div>
-      <div class="an-kpi"><div class="an-kpi-label">Cost / Mile</div><div class="an-kpi-value" id="trend_cpm">$0.00</div><div class="an-kpi-delta" id="trend_cpm_change"></div></div>
-    </div>
-
-    <!-- ── PERFORMANCE CHART ── -->
+    <!-- ── WEEKLY CHART ── -->
     <div class="an-chart-card">
       <div class="an-chart-tabs">
-        <div class="an-chart-tab on" onclick="anSetMetric('rpm',this)">RPM</div>
-        <div class="an-chart-tab" onclick="anSetMetric('net',this)">Net Profit</div>
-        <div class="an-chart-tab" onclick="anSetMetric('gross',this)">Gross</div>
+        <div class="an-chart-tab on" onclick="anSetMetric('gross',this)">Gross</div>
+        <div class="an-chart-tab" onclick="anSetMetric('net',this)">Net</div>
+        <div class="an-chart-tab" onclick="anSetMetric('rpm',this)">RPM</div>
         <div class="an-chart-tab" onclick="anSetMetric('miles',this)">Miles</div>
         <div class="an-chart-tab" onclick="anSetMetric('loads',this)">Loads</div>
       </div>
       <div class="an-chart-body">
-        <div class="chart-container">
-          <canvas id="trendsChart"></canvas>
-        </div>
+        <div class="chart-container"><canvas id="trendsChart"></canvas></div>
       </div>
     </div>
 
-    <!-- ── TWO-COL: LANE + COST ── -->
+    <!-- ── TWO-COL: WATERFALL + LEADERBOARD ── -->
     <div class="an-two-col">
 
-      <!-- Lane rankings -->
+      <!-- Revenue Waterfall -->
       <div class="an-card">
         <div class="an-card-hdr">
-          <div class="an-card-title">🗺️ Lane Rankings</div>
+          <div class="an-card-title">💸 Where the Money Goes</div>
+          <div style="font-size:11px;color:var(--text-muted);" id="wfPeriodLabel"></div>
+        </div>
+        <div class="an-card-body" id="waterfallContent">
+          <div style="text-align:center;color:var(--text-muted);padding:30px;font-size:13px;">No data for this period.</div>
+        </div>
+      </div>
+
+      <!-- Driver Leaderboard -->
+      <div class="an-card">
+        <div class="an-card-hdr">
+          <div class="an-card-title">🏆 Driver Leaderboard</div>
+          <div style="display:flex;gap:5px;">
+            <button class="an-lane-sort-btn on" id="lbSortGross" onclick="anLbSort('gross',this)">Gross</button>
+            <button class="an-lane-sort-btn" id="lbSortRpm" onclick="anLbSort('rpm',this)">RPM</button>
+            <button class="an-lane-sort-btn" id="lbSortLoads" onclick="anLbSort('loads',this)">Loads</button>
+          </div>
+        </div>
+        <div id="leaderboardContent">
+          <div style="padding:30px;text-align:center;color:var(--text-muted);font-size:13px;">No driver data yet.</div>
+        </div>
+        <!-- compat stubs -->
+        <tbody id="driverRankingsTable" style="display:none;"></tbody>
+        <div id="driverInsights" style="display:none;"></div>
+      </div>
+    </div>
+
+    <!-- ── TWO-COL: LANE RANKINGS + COST BREAKDOWN ── -->
+    <div class="an-two-col">
+
+      <!-- Lane Rankings -->
+      <div class="an-card">
+        <div class="an-card-hdr">
+          <div class="an-card-title">🗺️ Top Lanes</div>
           <div class="an-lane-sort">
             <button class="an-lane-sort-btn on" id="laneSortRpm" onclick="anLaneSort('rpm')">By RPM</button>
             <button class="an-lane-sort-btn" id="laneSortGross" onclick="anLaneSort('gross')">By Gross</button>
           </div>
         </div>
-        <div id="laneRankingsContent" style="max-height:340px;overflow-y:auto;">
-          <div style="padding:30px;text-align:center;color:var(--text-muted);font-size:13px;">No lane data yet. Enter loads to see rankings.</div>
+        <div id="laneRankingsContent" style="max-height:320px;overflow-y:auto;">
+          <div style="padding:30px;text-align:center;color:var(--text-muted);font-size:13px;">No lane data yet.</div>
         </div>
-        <!-- keep old IDs for JS compat -->
         <tbody id="topLanesTable" style="display:none;"></tbody>
         <tbody id="worstLanesTable" style="display:none;"></tbody>
-        <div id="laneInsights" style="padding:0 10px 10px;"></div>
-        <div class="hint-text" style="padding:8px 16px 12px;font-size:10px;">Data combines historical loads + entered loads.</div>
+        <div id="laneInsights" style="display:none;"></div>
       </div>
 
-      <!-- Cost breakdown -->
+      <!-- Cost Breakdown -->
       <div class="an-card">
         <div class="an-card-hdr">
-          <div class="an-card-title">💸 Where the Money Goes</div>
+          <div class="an-card-title">📊 Cost Breakdown</div>
           <div style="font-size:11px;color:var(--text-muted);" id="costPeriodLabel"></div>
         </div>
         <div class="an-card-body">
           <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px;">
-            <div><div style="font-size:10px;font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:3px;">Gross Revenue</div><div style="font-size:22px;font-weight:800;color:var(--text-primary);" id="cost_gross">$0</div></div>
-            <div style="text-align:right;"><div style="font-size:10px;font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:3px;">Net Profit</div><div style="font-size:22px;font-weight:800;color:var(--success);" id="cost_net">$0</div></div>
+            <div><div style="font-size:9px;font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:3px;">Gross Revenue</div><div style="font-size:20px;font-weight:800;color:var(--text-primary);" id="cost_gross">$0</div></div>
+            <div style="text-align:right;"><div style="font-size:9px;font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:3px;">Net Profit</div><div style="font-size:20px;font-weight:800;color:var(--success);" id="cost_net">$0</div></div>
           </div>
           <div id="costBreakdownContent">
-            <div style="text-align:center;color:var(--text-muted);font-size:13px;padding:20px;">No data yet for this period.</div>
+            <div style="text-align:center;color:var(--text-muted);font-size:13px;padding:20px;">No data yet.</div>
           </div>
         </div>
       </div>
-    </div>
-
-    <!-- ── DRIVER COMPARISON ── -->
-    <div class="an-card">
-      <div class="an-card-hdr">
-        <div class="an-card-title">🏆 Driver Comparison</div>
-        <div style="display:flex;gap:5px;">
-          <button class="an-range-pill on" id="drvPeriodCw" onclick="anDriverPeriod('cw',this)" style="font-size:10px;padding:3px 10px;">This Week</button>
-          <button class="an-range-pill" id="drvPeriod30" onclick="anDriverPeriod('30',this)" style="font-size:10px;padding:3px 10px;">30d</button>
-          <button class="an-range-pill" id="drvPeriodYtd" onclick="anDriverPeriod('ytd',this)" style="font-size:10px;padding:3px 10px;">YTD</button>
-        </div>
-      </div>
-      <div id="driverComparisonContent">
-        <div style="padding:30px;text-align:center;color:var(--text-muted);font-size:13px;">No driver data yet.</div>
-      </div>
-      <!-- keep old table ID for compat -->
-      <tbody id="driverRankingsTable" style="display:none;"></tbody>
-      <div id="driverInsights" style="padding:0 10px 10px;"></div>
-      <div class="hint-text" style="padding:8px 16px 12px;font-size:10px;">Efficiency score: RPM performance + deadhead ratio + target achievement.</div>
     </div>
 
     <!-- ── ACTION BUTTONS ── -->
-    <div class="quick-actions no-print" style="margin-top:16px;">
+    <div class="quick-actions no-print" style="margin-top:4px;">
       <button class="btn-icon" onclick="exportCSV('ytd')">⬇️ Export YTD CSV</button>
       <button class="btn-icon" onclick="printDriverYTD()">🖨️ Print YTD</button>
       <button class="btn-icon" onclick="closeAllWeeks()" style="background:var(--warning);color:#000;">🔒 Close Week for All Drivers</button>
@@ -3304,55 +3358,11 @@ body.light-mode .flatpickr-current-month input.cur-year, body.light-mode .flatpi
 
   <!-- COMPANY CUT TAB -->
   <div id="companycut" class="tab-content">
-    <div class="stats-grid">
-      <div class="stat-card">
-        <div class="stat-label">Company Cut • Current Week</div>
-        <div class="stat-value" id="cut_cw">$0.00</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Company Cut • Month-to-Date</div>
-        <div class="stat-value" id="cut_mtd">$0.00</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Company Cut • Year-to-Date</div>
-        <div class="stat-value" id="cut_ytd">$0.00</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Avg Take Rate (Weighted)</div>
-        <div class="stat-value" id="cut_take">0%</div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-header">Company Cut Breakdown</div>
-      <div class="table-wrapper">
-        <table>
-          <thead>
-            <tr>
-              <th>Driver</th>
-              <th>Split</th>
-              <th>CW Gross</th>
-              <th>CW Company Cut</th>
-              <th>MTD Gross</th>
-              <th>MTD Company Cut</th>
-              <th>YTD Gross</th>
-              <th>YTD Company Cut</th>
-            </tr>
-          </thead>
-          <tbody id="cutTable"></tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-header">Notes</div>
-      <div class="card-body">
-        <div class="hint-text">
-          "Company Cut" is calculated as <strong>Gross × (1 − Split)</strong> for owner-operators. Example: split 80% → company cut 20%.<br/>
-          For <strong>Company Drivers</strong> (marked [CO]), the company cut is <strong>Gross − Driver Pay − Costs</strong> (the net profit to the company).<br/>
-          If a load has a stored split, we use that. If not, we use that driver's split override; if none, we use the global default split in Settings.
-        </div>
-      </div>
+    <div style="text-align:center;padding:60px 20px;">
+      <div style="font-size:48px;margin-bottom:16px;">🧠</div>
+      <div style="font-size:18px;font-weight:800;color:var(--text-primary);margin-bottom:8px;">Company Cut is now part of Intelligence</div>
+      <div style="font-size:13px;color:var(--text-muted);margin-bottom:24px;">The revenue waterfall, driver breakdown, and all financial analytics have been combined into one dashboard.</div>
+      <button onclick="showTab('analytics',document.querySelector('[onclick*=\'analytics\']'))" style="padding:12px 28px;background:var(--accent-blue);border:none;color:#fff;border-radius:9px;font-weight:800;font-size:14px;cursor:pointer;">Open Intelligence →</button>
     </div>
   </div>
 
@@ -6387,7 +6397,7 @@ function loadDateFallback(load, week){
 }
 
 function totalsForDriverInRange(driver, startDate, endDate){
-  let gross=0,miles=0,net=0,fuel=0,maint=0,tolls=0,fixed=0,companyCut=0;
+  let gross=0,miles=0,net=0,fuel=0,maint=0,tolls=0,fixed=0,companyCut=0,driverPay=0,loadCount=0;
   const start = new Date(startDate);
   const end = new Date(endDate);
   const isCompany = (driver.driverType === 'company');
@@ -6398,6 +6408,7 @@ function totalsForDriverInRange(driver, startDate, endDate){
     for (const l of loads){
       const dt = loadDateFallback(l, w);
       if (dt >= start && dt <= end){
+        loadCount++;
         gross += (Number(l.gross)||0);
         miles += (Number(l.miles)||0);
         net += (Number(l.net)||0);
@@ -6405,13 +6416,11 @@ function totalsForDriverInRange(driver, startDate, endDate){
         maint += (Number(l.details?.maint)||0);
         tolls += (Number(l.details?.tolls)||0);
         fixed += (Number(l.details?.fixed)||0);
+        driverPay += (Number(l.details?.driverPay)||0);
         
         if (isCompany) {
-          // Company driver: "company cut" = company net (gross minus all costs incl. driver pay)
-          // l.net is already the company's profit per load
           companyCut += (Number(l.net)||0);
         } else {
-          // Owner-op: company keeps (1 - driver split) of gross
           const splitUsed = Number.isFinite(Number(l.details?.split)) 
             ? Number(l.details.split) 
             : getDriverSplit(driver);
@@ -6422,7 +6431,7 @@ function totalsForDriverInRange(driver, startDate, endDate){
   }
   
   const rpm = miles>0 ? gross/miles : 0;
-  return { gross,miles,net,fuel,maint,tolls,fixed,rpm,companyCut };
+  return { gross, miles, net, fuel, maint, tolls, fixed, rpm, companyCut, driverPay, loads: loadCount };
 }
 
 /************************* 
@@ -6952,6 +6961,7 @@ function updateRpmFeedback(gross, miles, calc, beRpm) {
 }
 
 function preview(){
+  if (typeof rateIntelUpdate === 'function') rateIntelUpdate();
   const s = getSpecs();
   const driver = getDriver();
   const split = getDriverSplit(driver);
@@ -8123,15 +8133,7 @@ function calcBreakEvenRPM(driver) {
   return (totalVarPerMile * avgMilesPerLoad + fixedPerLoad) / avgMilesPerLoad;
 }
 
-// ── Range control ──
-window.anSetRange = function(days, btn) {
-  anCurrentDays = days;
-  document.querySelectorAll('.an-range-pill').forEach(p => p.classList.remove('on'));
-  if (btn) btn.classList.add('on');
-  renderPerformanceTrends();
-  renderCostBreakdown();
-};
-
+// ── Range control — old window assignment now delegates to new renderAnalytics ──
 // ── Chart metric toggle ──
 window.anSetMetric = function(metric, btn) {
   anCurrentMetric = metric;
@@ -8162,14 +8164,233 @@ window.anLaneSort = function(mode) {
 };
 
 // ── Master render ──
+// ── Intelligence dashboard state ──────────────────────────────────────────
+var _anRange      = 'mtd';   // 'cw' | 'mtd' | 30 | 60 | 90 | 'ytd' | 9999
+var _anLbSort     = 'gross'; // 'gross' | 'rpm' | 'loads'
+var _anLaneSortBy = 'rpm';
+
+function anGetDateRange(range) {
+  var now   = new Date();
+  var to    = new Date(now); to.setHours(23,59,59,999);
+  var from;
+  if (range === 'cw') {
+    from = startOfWeekMonday(now);
+  } else if (range === 'mtd') {
+    from = new Date(now.getFullYear(), now.getMonth(), 1);
+  } else if (range === 'ytd') {
+    from = new Date(now.getFullYear(), 0, 1);
+  } else if (range === 9999) {
+    from = new Date(2000, 0, 1);
+  } else {
+    from = new Date(Date.now() - (range * 24 * 60 * 60 * 1000));
+  }
+  return { from: from, to: to };
+}
+
+function anGetPriorRange(range) {
+  // Returns the equivalent prior period for trend comparison
+  var now = new Date();
+  var d   = anGetDateRange(range);
+  var len = d.to - d.from;
+  return { from: new Date(d.from - len), to: new Date(d.from - 1) };
+}
+
+function anGetRangeLabel(range) {
+  if (range === 'cw')  return 'This Week';
+  if (range === 'mtd') return 'Month-to-Date';
+  if (range === 'ytd') return 'Year-to-Date';
+  if (range === 9999)  return 'All Time';
+  return 'Last ' + range + ' days';
+}
+
+// Aggregate all non-archived driver data for a date range
+function anAggregate(from, to) {
+  var gross=0, net=0, miles=0, loads=0, fuel=0, maint=0, fixed=0, driverPay=0, tolls=0, companyCut=0;
+  if (!state || !state.drivers) return { gross, net, miles, loads, fuel, maint, fixed, driverPay, tolls, companyCut };
+  Object.values(state.drivers).forEach(function(drv) {
+    if (drv.archived) return;
+    var t = totalsForDriverInRange(drv, from, to);
+    gross      += t.gross;
+    net        += t.net;
+    miles      += t.miles;
+    loads      += (t.loads || 0);
+    fuel       += (t.fuel  || 0);
+    maint      += (t.maint || 0);
+    fixed      += (t.fixed || 0);
+    driverPay  += (t.driverPay || 0);
+    tolls      += (t.tolls || 0);
+    companyCut += (t.companyCut || 0);
+  });
+  return { gross, net, miles, loads, fuel, maint, fixed, driverPay, tolls, companyCut };
+}
+
 function renderAnalytics() {
   dbg('renderAnalytics called');
   renderAlerts();
+  anRenderKPIs();
+  anRenderWaterfall();
+  anRenderLeaderboard();
   renderPerformanceTrends();
   renderLaneProfitability();
-  renderDriverRankings();
   renderCostBreakdown();
 }
+
+function anSetRange(range, btn) {
+  _anRange = range;
+  document.querySelectorAll('.an-range-pill').forEach(function(b) { b.classList.remove('on'); });
+  if (btn) btn.classList.add('on');
+  var lbl = document.getElementById('anRangeLabel');
+  if (lbl) lbl.textContent = anGetRangeLabel(range);
+  anCurrentDays = (range === 'cw') ? 7 : (range === 'mtd') ? 30 : (range === 'ytd') ? 365 : (range === 9999 ? 9999 : Number(range));
+  renderAnalytics();
+}
+window.anSetRange = anSetRange;
+
+window.anLbSort = function(sort, btn) {
+  _anLbSort = sort;
+  document.querySelectorAll('#lbSortGross,#lbSortRpm,#lbSortLoads').forEach(function(b) { b.classList.remove('on'); });
+  if (btn) btn.classList.add('on');
+  anRenderLeaderboard();
+};
+
+// ── KPI tiles ──────────────────────────────────────────────────────────────
+function anRenderKPIs() {
+  var d   = anGetDateRange(_anRange);
+  var pr  = anGetPriorRange(_anRange);
+  var cur = anAggregate(d.from, d.to);
+  var prv = anAggregate(pr.from, pr.to);
+
+  function setKpi(valId, deltaId, val, prevVal, fmt, colorClass) {
+    var el = document.getElementById(valId);
+    if (el) { el.textContent = fmt(val); el.className = 'an-kpi-value' + (colorClass ? ' '+colorClass : ''); }
+    var de = document.getElementById(deltaId);
+    if (de && prevVal > 0) {
+      var pct = ((val - prevVal) / prevVal) * 100;
+      de.innerHTML = formatChange(pct);
+      de.className = 'an-kpi-delta ' + (pct >= 0 ? 'up' : 'dn');
+    } else if (de) { de.innerHTML = ''; }
+  }
+
+  var rpm    = cur.miles > 0 ? cur.gross / cur.miles : 0;
+  var prvRpm = prv.miles > 0 ? prv.gross / prv.miles : 0;
+  var perLoad    = cur.loads > 0 ? cur.gross / cur.loads : 0;
+  var prvPerLoad = prv.loads > 0 ? prv.gross / prv.loads : 0;
+
+  setKpi('kpi_gross',    'kpi_gross_d',    cur.gross,    prv.gross,    function(v){ return '$'+Math.round(v).toLocaleString(); }, 'g');
+  setKpi('kpi_net',      'kpi_net_d',      cur.companyCut, prv.companyCut, function(v){ return '$'+Math.round(v).toLocaleString(); }, cur.companyCut >= 0 ? 'g' : '');
+  setKpi('kpi_rpm',      'kpi_rpm_d',      rpm,          prvRpm,       function(v){ return '$'+v.toFixed(2); }, 'a');
+  setKpi('kpi_miles',    'kpi_miles_d',    cur.miles,    prv.miles,    function(v){ return Math.round(v).toLocaleString(); }, '');
+  setKpi('kpi_loads',    'kpi_loads_d',    cur.loads,    prv.loads,    function(v){ return v; }, '');
+  setKpi('kpi_per_load', 'kpi_per_load_d', perLoad,      prvPerLoad,   function(v){ return '$'+Math.round(v).toLocaleString(); }, '');
+
+  var lbl = document.getElementById('anRangeLabel');
+  if (lbl) lbl.textContent = anGetRangeLabel(_anRange);
+}
+
+// ── Revenue Waterfall ──────────────────────────────────────────────────────
+function anRenderWaterfall() {
+  var d   = anGetDateRange(_anRange);
+  var cur = anAggregate(d.from, d.to);
+  var el  = document.getElementById('waterfallContent');
+  var pl  = document.getElementById('wfPeriodLabel');
+  if (pl) pl.textContent = anGetRangeLabel(_anRange);
+  if (!el) return;
+
+  if (cur.gross === 0) {
+    el.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:30px;font-size:13px;">No data for this period.</div>';
+    return;
+  }
+
+  var g = cur.gross;
+  var rows = [
+    { label: 'Gross Revenue', amt: g,             color: '#3fb950', sign: '' },
+    { label: 'Driver Pay',    amt: cur.driverPay,  color: '#818cf8', sign: '−' },
+    { label: 'Fuel',          amt: cur.fuel,        color: '#f59e0b', sign: '−' },
+    { label: 'Maintenance',   amt: cur.maint,       color: '#f59e0b', sign: '−' },
+    { label: 'Fixed Costs',   amt: cur.fixed,       color: '#fb923c', sign: '−' },
+    { label: 'Tolls & Other', amt: cur.tolls,       color: '#94a3b8', sign: '−' },
+  ].filter(function(r) { return r.amt > 0; });
+
+  var net = cur.companyCut;
+  var netColor = net >= 0 ? '#3fb950' : '#ff4455';
+
+  el.innerHTML = rows.map(function(r) {
+    var pct = g > 0 ? (r.amt / g * 100) : 0;
+    var barW = Math.max(2, pct);
+    return '<div class="wf-row">' +
+      '<div class="wf-label">' + r.label + '</div>' +
+      '<div class="wf-bar-wrap"><div class="wf-bar" style="width:' + barW + '%;background:' + r.color + ';opacity:0.85;"></div></div>' +
+      '<div class="wf-amt" style="color:' + (r.sign ? '#f59e0b' : '#3fb950') + ';">' + (r.sign ? r.sign + ' ' : '') + '$' + Math.round(r.amt).toLocaleString() + '</div>' +
+      '<div class="wf-pct">' + pct.toFixed(0) + '%</div>' +
+    '</div>';
+  }).join('') +
+  '<div class="wf-net-row">' +
+    '<div style="font-size:12px;font-weight:800;color:var(--text-primary);">Company Net</div>' +
+    '<div style="font-size:20px;font-weight:900;color:' + netColor + ';">$' + Math.round(Math.abs(net)).toLocaleString() + (net < 0 ? ' loss' : '') + '</div>' +
+    '<div style="font-size:11px;color:var(--text-muted);">' + (g > 0 ? (net/g*100).toFixed(1) + '% margin' : '') + '</div>' +
+  '</div>';
+}
+
+// ── Driver Leaderboard ─────────────────────────────────────────────────────
+function anRenderLeaderboard() {
+  var d   = anGetDateRange(_anRange);
+  var pr  = anGetPriorRange(_anRange);
+  var el  = document.getElementById('leaderboardContent');
+  if (!el || !state || !state.drivers) return;
+
+  var medals = ['🥇','🥈','🥉'];
+
+  var drivers = Object.entries(state.drivers)
+    .filter(function(e) { return !e[1].archived; })
+    .map(function(e) {
+      var id = e[0], drv = e[1];
+      var cur = totalsForDriverInRange(drv, d.from, d.to);
+      var prv = totalsForDriverInRange(drv, pr.from, pr.to);
+      var rpm    = cur.miles > 0 ? cur.gross / cur.miles : 0;
+      var prvRpm = prv.miles > 0 ? prv.gross / prv.miles : 0;
+      var trend  = prv.gross > 0 ? ((cur.gross - prv.gross) / prv.gross * 100) : 0;
+      return { id, drv, cur, prv, rpm, prvRpm, trend, loads: cur.loads || 0 };
+    });
+
+  if (drivers.length === 0) {
+    el.innerHTML = '<div style="padding:30px;text-align:center;color:var(--text-muted);">No driver data yet.</div>';
+    return;
+  }
+
+  drivers.sort(function(a, b) {
+    if (_anLbSort === 'rpm')   return b.rpm - a.rpm;
+    if (_anLbSort === 'loads') return b.loads - a.loads;
+    return b.cur.gross - a.cur.gross;
+  });
+
+  var maxGross = Math.max.apply(null, drivers.map(function(d) { return d.cur.gross; }).concat([1]));
+
+  el.innerHTML = drivers.map(function(d, i) {
+    var trendIcon = d.trend > 5 ? '<span style="color:#3fb950;">↑</span>' :
+                   d.trend < -5 ? '<span style="color:#ff4455;">↓</span>' :
+                   '<span style="color:rgba(255,255,255,0.3);">→</span>';
+    var trendTxt = d.prv.gross > 0 ? (d.trend > 0 ? '+' : '') + d.trend.toFixed(0) + '%' : '—';
+    var isCompany = d.drv.driverType === 'company';
+    var barPct = maxGross > 0 ? (d.cur.gross / maxGross * 100) : 0;
+    var rpm = d.rpm;
+    var rpmColor = rpm >= CONFIG.RPM_TIER_GREEN ? '#3fb950' : rpm >= CONFIG.RPM_TIER_YELLOW ? '#f59e0b' : '#ff4455';
+
+    return '<div class="lb-row" onclick="state.currentDriverId=\'' + d.id + '\';refreshAll();showTab(\'dispatch\',document.querySelector(\'[onclick*=\\\"dispatch\\\"]\'));">' +
+      '<div class="lb-rank">' + (medals[i] || '<span style="font-size:11px;color:var(--text-muted);">#'+(i+1)+'</span>') + '</div>' +
+      '<div class="lb-name">' +
+        '<div class="lb-name-main">' + escapeHtml(d.drv.name||'?') + (isCompany ? ' <span style="font-size:9px;color:var(--accent-cyan);">[CO]</span>' : '') + '</div>' +
+        '<div class="lb-bar"><div class="lb-bar-fill" style="width:'+barPct+'%;background:#e85d2f66;"></div></div>' +
+      '</div>' +
+      '<div class="lb-stat"><div class="lb-stat-val" style="color:#3fb950;">$'+Math.round(d.cur.gross).toLocaleString()+'</div><div class="lb-stat-lbl">Gross</div></div>' +
+      '<div class="lb-stat"><div class="lb-stat-val" style="color:'+rpmColor+';">$'+rpm.toFixed(2)+'</div><div class="lb-stat-lbl">RPM</div></div>' +
+      '<div class="lb-stat"><div class="lb-stat-val">'+d.loads+'</div><div class="lb-stat-lbl">Loads</div></div>' +
+      '<div class="lb-trend" title="vs prior period">' + trendIcon + '<div style="font-size:9px;color:rgba(255,255,255,0.35);">'+trendTxt+'</div></div>' +
+    '</div>';
+  }).join('');
+}
+
+// Stub — keeps old anDriverPeriod calls from breaking
+function anDriverPeriod(p, btn) { anSetRange(p==='cw'?'cw':p==='ytd'?'ytd':30, btn); }
 
 // ── Section 1: Alerts ──
 function renderAlerts() {
@@ -8205,9 +8426,12 @@ function renderAlerts() {
   });
   
   if (alerts.length === 0) {
-    container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:16px;"><div style="font-size:32px;opacity:0.3;">✅</div><div style="margin-top:8px;font-size:13px;">No alerts — everything looks good.</div></div>';
+    var card = document.getElementById('alertsCard');
+    if (card) card.style.display = 'none';
     return;
   }
+  var card = document.getElementById('alertsCard');
+  if (card) card.style.display = '';
   container.innerHTML = alerts.map(a => `<div style="display:flex;gap:10px;align-items:flex-start;padding:9px 14px;border-bottom:1px solid var(--border-subtle);"><span style="font-size:15px;flex-shrink:0;">${a.icon}</span><div style="font-size:13px;color:var(--text-secondary);line-height:1.5;">${a.msg}</div></div>`).join('');
 }
 
@@ -8386,85 +8610,8 @@ function calculateFleetTrends(days) {
  * renderCompanyCut() — populates the Company Cut tab
  *******************************************************/
 function renderCompanyCut() {
-  try {
-  if (!state || !state.drivers) { console.warn('renderCompanyCut: no state'); return; }
-  // Ensure DOM is ready
-  if (!document.getElementById('cut_cw')) { setTimeout(renderCompanyCut, 200); return; }
-
-  var now   = new Date();
-  var cwMon = startOfWeekMonday(now);
-  var cwEnd = new Date(cwMon); cwEnd.setDate(cwEnd.getDate() + 6); cwEnd.setHours(23,59,59,999);
-
-  var mtdStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  var ytdStart = new Date(now.getFullYear(), 0, 1);
-  var farFuture = new Date(now.getFullYear() + 1, 11, 31);
-
-  var cwCut = 0, mtdCut = 0, ytdCut = 0;
-  var cwGross = 0, ytdGross = 0;
-  var rows = [];
-
-  Object.values(state.drivers).forEach(function(driver) {
-    if (!driver || !driver.weeks) return;
-    var name = driver.name || 'Unknown';
-    var isCompany = (driver.driverType === 'company');
-
-    var cw  = totalsForDriverInRange(driver, cwMon,   cwEnd);
-    var mtd = totalsForDriverInRange(driver, mtdStart, farFuture);
-    var ytd = totalsForDriverInRange(driver, ytdStart, farFuture);
-
-    cwCut  += cw.companyCut;
-    mtdCut += mtd.companyCut;
-    ytdCut += ytd.companyCut;
-    cwGross  += cw.gross;
-    ytdGross += ytd.gross;
-
-    var splitPct = Math.round((1 - getDriverSplit(driver)) * 100);
-    var splitLabel = isCompany ? 'Company' : (splitPct + '%');
-    var cutLabel   = isCompany ? 'Net Profit' : 'Co. Cut';
-
-    rows.push({
-      name: name + (isCompany ? ' <span style="font-size:10px;color:var(--accent-blue);">[CO]</span>' : ''),
-      split: splitLabel,
-      cutLabel: cutLabel,
-      cwGross: cw.gross, cwCut: cw.companyCut,
-      mtdGross: mtd.gross, mtdCut: mtd.companyCut,
-      ytdGross: ytd.gross, ytdCut: ytd.companyCut
-    });
-  });
-
-  // Sort by YTD cut desc
-  rows.sort(function(a,b) { return b.ytdCut - a.ytdCut; });
-
-  var avgTake = ytdGross > 0 ? (ytdCut / ytdGross * 100) : 0;
-
-  var setEl = function(id, val) { var e = document.getElementById(id); if (e) e.textContent = val; };
-  setEl('cut_cw',   money(cwCut));
-  setEl('cut_mtd',  money(mtdCut));
-  setEl('cut_ytd',  money(ytdCut));
-  setEl('cut_take', avgTake.toFixed(1) + '%');
-
-  var tbody = document.getElementById('cutTable');
-  if (!tbody) return;
-
-  if (rows.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:20px;">No load data yet.</td></tr>';
-    return;
-  }
-
-  tbody.innerHTML = rows.map(function(r) {
-    var cl = r.cutLabel || 'Co. Cut';
-    return '<tr>' +
-      '<td>' + r.name + '</td>' +
-      '<td>' + r.split + '</td>' +
-      '<td>' + money(r.cwGross) + '</td>' +
-      '<td style="color:var(--accent-blue);font-weight:600;" title="' + cl + '">' + money(r.cwCut) + ' <span style="font-size:10px;opacity:0.7;">(' + cl + ')</span></td>' +
-      '<td>' + money(r.mtdGross) + '</td>' +
-      '<td style="color:var(--accent-blue);font-weight:600;" title="' + cl + '">' + money(r.mtdCut) + ' <span style="font-size:10px;opacity:0.7;">(' + cl + ')</span></td>' +
-      '<td>' + money(r.ytdGross) + '</td>' +
-      '<td style="color:var(--accent-blue);font-weight:600;" title="' + cl + '">' + money(r.ytdCut) + ' <span style="font-size:10px;opacity:0.7;">(' + cl + ')</span></td>' +
-    '</tr>';
-  }).join('');
-  } catch(e) { console.error('renderCompanyCut error:', e); }
+  // Company Cut data is now rendered in the Intelligence tab via anRenderWaterfall() and anRenderLeaderboard()
+  // Keeping this as a no-op for backward compatibility
 }
 
 function formatChange(percent) {
@@ -9065,8 +9212,9 @@ function updateUI(){
 function refreshAll(opts = {}) {
   if (opts.save !== false) saveState();
   if (opts.settings) bindSettingsToInputs();
-  updateUI();                                         // handles renderDriverSelect, renderWeekSelect, etc.
+  updateUI();
   if (opts.map !== false) setTimeout(initMap, opts.mapDelay || CONFIG.MAP_REFRESH_DELAY);
+  setTimeout(function() { if (typeof rateIntelHookFields === 'function') rateIntelHookFields(); }, 150);
 }
 
 /************************* 
@@ -16907,6 +17055,148 @@ window.showCloudSyncDiagnostic = async function() {
 // ══════════════════════════════════════════════════════════════════════════
 
 // ═══════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════
+// RATE INTELLIGENCE — lane history lookup + counter-offer calculator
+// ════════════════════════════════════════════════════════════════════════════
+
+// Standalone state parser — parseState is scoped inside the load map IIFE
+function riParseState(str) {
+  if (!str) return null;
+  var m = str.trim().match(/,\s*([A-Z]{2})\s*$/i);
+  return m ? m[1].toUpperCase() : null;
+}
+
+// Build history for a specific origin→dest state pair from all non-archived drivers
+function rateIntelGetLaneHistory(originState, destState) {
+  var loads = [];
+  if (!state || !state.drivers) return loads;
+  Object.values(state.drivers).forEach(function(drv) {
+    if (drv.archived) return;
+    Object.values(drv.weeks || {}).forEach(function(wk) {
+      (wk.loads || []).forEach(function(l) {
+        var o = l.originState || riParseState(l.origin);
+        var d = l.destState   || riParseState(l.dest);
+        if (o === originState && d === destState) loads.push(l);
+      });
+    });
+  });
+  return loads;
+}
+
+// Summarise an array of loads for display
+function rateIntelSummarise(loads) {
+  if (!loads.length) return null;
+  var grossArr = loads.map(function(l){ return l.gross || 0; }).filter(Boolean);
+  var rpmArr   = loads.map(function(l){ return l.miles > 0 ? l.gross/l.miles : 0; }).filter(Boolean);
+  var miArr    = loads.map(function(l){ return l.miles || 0; }).filter(Boolean);
+  var avg = function(a){ return a.length ? a.reduce(function(s,v){return s+v;},0)/a.length : 0; };
+  return {
+    count:    loads.length,
+    avgGross: avg(grossArr),
+    maxGross: Math.max.apply(null, grossArr.concat([0])),
+    minGross: Math.min.apply(null, grossArr.concat([0])),
+    avgRpm:   avg(rpmArr),
+    avgMiles: avg(miArr),
+  };
+}
+
+// Update the inline panel in the dispatch form
+function rateIntelUpdate() {
+  var panel    = document.getElementById('rateIntelPanel');
+  if (!panel) return;
+
+  var origin   = (document.getElementById('origin')    || {}).value || '';
+  var dest     = (document.getElementById('dest')      || {}).value || '';
+  var miles    = parseFloat((document.getElementById('mi_load') || {}).value) || 0;
+  var gross    = parseFloat((document.getElementById('pay_gross') || {}).value) || 0;
+
+  var oState   = riParseState(origin);
+  var dState   = riParseState(dest);
+
+  // Only show when we have enough context
+  if (!oState || !dState || miles < 10) {
+    panel.style.display = 'none';
+    return;
+  }
+
+  panel.style.display = '';
+  var laneLabel = document.getElementById('rateIntelLane');
+  if (laneLabel) laneLabel.textContent = oState + ' → ' + dState;
+
+  var history = rateIntelGetLaneHistory(oState, dState);
+  var sum     = rateIntelSummarise(history);
+  var histEl  = document.getElementById('rateIntelHistory');
+  var offerEl = document.getElementById('rateIntelOffer');
+  var ctrEl   = document.getElementById('rateIntelCounters');
+
+  // Lane history column
+  if (!sum) {
+    histEl.innerHTML = '<span style="color:rgba(255,255,255,0.35);">No history on this lane yet.<br>This would be your first run.</span>';
+  } else {
+    var rpmColor = sum.avgRpm >= 2.5 ? '#3fb950' : sum.avgRpm >= 1.8 ? '#f59e0b' : '#ff4455';
+    histEl.innerHTML =
+      '<div style="margin-bottom:4px;"><strong style="color:#fff;">' + sum.count + '</strong> <span style="color:rgba(255,255,255,0.4);">run' + (sum.count!==1?'s':'') + ' on this lane</span></div>' +
+      '<div style="margin-bottom:2px;">Avg gross: <strong style="color:#3fb950;">$' + Math.round(sum.avgGross).toLocaleString() + '</strong></div>' +
+      '<div style="margin-bottom:2px;">Avg RPM: <strong style="color:' + rpmColor + ';">$' + sum.avgRpm.toFixed(2) + '</strong></div>' +
+      '<div style="margin-bottom:2px;">Range: <span style="color:rgba(255,255,255,0.5);">$' + Math.round(sum.minGross).toLocaleString() + ' – $' + Math.round(sum.maxGross).toLocaleString() + '</span></div>';
+  }
+
+  // Offer analysis column
+  if (gross > 0 && miles > 0) {
+    var offerRpm = gross / miles;
+    var rpmCol   = offerRpm >= 2.5 ? '#3fb950' : offerRpm >= 1.8 ? '#f59e0b' : '#ff4455';
+    var vsAvg    = '';
+    if (sum) {
+      var diff = ((gross - sum.avgGross) / sum.avgGross) * 100;
+      var diffCol = diff >= 0 ? '#3fb950' : '#ff4455';
+      vsAvg = '<div style="margin-top:4px;font-size:11px;color:' + diffCol + ';font-weight:700;">' +
+        (diff >= 0 ? '↑' : '↓') + ' ' + Math.abs(diff).toFixed(0) + '% vs your avg' +
+        (gross >= sum.maxGross ? ' 🏆 Record high!' : '') +
+      '</div>';
+    }
+    var beRpm = typeof calcBreakEvenRPM === 'function' ? calcBreakEvenRPM(getDriver()) : 0;
+    var beNote = beRpm > 0
+      ? '<div style="margin-top:3px;font-size:10px;color:' + (offerRpm >= beRpm ? '#3fb950' : '#ff4455') + ';">' +
+          (offerRpm >= beRpm ? '✅ Above' : '⚠️ Below') + ' your break-even ($' + beRpm.toFixed(2) + ' RPM)' +
+        '</div>'
+      : '';
+    offerEl.innerHTML =
+      '<div><strong style="color:#fff;font-size:14px;">$' + Math.round(gross).toLocaleString() + '</strong></div>' +
+      '<div style="color:' + rpmCol + ';font-weight:700;font-size:12px;">$' + offerRpm.toFixed(2) + ' RPM</div>' +
+      vsAvg + beNote;
+  } else {
+    offerEl.innerHTML = '<span style="color:rgba(255,255,255,0.35);">Enter gross above ↑</span>';
+  }
+
+  // Counter-offer targets
+  var targets = [2.00, 2.25, 2.50, 2.75, 3.00, 3.50];
+  ctrEl.innerHTML = targets.map(function(rpm) {
+    var needed = Math.round(rpm * miles);
+    var isBelow = gross > 0 && needed <= gross;
+    var isCurrent = gross > 0 && Math.abs(gross/miles - rpm) < 0.05;
+    var bg = isCurrent
+      ? 'background:rgba(167,139,250,0.3);border-color:rgba(167,139,250,0.6);color:#c4b5fd;'
+      : isBelow
+        ? 'background:rgba(59,185,80,0.08);border-color:rgba(59,185,80,0.2);color:rgba(255,255,255,0.35);'
+        : 'background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.12);color:var(--text-secondary);';
+    return '<div style="' + bg + 'border:1px solid;border-radius:7px;padding:6px 10px;text-align:center;cursor:default;min-width:60px;">' +
+      '<div style="font-size:11px;font-weight:800;">$' + needed.toLocaleString() + '</div>' +
+      '<div style="font-size:9px;opacity:0.7;margin-top:1px;">$' + rpm.toFixed(2) + ' RPM</div>' +
+    '</div>';
+  }).join('');
+}
+
+// Attach listeners to dispatch form fields whenever they exist
+function rateIntelHookFields() {
+  ['origin','dest','mi_load','pay_gross'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el && !el._rateIntelHooked) {
+      el.addEventListener('input', rateIntelUpdate);
+      el._rateIntelHooked = true;
+    }
+  });
+}
+
 // WATCHTOWER SMOKE TEST — runSmokeTest()
 // Tests ALL core functionality without requiring real API keys or Firebase.
 // Call from console: runSmokeTest()
@@ -17545,4 +17835,15 @@ window.runSmokeTest = async function() {
   };
 
   function closeOnboarding() {
-    document.getElementById('onboardingOverlay').style.display
+    document.getElementById('onboardingOverlay').style.display = 'none';
+    try { localStorage.setItem(OB_KEY, '1'); } catch(e) {}
+  }
+
+  window.isOnboardingDone = function() {
+    try { return !!localStorage.getItem(OB_KEY); } catch(e) { return false; }
+  };
+})();
+</script>
+
+</body>
+</html>
