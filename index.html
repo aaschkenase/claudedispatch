@@ -2413,6 +2413,23 @@ body.light-mode .flatpickr-current-month input.cur-year, body.light-mode .flatpi
       </div>
     </div>
 
+    <!-- Weekly Cash Flow Projection -->
+    <div id="cfProjection" style="margin-bottom:14px;">
+      <!-- KPI tiles -->
+      <div id="cfKpis" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px;"></div>
+      <!-- Driver pace list (collapsible) -->
+      <div style="background:var(--bg-elevated);border:1px solid var(--border-medium);border-radius:10px;overflow:hidden;">
+        <div onclick="(function(){var b=document.getElementById('cfBody');var c=document.getElementById('cfChevron');var open=b.style.display!=='none';b.style.display=open?'none':'block';c.textContent=open?'▶':'▼';})()" style="padding:10px 16px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;border-bottom:1px solid var(--border-subtle);">
+          <span style="font-size:12px;font-weight:700;color:var(--text-primary);">Driver Pace</span>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span id="cfPaceLabel" style="font-size:11px;color:var(--text-muted);"></span>
+            <span id="cfChevron" style="font-size:11px;color:var(--text-muted);">▼</span>
+          </div>
+        </div>
+        <div id="cfBody"></div>
+      </div>
+    </div>
+
     <!-- Driver Cards -->
     <div class="dispatch-grid" id="driverCards"></div>
   </div>
@@ -2696,29 +2713,7 @@ body.light-mode .flatpickr-current-month input.cur-year, body.light-mode .flatpi
             </div>
 
             <!-- ── Rate Intelligence Panel (auto-shows when origin+dest+miles filled) ── -->
-            <div id="rateIntelPanel" style="display:none;margin-bottom:10px;background:var(--bg-elevated);border:1px solid rgba(167,139,250,0.3);border-radius:10px;overflow:hidden;">
-              <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:rgba(167,139,250,0.08);border-bottom:1px solid rgba(167,139,250,0.15);">
-                <div style="font-size:11px;font-weight:800;color:#c4b5fd;letter-spacing:.5px;">💡 RATE INTELLIGENCE</div>
-                <div id="rateIntelLane" style="font-size:10px;color:rgba(255,255,255,0.5);"></div>
-              </div>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;border-bottom:1px solid rgba(255,255,255,0.05);">
-                <!-- Lane history -->
-                <div style="padding:10px 12px;border-right:1px solid rgba(255,255,255,0.05);">
-                  <div style="font-size:9px;font-weight:700;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px;">Your Lane History</div>
-                  <div id="rateIntelHistory" style="font-size:11px;color:rgba(255,255,255,0.6);">—</div>
-                </div>
-                <!-- Offer analysis -->
-                <div style="padding:10px 12px;">
-                  <div style="font-size:9px;font-weight:700;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px;">This Offer</div>
-                  <div id="rateIntelOffer" style="font-size:11px;color:rgba(255,255,255,0.6);">Enter gross above ↑</div>
-                </div>
-              </div>
-              <!-- Counter-offer targets -->
-              <div style="padding:10px 12px;">
-                <div style="font-size:9px;font-weight:700;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.8px;margin-bottom:7px;">Counter-offer Targets</div>
-                <div id="rateIntelCounters" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-              </div>
-            </div>
+            <div id="rateIntelPanel" style="display:none;margin-bottom:10px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-lg);overflow:hidden;"></div>
 
             <!-- RPM Feedback Bar -->
             <div id="rpmFeedbackBar" style="display:none;margin-bottom:10px;padding:9px 14px;border-radius:9px;font-size:12px;font-weight:700;line-height:1.4;"></div>
@@ -2903,15 +2898,26 @@ body.light-mode .flatpickr-current-month input.cur-year, body.light-mode .flatpi
       .an-lane-sort-btn { font-size:10px; font-weight:600; padding:3px 9px; border-radius:4px; border:1px solid var(--border-medium); background:transparent; color:var(--text-muted); cursor:pointer; }
       .an-lane-sort-btn.on { background:var(--accent-blue); border-color:var(--accent-blue); color:#fff; }
 
+      .bs-sort-btn { font-family:'DM Sans',sans-serif; font-size:11px; font-weight:600; padding:3px 10px; border-radius:5px; border:1px solid var(--border-medium); background:transparent; color:var(--text-muted); cursor:pointer; }
+      .bs-sort-btn.on { background:var(--accent-blue); border-color:var(--accent-blue); color:#fff; }
       /* Compat stubs */
       .an-d-rank,.an-d-name,.an-d-stat,.an-d-stat-val,.an-d-stat-lbl,.an-d-bar-wrap,.an-d-bar,.an-d-bar-fill,.an-d-score,.an-driver-row { display:none; }
     </style>
 
-    <!-- ── HEADER ── -->
-    <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:14px;flex-wrap:wrap;">
-      <div style="font-size:20px;font-weight:900;color:var(--text-primary);letter-spacing:-0.5px;">🧠 Intelligence</div>
-      <div style="font-size:11px;color:var(--text-muted);" id="anRangeLabel"></div>
+    <!-- ── HEADER + SUB-TABS ── -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
+      <div style="display:flex;align-items:baseline;gap:12px;">
+        <div style="font-size:20px;font-weight:900;color:var(--text-primary);letter-spacing:-0.5px;">🧠 Intelligence</div>
+        <div style="font-size:11px;color:var(--text-muted);" id="anRangeLabel"></div>
+      </div>
+      <div style="display:flex;gap:0;background:var(--bg-secondary);border:1px solid var(--border-subtle);border-radius:8px;overflow:hidden;">
+        <button id="an-tab-dash" onclick="anSwitchView('dash')" style="padding:6px 16px;font-size:12px;font-weight:700;border:none;cursor:pointer;background:var(--accent-blue);color:#fff;">📊 Dashboard</button>
+        <button id="an-tab-broker" onclick="anSwitchView('broker')" style="padding:6px 16px;font-size:12px;font-weight:700;border:none;cursor:pointer;background:transparent;color:var(--text-muted);">🤝 Brokers</button>
+      </div>
     </div>
+
+    <!-- ── DASHBOARD VIEW ── -->
+    <div id="an-view-dash">
 
     <!-- ── RANGE BAR ── -->
     <div class="an-range-bar">
@@ -3035,7 +3041,39 @@ body.light-mode .flatpickr-current-month input.cur-year, body.light-mode .flatpi
       <button class="btn-icon" onclick="undoCloseWeek()" style="background:rgba(255,136,0,0.2);color:var(--warning);">↩️ Undo Close Week</button>
       <button class="btn-icon danger" onclick="factoryReset()">🔥 Factory Reset</button>
     </div>
-  </div>
+
+    </div><!-- end #an-view-dash -->
+
+    <!-- ── BROKER SCORECARD VIEW ── -->
+    <div id="an-view-broker" style="display:none;">
+      <!-- KPI strip -->
+      <div id="bs-kpis" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px;"></div>
+      <!-- Table -->
+      <div style="background:var(--bg-elevated);border:1px solid var(--border-medium);border-radius:10px;overflow:hidden;">
+        <div style="padding:11px 16px;border-bottom:1px solid var(--border-subtle);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+          <div style="font-size:13px;font-weight:700;color:var(--text-primary);">Broker Scorecard</div>
+          <div style="display:flex;gap:5px;">
+            <button class="bs-sort-btn on" onclick="bsSetSort('rpm',this)">RPM</button>
+            <button class="bs-sort-btn" onclick="bsSetSort('loads',this)">Volume</button>
+            <button class="bs-sort-btn" onclick="bsSetSort('total',this)">Total $</button>
+            <button class="bs-sort-btn" onclick="bsSetSort('consist',this)">Consistency</button>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:26px 1fr 68px 68px 42px 64px 66px 18px;gap:8px;padding:6px 16px;font-size:9px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-muted);border-bottom:1px solid var(--border-subtle);">
+          <div></div><div>Broker / Customer</div>
+          <div style="text-align:right">Avg RPM</div>
+          <div style="text-align:right">Avg Gross</div>
+          <div style="text-align:right">Runs</div>
+          <div style="text-align:right">Total $</div>
+          <div style="text-align:right">Consistency</div>
+          <div></div>
+        </div>
+        <div id="bs-table"></div>
+      </div>
+      <div style="font-size:10px;color:var(--text-muted);margin-top:8px;padding:0 4px;">Consistency = how predictable the pay is (5 dots = very consistent, 1 dot = wide variance). Grades: A = above fleet avg RPM, B = within 10% below, C = materially below.</div>
+    </div>
+
+  </div><!-- end #analytics tab -->
 
   <!-- CALENDAR TAB -->
   <div id="calendar" class="tab-content">
@@ -3426,6 +3464,7 @@ body.light-mode .flatpickr-current-month input.cur-year, body.light-mode .flatpi
         <div class="s-field-row cols2">
           <div><span class="s-field-label">Default Split % (0.80)</span><input id="s_split" type="number" inputmode="decimal" min="0" max="1" step="0.01" class="s-field-input"></div>
           <div><span class="s-field-label">Default Target Net / Week</span><input id="s_target_net" type="number" inputmode="decimal" min="0" step="0.01" class="s-field-input"></div>
+          <div><span class="s-field-label">Target RPM <span style="font-size:9px;color:var(--text-muted);font-weight:400;">(Rate Intel highlight)</span></span><input id="s_target_rpm" type="number" inputmode="decimal" min="0" step="0.05" placeholder="2.50" class="s-field-input"></div>
         </div>
         <!-- EIA Diesel Price -->
         <div style="background:rgba(232,93,47,0.04);border:1px solid rgba(232,93,47,0.15);border-radius:10px;padding:14px 16px;margin-bottom:14px;">
@@ -5494,6 +5533,8 @@ function bindSettingsToInputs(){
   document.getElementById('s_maint').value = s.s_maint;
   document.getElementById('s_loads_per_week').value = s.s_loads_per_week;
   document.getElementById('s_target_net').value = s.s_target_net;
+  const tgtRpmEl = document.getElementById('s_target_rpm');
+  if (tgtRpmEl) tgtRpmEl.value = s.targetRpm || '';
   document.getElementById('s_tax').value = s.s_tax;
   const tpmEl = document.getElementById('s_tolls_per_mile');
   if (tpmEl) tpmEl.value = s.s_tolls_per_mile !== undefined ? s.s_tolls_per_mile : 0.10;
@@ -5559,7 +5600,8 @@ function saveSettings(){
     s_ins_per_mile: parseFloat(document.getElementById('s_ins_per_mile').value) || 0.07,
     s_loads_per_week: Math.max(1, parseInt(document.getElementById('s_loads_per_week').value || "5", 10)),
     s_target_net: parseFloat(document.getElementById('s_target_net').value) || 1500,
-    s_tax: parseFloat(document.getElementById('s_tax').value) || 0.25
+    s_tax: parseFloat(document.getElementById('s_tax').value) || 0.25,
+    targetRpm: parseFloat(document.getElementById('s_target_rpm')?.value) || 2.50
   };
   
   settings = { ...defaultSettings, ...s };
@@ -7075,9 +7117,16 @@ function preview(){
     if (isCompany && calc.driverPay > 0) {
       html += brow('👤', 'Driver Pay', '-' + money(calc.driverPay), '#06b6d4');
     }
+
+    // Company cut for owner-ops — show explicitly so net makes sense
+    if (!isCompany) {
+      var companyCutAmt = gross * (1 - split);
+      var driverPct = Math.round(split * 100);
+      html += brow('🏢', 'Company Cut (' + (100-driverPct) + '%)', '-' + money(companyCutAmt), '#06b6d4');
+    }
     
     // Total costs
-    const totalCostDisplay = fuel + maint + fixed + tolls + (isCompany ? (calc.driverPay||0) : 0);
+    const totalCostDisplay = fuel + maint + fixed + tolls + (isCompany ? (calc.driverPay||0) : gross * (1 - split));
     html += brow('', 'Total Costs', '-' + money(totalCostDisplay), 'var(--danger)', { bold: true, sep: true });
 
     // Net result box
@@ -9186,6 +9235,7 @@ function updateUI(){
   renderWeekSelect();
   bindDriverOverridesToInputs();
   if (typeof renderFleetCards === 'function') renderFleetCards();
+  if (typeof renderCashFlowProjection === 'function') renderCashFlowProjection();
   renderUpcomingLoads();
   // Keep active tabs live whenever UI refreshes
   if (typeof renderCompanyCut === 'function') {
@@ -13777,6 +13827,7 @@ function openFleetModal(){
   const modal = document.getElementById('fleetModal');
   modal.style.display = 'flex';
   document.getElementById('fleetSearchInput').value = '';
+  renderCashFlowProjection();
   renderFleetCards();
 }
 
@@ -14173,6 +14224,118 @@ function metricBox(label, val, col) {
   + '</div>';
 }
 
+
+// ── Weekly Cash Flow Projection ──────────────────────────────────────────────
+function renderCashFlowProjection() {
+  var kpisEl  = document.getElementById('cfKpis');
+  var bodyEl  = document.getElementById('cfBody');
+  var labelEl = document.getElementById('cfPaceLabel');
+  if (!kpisEl || !bodyEl) return;
+
+  var now       = new Date();
+  var weekStart = startOfWeekMonday(now);
+  var weekId    = isoDate(weekStart);
+  // Days elapsed: how many Mon-Fri days have fully or partially passed
+  var dayOfWeek   = now.getDay() === 0 ? 7 : now.getDay(); // Mon=1, Fri=5, Sun=7
+  var daysElapsed = Math.min(5, Math.max(1, dayOfWeek === 6 ? 5 : dayOfWeek === 7 ? 5 : dayOfWeek));
+  var daysLeft    = Math.max(0, 5 - daysElapsed);
+  var daysTotal   = 5;
+
+  // Fleet-wide avg gross per load (for projection when a driver has no loads)
+  var allLoads = [], allGross = 0;
+  Object.values(state.drivers || {}).forEach(function(d) {
+    if (d.archived) return;
+    var wk = (d.weeks && d.weeks[weekId]) || { loads: [] };
+    (wk.loads || []).forEach(function(l) { allLoads.push(l); allGross += (l.gross || 0); });
+  });
+  var fleetAvgGross = allLoads.length > 0 ? allGross / allLoads.length : 2500;
+
+  var drivers = Object.values(state.drivers || {}).filter(function(d) { return !d.archived; });
+  var rows = drivers.map(function(drv) {
+    var wk    = (drv.weeks && drv.weeks[weekId]) || { loads: [] };
+    var loads = (wk.loads || []).filter(function(l) { return !l.deliversNextWeek; });
+    var gross = loads.reduce(function(s, l) { return s + (l.gross || 0); }, 0);
+    var net   = loads.reduce(function(s, l) { return s + (l.net   || 0); }, 0);
+    var target = getDriverTargetNet(drv) || 0;
+
+    // Projection: use loads/day pace × remaining days, not time-of-week
+    var loadsPerDay     = loads.length > 0 ? loads.length / daysElapsed : 0;
+    var avgGrossPerLoad = loads.length > 0 ? gross / loads.length : fleetAvgGross;
+    var projected       = gross + (loadsPerDay * avgGrossPerLoad * daysLeft);
+
+    var pct = target > 0 ? Math.min(1, net / target) : (net > 0 ? 1 : 0);
+
+    // Loads needed: how many more loads at avg gross to hit target net
+    var driverSplit    = drv.driverType === 'company' ? 1 : (getDriverSplit(drv) || 0.80);
+    var avgNetPerLoad  = avgGrossPerLoad * driverSplit; // rough net per load
+    var netNeeded      = Math.max(0, target - net);
+    var loadsNeeded    = avgNetPerLoad > 0 ? Math.ceil(netNeeded / avgNetPerLoad) : 0;
+
+    // On-track check: is current net ≥ 85% of expected net at this point in week
+    var onTrackNet = target * (daysElapsed / daysTotal);
+    var isOnTrack  = net >= onTrackNet * 0.85;
+
+    // Status
+    var status;
+    if (target > 0 && net >= target)           status = 'done';
+    else if (target > 0 && isOnTrack)          status = 'on';
+    else if (netNeeded > 0 && loadsNeeded <= 3) status = 'needs';
+    else if (loads.length === 0)               status = 'none';
+    else                                       status = 'behind';
+
+    return { drv, gross, net, target, projected, pct, loadsNeeded, loads: loads.length, status };
+  }).filter(function(r) { return r.target > 0 || r.gross > 0; });
+
+  // Sort by gross desc
+  rows.sort(function(a, b) { return b.gross - a.gross; });
+
+  // Fleet totals
+  var fleetGross = rows.reduce(function(s, r) { return s + r.gross; }, 0);
+  var fleetProj  = rows.reduce(function(s, r) { return s + r.projected; }, 0);
+  var onPace     = rows.filter(function(r) { return r.status === 'on' || r.status === 'done'; }).length;
+
+  // KPI tiles
+  function kpiTile(val, label, color) {
+    return '<div style="background:var(--bg-elevated);border:1px solid var(--border-medium);border-radius:8px;padding:10px 12px;text-align:center;">' +
+      '<div style="font-size:18px;font-weight:800;color:' + (color||'var(--text-primary)') + ';line-height:1;margin-bottom:3px;">' + val + '</div>' +
+      '<div style="font-size:10px;color:var(--text-muted);">' + label + '</div>' +
+    '</div>';
+  }
+  kpisEl.innerHTML =
+    kpiTile(money(fleetGross), 'Fleet gross this week', '#3fb950') +
+    kpiTile(money(fleetProj), 'Projected at this pace', 'var(--text-primary)') +
+    kpiTile(daysLeft + ' day' + (daysLeft !== 1 ? 's' : '') + ' left', 'Remaining in week', daysLeft <= 1 ? '#f59e0b' : 'var(--text-primary)') +
+    kpiTile(onPace + ' / ' + rows.length, 'Drivers on pace', onPace === rows.length ? '#3fb950' : onPace >= rows.length/2 ? '#f59e0b' : '#ff4455');
+
+  if (labelEl) labelEl.textContent = onPace + ' of ' + rows.length + ' on pace · ' + daysLeft + 'd left';
+
+  // Status config
+  var STATUS = {
+    done:   { color: '#3fb950', bg: 'rgba(59,185,80,0.1)',   text: '#3fb950',  label: 'Target hit' },
+    on:     { color: '#3fb950', bg: 'rgba(59,185,80,0.1)',   text: '#3fb950',  label: 'On pace' },
+    needs:  { color: '#f59e0b', bg: 'rgba(245,158,11,0.1)',  text: '#f59e0b',  label: null },
+    behind: { color: '#ff4455', bg: 'rgba(255,68,85,0.1)',   text: '#ff4455',  label: 'Behind' },
+    none:   { color: '#ff4455', bg: 'rgba(255,68,85,0.08)',  text: '#ff4455',  label: 'No loads' },
+  };
+
+  bodyEl.innerHTML = rows.map(function(r) {
+    var st  = STATUS[r.status] || STATUS.behind;
+    var lbl = st.label || ('Needs ' + r.loadsNeeded + ' load' + (r.loadsNeeded !== 1 ? 's' : ''));
+    var barW = Math.min(100, Math.round(r.pct * 100));
+
+    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 16px;border-bottom:1px solid var(--border-subtle);">' +
+      '<div style="width:7px;height:7px;border-radius:50%;background:' + st.color + ';flex-shrink:0;"></div>' +
+      '<div style="font-size:12px;font-weight:600;color:var(--text-primary);width:130px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(r.drv.name||'?') + '</div>' +
+      '<div style="flex:1;height:6px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;">' +
+        '<div style="height:6px;width:' + barW + '%;background:' + st.color + ';border-radius:3px;"></div>' +
+      '</div>' +
+      '<div style="font-size:12px;font-weight:700;color:' + st.color + ';width:58px;text-align:right;">' + money(r.gross) + '</div>' +
+      '<div style="font-size:11px;color:var(--text-muted);width:88px;text-align:right;">proj ' + money(r.projected) + '</div>' +
+      '<div style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:4px;background:' + st.bg + ';color:' + st.text + ';white-space:nowrap;">' + lbl + '</div>' +
+    '</div>';
+  }).join('') +
+  '<div style="padding:7px 16px;font-size:10px;color:var(--text-muted);border-top:1px solid var(--border-subtle);">Projection = (gross ÷ days elapsed) × 5 · Bar = net vs target · &quot;Needs X loads&quot; uses avg gross/load this week</div>';
+}
 
 function renderFleetCards(){
   const search = (document.getElementById('fleetSearchInput').value || '').toLowerCase();
@@ -17102,88 +17265,168 @@ function rateIntelSummarise(loads) {
 
 // Update the inline panel in the dispatch form
 function rateIntelUpdate() {
-  var panel    = document.getElementById('rateIntelPanel');
+  var panel = document.getElementById('rateIntelPanel');
   if (!panel) return;
 
-  var origin   = (document.getElementById('origin')    || {}).value || '';
-  var dest     = (document.getElementById('dest')      || {}).value || '';
-  var miles    = parseFloat((document.getElementById('mi_load') || {}).value) || 0;
-  var gross    = parseFloat((document.getElementById('pay_gross') || {}).value) || 0;
+  var origin = (document.getElementById('origin')   || {}).value || '';
+  var dest   = (document.getElementById('dest')     || {}).value || '';
+  var miles  = parseFloat((document.getElementById('mi_load')   || {}).value) || 0;
+  var gross  = parseFloat((document.getElementById('pay_gross') || {}).value) || 0;
 
-  var oState   = riParseState(origin);
-  var dState   = riParseState(dest);
+  var oState = riParseState(origin);
+  var dState = riParseState(dest);
 
-  // Only show when we have enough context
-  if (!oState || !dState || miles < 10) {
-    panel.style.display = 'none';
-    return;
-  }
-
+  if (!oState || !dState || miles < 10) { panel.style.display = 'none'; return; }
   panel.style.display = '';
-  var laneLabel = document.getElementById('rateIntelLane');
-  if (laneLabel) laneLabel.textContent = oState + ' → ' + dState;
 
+  // ── Get driver + specs ───────────────────────────────────────────────────
+  var driver = null;
+  try { driver = getDriver(); } catch(e) {}
+  var specs = null;
+  try {
+    specs = typeof getSpecs === 'function' ? getSpecs() : null;
+    if (driver && specs && typeof buildDriverSpecs === 'function') {
+      var ds = buildDriverSpecs(driver);
+      if (ds.fuelPrice  > 0) specs.fuel  = ds.fuelPrice;
+      if (ds.mpg        > 0) specs.mpg   = ds.mpg;
+      if (ds.maintenance > 0) specs.maint = ds.maintenance;
+    }
+  } catch(e) {}
+
+  // ── Break-even RPM ───────────────────────────────────────────────────────
+  var beRpm = 0;
+  try {
+    if (driver && typeof calcBreakEvenRPM === 'function') {
+      beRpm = calcBreakEvenRPM(driver);
+    }
+    if ((!beRpm || beRpm <= 0) && specs && specs.mpg > 0 && specs.fuel > 0) {
+      var cpm = (specs.fuel / specs.mpg) + (specs.maint || 0.17);
+      var fixedPerLoad = (specs.loadsPerWeek > 0 && specs.fixedWeekly > 0)
+        ? specs.fixedWeekly / specs.loadsPerWeek : 0;
+      var split = (specs.split > 0 && specs.split < 1) ? specs.split : 0.80;
+      beRpm = (cpm * miles + fixedPerLoad) / (miles * (1 - split));
+    }
+  } catch(e) {}
+
+  // ── Target RPM from settings ─────────────────────────────────────────────
+  var targetRpm = 0;
+  try { targetRpm = parseFloat(settings && settings.targetRpm) || 0; } catch(e) {}
+  if (!targetRpm || targetRpm <= 0) targetRpm = 2.50;
+
+  // ── Lane history ─────────────────────────────────────────────────────────
   var history = rateIntelGetLaneHistory(oState, dState);
   var sum     = rateIntelSummarise(history);
-  var histEl  = document.getElementById('rateIntelHistory');
-  var offerEl = document.getElementById('rateIntelOffer');
-  var ctrEl   = document.getElementById('rateIntelCounters');
 
-  // Lane history column
-  if (!sum) {
-    histEl.innerHTML = '<span style="color:rgba(255,255,255,0.35);">No history on this lane yet.<br>This would be your first run.</span>';
-  } else {
-    var rpmColor = sum.avgRpm >= 2.5 ? '#3fb950' : sum.avgRpm >= 1.8 ? '#f59e0b' : '#ff4455';
-    histEl.innerHTML =
-      '<div style="margin-bottom:4px;"><strong style="color:#fff;">' + sum.count + '</strong> <span style="color:rgba(255,255,255,0.4);">run' + (sum.count!==1?'s':'') + ' on this lane</span></div>' +
-      '<div style="margin-bottom:2px;">Avg gross: <strong style="color:#3fb950;">$' + Math.round(sum.avgGross).toLocaleString() + '</strong></div>' +
-      '<div style="margin-bottom:2px;">Avg RPM: <strong style="color:' + rpmColor + ';">$' + sum.avgRpm.toFixed(2) + '</strong></div>' +
-      '<div style="margin-bottom:2px;">Range: <span style="color:rgba(255,255,255,0.5);">$' + Math.round(sum.minGross).toLocaleString() + ' – $' + Math.round(sum.maxGross).toLocaleString() + '</span></div>';
-  }
-
-  // Offer analysis column
-  if (gross > 0 && miles > 0) {
-    var offerRpm = gross / miles;
-    var rpmCol   = offerRpm >= 2.5 ? '#3fb950' : offerRpm >= 1.8 ? '#f59e0b' : '#ff4455';
-    var vsAvg    = '';
-    if (sum) {
-      var diff = ((gross - sum.avgGross) / sum.avgGross) * 100;
-      var diffCol = diff >= 0 ? '#3fb950' : '#ff4455';
-      vsAvg = '<div style="margin-top:4px;font-size:11px;color:' + diffCol + ';font-weight:700;">' +
-        (diff >= 0 ? '↑' : '↓') + ' ' + Math.abs(diff).toFixed(0) + '% vs your avg' +
-        (gross >= sum.maxGross ? ' 🏆 Record high!' : '') +
-      '</div>';
+  // ── Net estimator for a given rate ───────────────────────────────────────
+  function estNet(g) {
+    if (!driver || !specs || !g) {
+      // No driver: rough estimate = gross - fuel - maint
+      var fuelCost  = specs ? (miles / specs.mpg) * specs.fuel : (miles / 6.5) * 3.60;
+      var maintCost = specs ? miles * specs.maint : miles * 0.17;
+      return g - fuelCost - maintCost;
     }
-    var beRpm = typeof calcBreakEvenRPM === 'function' ? calcBreakEvenRPM(getDriver()) : 0;
-    var beNote = beRpm > 0
-      ? '<div style="margin-top:3px;font-size:10px;color:' + (offerRpm >= beRpm ? '#3fb950' : '#ff4455') + ';">' +
-          (offerRpm >= beRpm ? '✅ Above' : '⚠️ Below') + ' your break-even ($' + beRpm.toFixed(2) + ' RPM)' +
-        '</div>'
-      : '';
-    offerEl.innerHTML =
-      '<div><strong style="color:#fff;font-size:14px;">$' + Math.round(gross).toLocaleString() + '</strong></div>' +
-      '<div style="color:' + rpmCol + ';font-weight:700;font-size:12px;">$' + offerRpm.toFixed(2) + ' RPM</div>' +
-      vsAvg + beNote;
-  } else {
-    offerEl.innerHTML = '<span style="color:rgba(255,255,255,0.35);">Enter gross above ↑</span>';
+    try {
+      var cn = calcLoadNet(driver, specs, { gross:g, miles:miles, tolls:0, detention:0, accessorials:0 });
+      return cn.net;
+    } catch(e) { return 0; }
   }
 
-  // Counter-offer targets
-  var targets = [2.00, 2.25, 2.50, 2.75, 3.00, 3.50];
-  ctrEl.innerHTML = targets.map(function(rpm) {
-    var needed = Math.round(rpm * miles);
-    var isBelow = gross > 0 && needed <= gross;
-    var isCurrent = gross > 0 && Math.abs(gross/miles - rpm) < 0.05;
-    var bg = isCurrent
-      ? 'background:rgba(167,139,250,0.3);border-color:rgba(167,139,250,0.6);color:#c4b5fd;'
-      : isBelow
-        ? 'background:rgba(59,185,80,0.08);border-color:rgba(59,185,80,0.2);color:rgba(255,255,255,0.35);'
-        : 'background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.12);color:var(--text-secondary);';
-    return '<div style="' + bg + 'border:1px solid;border-radius:7px;padding:6px 10px;text-align:center;cursor:default;min-width:60px;">' +
-      '<div style="font-size:11px;font-weight:800;">$' + needed.toLocaleString() + '</div>' +
-      '<div style="font-size:9px;opacity:0.7;margin-top:1px;">$' + rpm.toFixed(2) + ' RPM</div>' +
+  // ── Build the 4 counter tiles ─────────────────────────────────────────────
+  var tiles = [];
+  if (beRpm > 0) {
+    tiles.push({ rpm: beRpm * 1.10, label: '' });
+    tiles.push({ rpm: beRpm * 1.20, label: '' });
+  } else {
+    tiles.push({ rpm: targetRpm - 0.25, label: '' });
+    tiles.push({ rpm: targetRpm - 0.10, label: '' });
+  }
+  tiles.push({ rpm: targetRpm,        label: 'your target' });
+  tiles.push({ rpm: targetRpm + 0.50, label: '' });
+
+  function netBadge(g) {
+    var n = estNet(g);
+    if (!n && n !== 0) return '';
+    var col  = n >= 0 ? '#3fb950' : '#ff4455';
+    var sign = n >= 0 ? '+' : '';
+    return '<div style="font-size:11px;color:'+col+';margin-top:3px;font-weight:700;">'+sign+'$'+Math.round(n).toLocaleString()+' net</div>';
+  }
+
+  var tilesHtml = tiles.map(function(t) {
+    var needed   = Math.round(t.rpm * miles);
+    var isTarget = t.label === 'your target';
+    var tileBg   = isTarget ? 'rgba(227,179,65,0.15)' : 'rgba(255,255,255,0.04)';
+    var tileBord = isTarget ? '2px solid rgba(227,179,65,0.55)' : '1px solid rgba(255,255,255,0.1)';
+    var rpmCol   = t.rpm >= targetRpm ? '#3fb950' : t.rpm >= beRpm ? '#f59e0b' : '#ff6b6b';
+
+    return '<div onclick="(function(){var el=document.getElementById(\'pay_gross\');if(el){el.value='+needed+';el.dispatchEvent(new Event(\'input\',{bubbles:true}));if(typeof preview===\'function\')preview();}})()" '+
+      'style="background:'+tileBg+';border:'+tileBord+';border-radius:8px;padding:10px 8px;text-align:center;cursor:pointer;">' +
+      (isTarget ? '<div style="font-size:9px;font-weight:700;color:#e3b341;letter-spacing:.5px;text-transform:uppercase;margin-bottom:3px;">your target</div>' : '') +
+      '<div style="font-size:14px;font-weight:800;color:#fff;">$'+needed.toLocaleString()+'</div>' +
+      '<div style="font-size:10px;color:'+rpmCol+';margin-top:2px;font-weight:600;">$'+t.rpm.toFixed(2)+' RPM</div>' +
+      netBadge(needed) +
     '</div>';
   }).join('');
+
+  // ── Offer line ────────────────────────────────────────────────────────────
+  var offerHtml = '';
+  if (gross > 0) {
+    var offerRpm = gross / miles;
+    var rpmCol2  = offerRpm >= targetRpm ? '#3fb950' : offerRpm >= beRpm ? '#f59e0b' : '#ff4455';
+    var vsAvg = '';
+    if (sum) {
+      var diff = ((gross - sum.avgGross) / sum.avgGross) * 100;
+      var dCol = diff >= 0 ? '#3fb950' : '#ff4455';
+      vsAvg = ' <span style="font-size:12px;color:'+dCol+';font-weight:600;">'+(diff>=0?'+':'')+diff.toFixed(0)+'% vs avg'+(gross>=sum.maxGross?' · record high':'')+' </span>';
+    }
+    offerHtml = '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:14px;flex-wrap:wrap;">' +
+      '<span style="font-size:13px;color:rgba(255,255,255,0.5);">Their offer:</span>' +
+      '<span style="font-size:20px;font-weight:800;color:#fff;">$'+Math.round(gross).toLocaleString()+'</span>' +
+      '<span style="font-size:13px;font-weight:700;color:'+rpmCol2+';">$'+offerRpm.toFixed(2)+' RPM</span>' +
+      vsAvg +
+    '</div>';
+  } else {
+    offerHtml = '<div style="font-size:12px;color:rgba(255,255,255,0.35);margin-bottom:14px;">Enter gross above to see offer analysis</div>';
+  }
+
+  var laneSubtitle = sum
+    ? sum.count + ' run' + (sum.count!==1?'s':'') + ' · avg $' + Math.round(sum.avgGross).toLocaleString()
+    : 'no history on this lane';
+
+  var beHtml = '';
+  if (beRpm > 0) {
+    var beDollar = Math.round(beRpm * miles);
+    var isAbove  = gross > 0 && gross >= beDollar;
+    var isBelow  = gross > 0 && gross < beDollar;
+    var gap      = gross > 0 ? Math.abs(gross - beDollar) : 0;
+    var beAccent = isBelow ? '#ff4455' : isAbove ? '#3fb950' : '#f59e0b';
+    var beBg     = isBelow ? 'rgba(255,68,85,0.08)' : isAbove ? 'rgba(59,185,80,0.08)' : 'rgba(245,158,11,0.08)';
+    var beMsg    = isBelow  ? 'This offer is $'+gap.toLocaleString()+' below break-even — running at a loss'
+                 : isAbove  ? 'This offer clears break-even by $'+gap.toLocaleString()
+                 : 'Enter the offer rate to see if it clears break-even';
+    beHtml = '<div style="border-left:2px solid '+beAccent+';padding:9px 12px;border-radius:0 8px 8px 0;background:'+beBg+';margin-bottom:14px;">' +
+      '<div style="font-size:12px;font-weight:700;color:'+beAccent+';margin-bottom:2px;">Break-even: $'+beDollar.toLocaleString()+' · $'+beRpm.toFixed(2)+' RPM</div>' +
+      '<div style="font-size:11px;color:'+beAccent+';opacity:.8;">'+beMsg+'</div>' +
+    '</div>';
+  }
+
+  var driverName = driver && driver.name ? driver.name : null;
+  var footerHtml = '<div style="font-size:11px;color:rgba(255,255,255,0.35);border-top:1px solid rgba(255,255,255,0.06);padding-top:10px;display:flex;justify-content:space-between;margin-top:14px;">' +
+    '<span>'+(driverName ? 'Driver: '+escapeHtml(driverName) : 'No driver — estimates only')+'</span>' +
+    '<span>Tap any tile to fill rate</span>' +
+  '</div>';
+
+  panel.innerHTML =
+    '<div style="padding:10px 14px;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:space-between;">' +
+      '<span style="font-size:11px;font-weight:700;color:rgba(255,255,255,0.5);letter-spacing:.5px;text-transform:uppercase;">Rate Intelligence · '+oState+' → '+dState+'</span>' +
+      '<span style="font-size:11px;color:rgba(255,255,255,0.35);">'+laneSubtitle+'</span>' +
+    '</div>' +
+    '<div style="padding:14px;">' +
+      offerHtml +
+      beHtml +
+      '<div style="font-size:9px;font-weight:700;color:rgba(255,255,255,0.35);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px;">Counter at</div>' +
+      '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">' + tilesHtml + '</div>' +
+      footerHtml +
+    '</div>';
 }
 
 // Attach listeners to dispatch form fields whenever they exist
@@ -17196,6 +17439,262 @@ function rateIntelHookFields() {
     }
   });
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// BROKER SCORECARD
+// ════════════════════════════════════════════════════════════════════════════
+
+var _bsSortKey  = 'rpm';
+var _bsExpanded = null;
+
+// Build broker aggregates from all non-archived driver loads + McLeod imports
+function bsBuildData() {
+  var brokers = {};
+  var fleetRpms = [];
+
+  // Helper: process a single load into broker aggregates
+  function processLoad(l, driverName) {
+    var name = (l.customer || l.broker || '').trim();
+    if (!name) return;
+    if (!brokers[name]) brokers[name] = { name:name, loads:[], totalGross:0, totalMiles:0, lanes:{}, lastDate:'' };
+    var b = brokers[name];
+    var loadCopy = Object.assign({}, l, { _driver: driverName });
+    b.loads.push(loadCopy);
+    b.totalGross += (Number(l.gross) || 0);
+    b.totalMiles += (Number(l.miles) || 0);
+    var ld = l.date || '';
+    if (ld && ld > b.lastDate) b.lastDate = ld;
+
+    // Lane aggregation
+    var oSt = l.originState || riParseState(l.origin);
+    var dSt = l.destState   || riParseState(l.dest);
+    if (oSt && dSt && oSt !== dSt) {
+      var laneKey = oSt + '→' + dSt;
+      if (!b.lanes[laneKey]) b.lanes[laneKey] = { lane:laneKey, runs:0, gross:0, miles:0 };
+      b.lanes[laneKey].runs++;
+      b.lanes[laneKey].gross += (Number(l.gross) || 0);
+      b.lanes[laneKey].miles += (Number(l.miles) || 0);
+    }
+  }
+
+  // ── Driver-logged loads ──────────────────────────────────────────────────
+  Object.values(state.drivers || {}).forEach(function(drv) {
+    if (drv.archived) return;
+    Object.values(drv.weeks || {}).forEach(function(wk) {
+      (wk.loads || []).forEach(function(l) {
+        processLoad(l, drv.name || '');
+      });
+    });
+  });
+
+  // ── McLeod imports ───────────────────────────────────────────────────────
+  try {
+    var mc = typeof mcleodGetStoredLoads === 'function' ? mcleodGetStoredLoads() : [];
+    mc.forEach(function(l) {
+      var oSt = (l.originState || '').trim().toUpperCase();
+      var dSt = (l.destState   || '').trim().toUpperCase();
+      processLoad({
+        customer:    l.customer || l.broker || '',
+        origin:      (l.origin || '') + (oSt ? ', ' + oSt : ''),
+        dest:        (l.destination || l.dest || '') + (dSt ? ', ' + dSt : ''),
+        originState: oSt,
+        destState:   dSt,
+        gross:       Number(l.revenue || l.gross || 0) || 0,
+        miles:       Number(l.miles || l.totalMiles || 0) || 0,
+        date:        l.date || '',
+      }, l.driver || '');
+    });
+  } catch(e) { console.warn('[BrokerScorecard] McLeod load error:', e); }
+
+  // Compute stats — only use loads ≥ 100 miles for RPM calculations
+  var result = Object.values(brokers).map(function(b) {
+    var count   = b.loads.length;
+
+    // Split into qualifying loads (≥100mi) for RPM stats, all loads for gross/volume
+    var rpmLoads = b.loads.filter(function(l){ return (Number(l.miles)||0) >= 100; });
+
+    var avgGross = count > 0 ? b.totalGross / count : 0;
+    var avgRpm   = b.totalMiles > 0 && rpmLoads.length > 0
+      ? rpmLoads.reduce(function(s,l){ return s+(Number(l.gross)||0); },0) /
+        rpmLoads.reduce(function(s,l){ return s+(Number(l.miles)||0); },0)
+      : 0;
+
+    // Consistency: variance in RPM per load (not gross) — more meaningful across different lane lengths
+    // Use coefficient of variation on per-load RPM
+    var consist = 1;
+    if (rpmLoads.length >= 2) {
+      var rpmArr = rpmLoads.map(function(l){ return (Number(l.miles)||0) > 0 ? (Number(l.gross)||0)/(Number(l.miles)||0) : 0; }).filter(Boolean);
+      if (rpmArr.length >= 2) {
+        var mean  = rpmArr.reduce(function(s,v){ return s+v; },0) / rpmArr.length;
+        var stdev = mean > 0 ? Math.sqrt(rpmArr.reduce(function(s,v){ return s+Math.pow(v-mean,2); },0) / rpmArr.length) : 0;
+        var cv    = mean > 0 ? stdev / mean : 1;
+        consist   = cv < 0.08 ? 5 : cv < 0.15 ? 4 : cv < 0.25 ? 3 : cv < 0.40 ? 2 : 1;
+      }
+    } else if (rpmLoads.length === 1) {
+      consist = 3; // single data point — neutral
+    }
+
+    // Top lanes sorted by RPM
+    var topLanes = Object.values(b.lanes).map(function(ln) {
+      return { lane:ln.lane, runs:ln.runs, avgGross: ln.runs>0 ? Math.round(ln.gross/ln.runs) : 0, rpm: ln.miles>0 ? ln.gross/ln.miles : 0 };
+    }).sort(function(a,z){ return z.rpm - a.rpm; }).slice(0,6);
+
+    // Last load description
+    var lastLoad = b.loads.filter(function(l){return l.date===b.lastDate;})[0] || b.loads[b.loads.length-1];
+    var lastDesc = lastLoad ? ((riParseState(lastLoad.origin)||'?') + '→' + (riParseState(lastLoad.dest)||'?') + (b.lastDate ? ' · ' + b.lastDate : '')) : '';
+
+    if (avgRpm > 0) fleetRpms.push(avgRpm);
+
+    return { name:b.name, count:count, avgGross:Math.round(avgGross), avgRpm:avgRpm, totalGross:b.totalGross, consist:consist, topLanes:topLanes, lastDesc:lastDesc };
+  }).filter(function(b){ return b.count >= 1; });
+
+  // Compute fleet avg RPM for grading
+  var fleetAvgRpm = fleetRpms.length > 0 ? fleetRpms.reduce(function(s,v){return s+v;},0)/fleetRpms.length : 2.40;
+
+  result.forEach(function(b) {
+    b.grade = b.avgRpm >= fleetAvgRpm ? 'A' : b.avgRpm >= fleetAvgRpm * 0.90 ? 'B' : 'C';
+  });
+
+  return { brokers: result, fleetAvgRpm: fleetAvgRpm };
+}
+
+function bsRpmColor(v, fleetAvg) {
+  return v >= fleetAvg ? '#3fb950' : v >= fleetAvg * 0.90 ? '#f59e0b' : '#ff4455';
+}
+
+function bsDots(n) {
+  var s = '';
+  for (var i = 0; i < 5; i++)
+    s += i < n ? '<span style="color:#3fb950">●</span>' : '<span style="color:rgba(255,255,255,0.15)">○</span>';
+  return s;
+}
+
+function bsGradeStyle(g) {
+  return g === 'A' ? 'background:rgba(59,185,80,0.15);color:#3fb950;'
+       : g === 'B' ? 'background:rgba(245,158,11,0.12);color:#f59e0b;'
+                   : 'background:rgba(255,68,85,0.10);color:#ff4455;';
+}
+
+function bsRenderTable() {
+  var data = bsBuildData();
+  var brokers = data.brokers;
+  var fleetAvgRpm = data.fleetAvgRpm;
+
+  // KPIs
+  var kpisEl = document.getElementById('bs-kpis');
+  if (kpisEl && brokers.length > 0) {
+    var qualified = brokers.filter(function(b){ return b.avgRpm > 0; });
+    var sorted    = qualified.slice().sort(function(a,b){return b.avgRpm-a.avgRpm;});
+    var best  = sorted.length > 0 ? sorted[0].avgRpm : 0;
+    var worst = sorted.length > 0 ? sorted[sorted.length-1].avgRpm : 0;
+    function kpiT(val,lbl,col) {
+      return '<div style="background:var(--bg-elevated);border:1px solid var(--border-medium);border-radius:8px;padding:10px 12px;text-align:center;">' +
+        '<div style="font-size:18px;font-weight:800;color:'+(col||'var(--text-primary)')+';line-height:1;margin-bottom:3px;">'+val+'</div>' +
+        '<div style="font-size:10px;color:var(--text-muted);">'+lbl+'</div></div>';
+    }
+    kpisEl.innerHTML =
+      kpiT(brokers.length, 'Unique brokers') +
+      kpiT('$'+best.toFixed(2), 'Best avg RPM', '#3fb950') +
+      kpiT('$'+worst.toFixed(2), 'Worst avg RPM', '#ff4455') +
+      kpiT('$'+fleetAvgRpm.toFixed(2), 'Fleet avg RPM');
+  }
+
+  // Sort
+  brokers.sort(function(a,b) {
+    if (_bsSortKey === 'loads')  return b.count - a.count;
+    if (_bsSortKey === 'total')  return b.totalGross - a.totalGross;
+    if (_bsSortKey === 'consist') return b.consist - a.consist;
+    return b.avgRpm - a.avgRpm;
+  });
+
+  var tableEl = document.getElementById('bs-table');
+  if (!tableEl) return;
+
+  if (brokers.length === 0) {
+    tableEl.innerHTML = '<div style="padding:32px;text-align:center;color:var(--text-muted);">No broker/customer data yet — fill in the Customer field when entering loads to start building your scorecard.</div>';
+    return;
+  }
+
+  tableEl.innerHTML = brokers.map(function(b, idx) {
+    var isOpen  = _bsExpanded === idx;
+    var rc      = bsRpmColor(b.avgRpm, fleetAvgRpm);
+    var gs      = bsGradeStyle(b.grade);
+    var bg      = isOpen ? 'background:rgba(255,255,255,0.025);' : (idx%2===0?'':'background:rgba(255,255,255,0.015);');
+
+    var row = '<div style="display:grid;grid-template-columns:26px 1fr 68px 68px 42px 64px 66px 18px;gap:8px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--border-subtle);cursor:pointer;'+bg+'" onclick="bsToggle('+idx+')">' +
+      '<div style="width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;'+gs+'">'+b.grade+'</div>' +
+      '<div><div style="font-size:13px;font-weight:700;color:var(--text-primary);">'+escapeHtml(b.name)+'</div>' +
+        (b.lastDesc ? '<div style="font-size:11px;color:var(--text-muted);margin-top:1px;">Last: '+escapeHtml(b.lastDesc)+'</div>' : '') +
+      '</div>' +
+      '<div style="text-align:right;font-size:12px;font-weight:700;color:'+rc+';">$'+b.avgRpm.toFixed(2)+'</div>' +
+      '<div style="text-align:right;font-size:12px;color:var(--text-secondary);">$'+b.avgGross.toLocaleString()+'</div>' +
+      '<div style="text-align:right;font-size:12px;color:var(--text-secondary);">'+b.count+'</div>' +
+      '<div style="text-align:right;font-size:12px;color:var(--text-secondary);">$'+Math.round(b.totalGross).toLocaleString()+'</div>' +
+      '<div style="text-align:right;font-size:12px;">'+bsDots(b.consist)+'</div>' +
+      '<div style="text-align:right;font-size:11px;color:var(--text-muted);">'+(isOpen?'▲':'▼')+'</div>' +
+    '</div>';
+
+    var lanePanel = '';
+    if (isOpen && b.topLanes.length > 0) {
+      var maxLaneRpm = Math.max.apply(null, b.topLanes.map(function(l){return l.rpm;}));
+      lanePanel = '<div style="padding:12px 16px 14px;background:rgba(0,0,0,0.2);border-bottom:1px solid var(--border-subtle);">' +
+        '<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text-muted);margin-bottom:10px;">Top lanes with '+escapeHtml(b.name)+'</div>' +
+        '<div style="display:flex;flex-direction:column;gap:7px;">' +
+        b.topLanes.map(function(ln) {
+          var barW = maxLaneRpm > 0 ? Math.round((ln.rpm/maxLaneRpm)*100) : 0;
+          var lrc  = bsRpmColor(ln.rpm, fleetAvgRpm);
+          return '<div style="display:grid;grid-template-columns:80px 1fr 64px 68px 36px;gap:10px;align-items:center;font-size:12px;">' +
+            '<div style="font-weight:700;color:var(--text-primary);">'+ln.lane+'</div>' +
+            '<div style="height:5px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;"><div style="height:5px;width:'+barW+'%;border-radius:3px;background:'+lrc+';"></div></div>' +
+            '<div style="text-align:right;color:'+lrc+';font-weight:700;">$'+ln.rpm.toFixed(2)+'</div>' +
+            '<div style="text-align:right;color:var(--text-secondary);">$'+ln.avgGross.toLocaleString()+'</div>' +
+            '<div style="text-align:right;color:var(--text-muted);">×'+ln.runs+'</div>' +
+          '</div>';
+        }).join('') +
+        '</div></div>';
+    } else if (isOpen) {
+      lanePanel = '<div style="padding:12px 16px;background:rgba(0,0,0,0.2);border-bottom:1px solid var(--border-subtle);font-size:12px;color:var(--text-muted);">No state-to-state lane data — origin/destination may be missing state abbreviations.</div>';
+    }
+
+    return row + lanePanel;
+  }).join('');
+}
+
+window.bsToggle = function(idx) {
+  _bsExpanded = _bsExpanded === idx ? null : idx;
+  bsRenderTable();
+};
+
+window.bsSetSort = function(key, btn) {
+  _bsSortKey  = key;
+  _bsExpanded = null;
+  document.querySelectorAll('.bs-sort-btn').forEach(function(b) {
+    b.classList.remove('on');
+  });
+  if (btn) btn.classList.add('on');
+  bsRenderTable();
+};
+
+window.anSwitchView = function(view) {
+  var dash   = document.getElementById('an-view-dash');
+  var broker = document.getElementById('an-view-broker');
+  var tDash  = document.getElementById('an-tab-dash');
+  var tBrok  = document.getElementById('an-tab-broker');
+  if (!dash || !broker) return;
+
+  if (view === 'broker') {
+    dash.style.display   = 'none';
+    broker.style.display = '';
+    if (tDash)  { tDash.style.background  = 'transparent'; tDash.style.color  = 'var(--text-muted)'; }
+    if (tBrok)  { tBrok.style.background  = 'var(--accent-blue)'; tBrok.style.color  = '#fff'; }
+    bsRenderTable();
+  } else {
+    broker.style.display = 'none';
+    dash.style.display   = '';
+    if (tDash)  { tDash.style.background  = 'var(--accent-blue)'; tDash.style.color  = '#fff'; }
+    if (tBrok)  { tBrok.style.background  = 'transparent'; tBrok.style.color  = 'var(--text-muted)'; }
+  }
+};
 
 // WATCHTOWER SMOKE TEST — runSmokeTest()
 // Tests ALL core functionality without requiring real API keys or Firebase.
