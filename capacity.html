@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Tag Trans Inc — Available Capacity</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   :root{
@@ -74,8 +76,12 @@
   .kpi-val{font-size:18px;font-weight:800;color:var(--text);line-height:1;margin-bottom:3px}
   .kpi-lbl{font-size:10px;color:var(--muted)}
 
-  /* Footer */
-  .footer{text-align:center;padding:20px;font-size:11px;color:rgba(255,255,255,0.2);border-top:1px solid var(--border)}
+  /* City popup */
+  .city-popup .leaflet-popup-content-wrapper{background:#111722;border:1px solid rgba(56,189,248,0.3);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.6);padding:0}
+  .city-popup .leaflet-popup-content{margin:14px 16px;max-height:280px}
+  .city-popup .leaflet-popup-tip-container{display:none}
+  .city-popup .leaflet-popup-close-button{color:rgba(255,255,255,.4)!important;font-size:16px!important;top:8px!important;right:10px!important}
+  .city-popup .leaflet-popup-close-button:hover{color:#fff!important}text-align:center;padding:20px;font-size:11px;color:rgba(255,255,255,0.2);border-top:1px solid var(--border)}
 
   /* Leaflet overrides */
   .leaflet-container{background:#0b0e13}
@@ -140,14 +146,6 @@
       <div class="card-body" id="stateList"><div class="loading" style="height:80px"><div class="spinner"></div></div></div>
     </div>
 
-    <div class="card" id="cityCard" style="display:none">
-      <div class="card-hdr">
-        <span id="cityCardTitle">Cities</span>
-        <span id="cityCardWpw" style="color:var(--accent)"></span>
-      </div>
-      <div class="card-body" id="cityList"></div>
-    </div>
-
     <div class="card" style="border-color:rgba(232,93,47,0.3)">
       <div class="card-body" style="text-align:center;padding:16px">
         <div style="font-size:13px;font-weight:700;color:#fff;margin-bottom:6px;">Need flatbed or stepdeck capacity?</div>
@@ -161,7 +159,6 @@
 
 <div class="footer">Capacity data only · no rates, no driver information · Tag Trans Inc · Updated via Watchtower</div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 // ── Config ───────────────────────────────────────────────────────────────────
 var FIRESTORE_URL = 'https://firestore.googleapis.com/v1/projects/dispatch-command-center-951c9/databases/(default)/documents/public/capacity';
@@ -221,19 +218,19 @@ function initMap() {
     .then(function(r){return r.json();})
     .then(function(us){
       // Build abbr lookup from state numeric IDs
+      // Properly convert topojson → GeoJSON using the topojson library
+      var geojson = topojson.feature(us, us.objects.states);
+
+      // Build state abbreviation lookup from feature names
       var abbrs = {};
-      var geoms = us.objects.states.geometries;
-      geoms.forEach(function(g){
-        Object.keys(STATE_NAMES).forEach(function(ab){
-          if ((g.properties.name||'').toLowerCase() === STATE_NAMES[ab].toLowerCase()) abbrs[g.id] = ab;
+      geojson.features.forEach(function(f) {
+        var name = (f.properties.name || '').toLowerCase();
+        Object.keys(STATE_NAMES).forEach(function(ab) {
+          if (STATE_NAMES[ab].toLowerCase() === name) abbrs[f.id] = ab;
         });
       });
 
-      var features = geoms.map(function(g){
-        return {type:'Feature', id:g.id, properties:g.properties||{}, geometry:g};
-      });
-
-      L.geoJSON({type:'FeatureCollection', features:features}, {
+      var geoLayer = L.geoJSON(geojson, {
         style: function(f) {
           var ab  = abbrs[f.id];
           var d   = capData.byState[ab] || {};
@@ -250,65 +247,103 @@ function initMap() {
           var d   = capData.byState[ab] || {};
           var wpw = d.wpw || 0;
 
-          layer.on('mouseover', function(e) {
-            layer.setStyle({fillOpacity: Math.min(1, (wpw>0?0.85:0.12)+0.12), weight:1.5, color:'rgba(255,255,255,0.3)'});
-            L.popup({closeButton:false, offset:[0,-5]})
-              .setLatLng(e.latlng)
-              .setContent(
-                '<div style="font-weight:700;font-size:13px;margin-bottom:3px;">' + (STATE_NAMES[ab]||'') + '</div>' +
-                (wpw > 0
-                  ? '<div style="color:#38bdf8;font-weight:800;font-size:14px;">~' + wpw.toFixed(1) + ' trucks/wk avg</div>'
-                  : '<div style="color:rgba(255,255,255,.45);font-size:12px;">Occasional coverage</div>')
-              )
-              .openOn(leafletMap);
+          // Hover tooltip — separate from the click popup so they don't interfere
+          layer.bindTooltip(
+            '<div style="font-weight:700;font-size:13px;margin-bottom:2px;">' + (STATE_NAMES[ab]||'') + '</div>' +
+            (wpw > 0
+              ? '<div style="color:#38bdf8;font-weight:800;font-size:13px;">~' + wpw.toFixed(1) + ' trucks/wk</div>' +
+                '<div style="color:rgba(255,255,255,.5);font-size:11px;margin-top:1px;">Click to see cities</div>'
+              : '<div style="color:rgba(255,255,255,.45);font-size:12px;">Occasional coverage</div>'),
+            { sticky: true, opacity: 1, className: 'city-popup' }
+          );
+
+          layer.on('mouseover', function() {
+            if (!isSelected()) layer.setStyle({fillOpacity: Math.min(1,(wpw>0?0.88:0.18)+0.1), weight:1.2, color:'rgba(255,255,255,0.25)'});
           });
           layer.on('mouseout', function() {
-            layer.setStyle({fillOpacity:wpw>0?0.85:0.12, weight:selectedState===ab?2:0.7, color:selectedState===ab?'#38bdf8':'rgba(255,255,255,0.1)'});
-            leafletMap.closePopup();
+            if (!isSelected()) layer.setStyle({fillOpacity:wpw>0?0.85:0.12, weight:0.7, color:'rgba(255,255,255,0.1)'});
           });
-          layer.on('click', function() {
-            if (!ab) return;
-            selectState(ab, layer, maxWpw);
+
+          function isSelected(){ return selectedState === ab; }
+          layer.on('click', function(e) {
+            if (!ab || !d.wpw) return;
+
+            var cities = Object.entries(d.cities||{})
+              .filter(function(c){ return c[0]; })
+              .sort(function(a,b){ return b[1]-a[1]; });
+
+            var cityRows = cities.length
+              ? cities.map(function(c){
+                  return '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.07);font-size:12px;">' +
+                    '<span style="font-weight:600;color:#e2e8f0;">' + c[0] + '</span>' +
+                    '<span style="color:#38bdf8;font-weight:700;margin-left:16px;">' + c[1] + ' load' + (c[1]!==1?'s':'') + '</span>' +
+                  '</div>';
+                }).join('')
+              : '<div style="font-size:12px;color:rgba(255,255,255,.45);">No city detail available.</div>';
+
+            L.popup({ maxWidth: 240, maxHeight: 320, closeButton: true, className: 'city-popup' })
+              .setLatLng(e.latlng)
+              .setContent(
+                '<div style="font-weight:800;font-size:14px;color:#fff;margin-bottom:2px;">' + (STATE_NAMES[ab]||ab) + '</div>' +
+                '<div style="font-size:12px;color:#38bdf8;font-weight:700;margin-bottom:10px;">~' + d.wpw.toFixed(1) + ' trucks/wk avg</div>' +
+                '<div style="max-height:220px;overflow-y:auto;padding-right:4px;">' + cityRows + '</div>'
+              )
+              .openOn(leafletMap);
+
+            // Highlight the selected state
+            if (selectedState && geoLayers[selectedState]) {
+              var prev = capData.byState[selectedState] || {};
+              geoLayers[selectedState].setStyle({weight:0.7, color:'rgba(255,255,255,0.1)'});
+            }
+            selectedState = ab;
+            layer.setStyle({weight:2.5, color:'#38bdf8', fillOpacity:0.9});
+
+            // Highlight row in state list
+            document.querySelectorAll('.state-row').forEach(function(r){ r.style.background=''; r.style.borderRadius=''; });
+            var row = document.getElementById('sr-'+ab);
+            if (row) { row.style.background='rgba(56,189,248,0.08)'; row.style.borderRadius='6px'; row.scrollIntoView({block:'nearest',behavior:'smooth'}); }
           });
 
           geoLayers[ab] = layer;
         }
       }).addTo(leafletMap);
 
+      // ── Add trucks/week labels on each state ──────────────────────────────
+      geojson.features.forEach(function(f) {
+        var ab  = abbrs[f.id];
+        if (!ab) return;
+        var d   = capData.byState[ab] || {};
+        var wpw = d.wpw || 0;
+        if (wpw <= 0) return;
+
+        // Get centroid from bounds
+        var layer = geoLayers[ab];
+        if (!layer) return;
+        var center  = layer.getBounds().getCenter();
+        var label   = wpw >= 10 ? Math.round(wpw) + '/wk' : wpw.toFixed(1) + '/wk';
+        var isDark  = wpw >= maxWpw * 0.2;
+        var txtCol  = isDark ? '#ffffff' : '#0c1a2e';
+        var shadow  = isDark ? '0 1px 3px rgba(0,0,0,0.8)' : '0 1px 2px rgba(255,255,255,0.3)';
+        var abbrLbl = ab;
+
+        var icon = L.divIcon({
+          className: '',
+          html: '<div style="text-align:center;pointer-events:none;line-height:1.2;">' +
+                  '<div style="font-size:9px;font-weight:900;color:' + txtCol + ';text-shadow:' + shadow + ';letter-spacing:.3px;">' + abbrLbl + '</div>' +
+                  '<div style="font-size:9px;font-weight:800;color:' + (isDark?'#93c5fd':'#1e40af') + ';text-shadow:' + shadow + ';">' + label + '</div>' +
+                '</div>',
+          iconSize:   [44, 24],
+          iconAnchor: [22, 12]
+        });
+
+        var marker = L.marker(center, { icon: icon, interactive: false, keyboard: false });
+        marker.addTo(leafletMap);
+      });
+
       renderStateList(maxWpw);
       renderLanes();
       renderKPIs(maxWpw);
     });
-}
-
-// ── State selection ───────────────────────────────────────────────────────────
-function selectState(ab, layer, maxWpw) {
-  // Reset previous selection
-  if (selectedState && geoLayers[selectedState]) {
-    var prev = capData.byState[selectedState] || {};
-    geoLayers[selectedState].setStyle({fillOpacity:prev.wpw>0?0.85:0.12, weight:0.7, color:'rgba(255,255,255,0.1)'});
-  }
-  selectedState = ab;
-  if (layer) layer.setStyle({fillOpacity:0.9, weight:2.5, color:'#38bdf8'});
-
-  var d = capData.byState[ab];
-  if (!d) return;
-
-  // Render city panel
-  var cities = Object.entries(d.cities||{}).filter(function(e){return e[0];}).sort(function(a,b){return b[1]-a[1];});
-  document.getElementById('cityCardTitle').textContent = STATE_NAMES[ab] || ab;
-  document.getElementById('cityCardWpw').textContent   = '~' + d.wpw.toFixed(1) + '/wk';
-  document.getElementById('cityCard').style.display    = '';
-  document.getElementById('cityList').innerHTML = cities.length
-    ? cities.map(function(c){
-        return '<div class="city-row"><span class="city-name">' + c[0] + '</span><span class="city-count">' + c[1] + ' load' + (c[1]!==1?'s':'') + '</span></div>';
-      }).join('')
-    : '<div style="font-size:12px;color:var(--muted);">No city detail available.</div>';
-
-  // Highlight row in state list
-  document.querySelectorAll('.state-row').forEach(function(r){ r.style.background = ''; });
-  var row = document.getElementById('sr-'+ab);
-  if (row) { row.style.background = 'rgba(56,189,248,0.06)'; row.style.borderRadius = '6px'; }
 }
 
 // ── State list sidebar ────────────────────────────────────────────────────────
