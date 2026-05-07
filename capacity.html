@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tag Trans Inc — Available Capacity</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#0b0e13;--bg2:#111722;--bg3:#18202e;
+    --border:rgba(255,255,255,0.08);
+    --text:#e2e8f0;--muted:rgba(255,255,255,0.45);
+    --accent:#38bdf8;--accent2:#0284c7;
+    --success:#3fb950;--warn:#f59e0b;
+  }
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+
+  /* Header */
+  .header{padding:18px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;background:var(--bg2)}
+  .logo{display:flex;align-items:center;gap:12px}
+  .logo-mark{width:36px;height:36px;background:linear-gradient(135deg,#e85d2f,#c94a20);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+  .brand{font-size:19px;font-weight:800;color:#fff;letter-spacing:-.3px}
+  .tagline{font-size:12px;color:var(--muted);margin-top:2px}
+  .header-right{font-size:12px;color:var(--muted);text-align:right}
+  .header-right a{color:var(--accent);text-decoration:none;font-weight:600}
+  .header-right a:hover{text-decoration:underline}
+
+  /* Layout */
+  .body{display:grid;grid-template-columns:1fr 260px;gap:14px;padding:16px;max-width:1280px;margin:0 auto}
+  @media(max-width:720px){.body{grid-template-columns:1fr}}
+
+  /* Map */
+  .map-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+  #map{height:500px}
+  .legend{display:flex;gap:12px;flex-wrap:wrap;padding:10px 16px;border-top:1px solid var(--border);font-size:11px;color:var(--muted)}
+  .leg-item{display:flex;align-items:center;gap:5px}
+  .leg-dot{width:13px;height:10px;border-radius:2px;flex-shrink:0}
+  .range-badge{padding:6px 14px;background:rgba(56,189,248,0.1);border:1px solid rgba(56,189,248,0.25);border-radius:6px;font-size:11px;color:var(--accent);font-weight:600}
+
+  /* Cards */
+  .card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:12px}
+  .card-hdr{padding:11px 14px;border-bottom:1px solid var(--border);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);display:flex;align-items:center;justify-content:space-between}
+  .card-body{padding:12px 14px}
+
+  /* State list */
+  .state-row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s}
+  .state-row:hover{background:rgba(255,255,255,0.02);margin:0 -14px;padding:7px 14px}
+  .state-row:last-child{border-bottom:none}
+  .state-name-col{font-size:12px;font-weight:600;color:var(--text)}
+  .state-wpw-col{font-size:13px;font-weight:800;color:var(--accent)}
+
+  /* City panel */
+  .city-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px}
+  .city-row:last-child{border-bottom:none}
+  .city-name{font-weight:600;color:var(--text)}
+  .city-count{color:var(--accent);font-weight:700}
+
+  /* Lane bars */
+  .lane-row{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12px}
+  .lane-label{font-weight:700;color:var(--text);width:68px;flex-shrink:0}
+  .lane-bar-wrap{flex:1;height:5px;background:rgba(255,255,255,0.07);border-radius:3px;overflow:hidden}
+  .lane-bar{height:5px;background:#378ADD;border-radius:3px}
+  .lane-wpw{color:var(--muted);width:44px;text-align:right;flex-shrink:0}
+
+  /* Loading */
+  .loading{display:flex;flex-direction:column;align-items:center;justify-content:center;height:200px;color:var(--muted);gap:12px;font-size:14px}
+  .spinner{width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* KPI strip */
+  .kpi-strip{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+  .kpi{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px;text-align:center}
+  .kpi-val{font-size:18px;font-weight:800;color:var(--text);line-height:1;margin-bottom:3px}
+  .kpi-lbl{font-size:10px;color:var(--muted)}
+
+  /* Footer */
+  .footer{text-align:center;padding:20px;font-size:11px;color:rgba(255,255,255,0.2);border-top:1px solid var(--border)}
+
+  /* Leaflet overrides */
+  .leaflet-container{background:#0b0e13}
+  .leaflet-popup-content-wrapper{background:var(--bg2);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,.5);color:var(--text)}
+  .leaflet-popup-tip{background:var(--bg2)}
+  .leaflet-popup-content{margin:10px 14px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">
+    <div class="logo-mark">🚚</div>
+    <div>
+      <div class="brand">Tag Trans Inc</div>
+      <div class="tagline">Available Capacity — Flatbed &amp; Stepdeck</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <div id="syncLabel">Loading…</div>
+    <div style="margin-top:4px"><a href="mailto:anders.a@tagtrans.net">Contact us for capacity →</a></div>
+  </div>
+</div>
+
+<div class="body">
+
+  <!-- LEFT: Map + Lanes -->
+  <div>
+    <div class="map-wrap">
+      <div id="map">
+        <div class="loading" id="mapLoading">
+          <div class="spinner"></div>
+          <div>Loading capacity data…</div>
+        </div>
+      </div>
+      <div class="legend">
+        <div class="leg-item"><div class="leg-dot" style="background:#B5D4F4"></div>1–2 / wk</div>
+        <div class="leg-item"><div class="leg-dot" style="background:#85B7EB"></div>3–5 / wk</div>
+        <div class="leg-item"><div class="leg-dot" style="background:#378ADD"></div>6–10 / wk</div>
+        <div class="leg-item"><div class="leg-dot" style="background:#185FA5"></div>11–20 / wk</div>
+        <div class="leg-item"><div class="leg-dot" style="background:#042C53"></div>20+ / wk</div>
+        <div style="margin-left:auto" id="rangeBadge"></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <div class="card-hdr">Top active lanes <span id="laneCount" style="color:var(--muted)"></span></div>
+      <div class="card-body" id="laneList"><div class="loading" style="height:80px"><div class="spinner"></div></div></div>
+    </div>
+  </div>
+
+  <!-- RIGHT: State list + City drill-down -->
+  <div>
+    <div class="kpi-strip" id="kpiStrip">
+      <div class="kpi"><div class="kpi-val" id="kpiStates">—</div><div class="kpi-lbl">States covered</div></div>
+      <div class="kpi"><div class="kpi-val" id="kpiLanes">—</div><div class="kpi-lbl">Active lanes</div></div>
+      <div class="kpi"><div class="kpi-val" id="kpiTopState">—</div><div class="kpi-lbl">Busiest state</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-hdr">States by avg trucks/week</div>
+      <div class="card-body" id="stateList"><div class="loading" style="height:80px"><div class="spinner"></div></div></div>
+    </div>
+
+    <div class="card" id="cityCard" style="display:none">
+      <div class="card-hdr">
+        <span id="cityCardTitle">Cities</span>
+        <span id="cityCardWpw" style="color:var(--accent)"></span>
+      </div>
+      <div class="card-body" id="cityList"></div>
+    </div>
+
+    <div class="card" style="border-color:rgba(232,93,47,0.3)">
+      <div class="card-body" style="text-align:center;padding:16px">
+        <div style="font-size:13px;font-weight:700;color:#fff;margin-bottom:6px;">Need flatbed or stepdeck capacity?</div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:12px;">We run primarily in the Midwest, Southeast, and Gulf Coast corridors.</div>
+        <a href="mailto:anders.a@tagtrans.net" style="display:inline-block;padding:9px 20px;background:rgba(232,93,47,0.2);border:1px solid rgba(232,93,47,0.4);border-radius:8px;color:#e85d2f;font-weight:700;font-size:13px;text-decoration:none;">📧 Contact us</a>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="footer">Capacity data only · no rates, no driver information · Tag Trans Inc · Updated via Watchtower</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ── Config ───────────────────────────────────────────────────────────────────
+var FIRESTORE_URL = 'https://firestore.googleapis.com/v1/projects/dispatch-command-center-951c9/databases/(default)/documents/public/capacity';
+var API_KEY       = 'AIzaSyCVhCWUXS-3I_HBfwPIaLufqgBAfMY75pc';
+
+var STATE_NAMES = {AL:'Alabama',AK:'Alaska',AZ:'Arizona',AR:'Arkansas',CA:'California',CO:'Colorado',CT:'Connecticut',DE:'Delaware',FL:'Florida',GA:'Georgia',HI:'Hawaii',ID:'Idaho',IL:'Illinois',IN:'Indiana',IA:'Iowa',KS:'Kansas',KY:'Kentucky',LA:'Louisiana',ME:'Maine',MD:'Maryland',MA:'Massachusetts',MI:'Michigan',MN:'Minnesota',MS:'Mississippi',MO:'Missouri',MT:'Montana',NE:'Nebraska',NV:'Nevada',NH:'New Hampshire',NJ:'New Jersey',NM:'New Mexico',NY:'New York',NC:'North Carolina',ND:'North Dakota',OH:'Ohio',OK:'Oklahoma',OR:'Oregon',PA:'Pennsylvania',RI:'Rhode Island',SC:'South Carolina',SD:'South Dakota',TN:'Tennessee',TX:'Texas',UT:'Utah',VT:'Vermont',VA:'Virginia',WA:'Washington',WV:'West Virginia',WI:'Wisconsin',WY:'Wyoming',DC:'D.C.'};
+
+var capData = null;
+var leafletMap = null;
+var geoLayers = {};
+var selectedState = null;
+
+// ── Fetch capacity data from Firestore ───────────────────────────────────────
+fetch(FIRESTORE_URL + '?key=' + API_KEY)
+  .then(function(r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  })
+  .then(function(doc) {
+    var raw = doc.fields && doc.fields.data && doc.fields.data.stringValue;
+    if (!raw) throw new Error('No data field in document');
+    capData = JSON.parse(raw);
+    var syncedAt = doc.fields.syncedAt && doc.fields.syncedAt.timestampValue;
+    var label    = (doc.fields.rangeLabel && doc.fields.rangeLabel.stringValue) || '';
+    var dateStr  = syncedAt ? new Date(syncedAt).toLocaleDateString() : '';
+    document.getElementById('syncLabel').textContent = 'Data as of ' + dateStr + (label ? ' · ' + label : '');
+    document.getElementById('rangeBadge').innerHTML = label ? '<div class="range-badge">' + label + '</div>' : '';
+    initMap();
+  })
+  .catch(function(err) {
+    console.error('Failed to load capacity data:', err);
+    document.getElementById('mapLoading').innerHTML = '<div style="color:#ff4455;font-size:13px;">⚠️ Could not load capacity data.<br><span style="font-size:11px;opacity:.7">The map may not have been synced yet from Watchtower.</span></div>';
+    document.getElementById('stateList').innerHTML  = '<div style="color:var(--muted);font-size:12px;padding:12px;">No data available yet.</div>';
+    document.getElementById('laneList').innerHTML   = '<div style="color:var(--muted);font-size:12px;padding:12px;">No data available yet.</div>';
+    document.getElementById('syncLabel').textContent = 'Not yet synced';
+  });
+
+// ── Map ───────────────────────────────────────────────────────────────────────
+function getColor(wpw, maxWpw) {
+  if (!wpw || wpw <= 0) return 'rgba(255,255,255,0.03)';
+  if (wpw >= maxWpw*0.70) return '#042C53';
+  if (wpw >= maxWpw*0.40) return '#185FA5';
+  if (wpw >= maxWpw*0.20) return '#378ADD';
+  if (wpw >= maxWpw*0.08) return '#85B7EB';
+  return '#B5D4F4';
+}
+
+function initMap() {
+  document.getElementById('mapLoading').style.display = 'none';
+
+  leafletMap = L.map('map', {zoomControl:true, attributionControl:false, scrollWheelZoom:true}).setView([39,-96],4);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png',{maxZoom:18,subdomains:'abcd'}).addTo(leafletMap);
+
+  var maxWpw = Math.max.apply(null, Object.values(capData.byState).map(function(d){return d.wpw||0;}).concat([1]));
+
+  fetch('https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json')
+    .then(function(r){return r.json();})
+    .then(function(us){
+      // Build abbr lookup from state numeric IDs
+      var abbrs = {};
+      var geoms = us.objects.states.geometries;
+      geoms.forEach(function(g){
+        Object.keys(STATE_NAMES).forEach(function(ab){
+          if ((g.properties.name||'').toLowerCase() === STATE_NAMES[ab].toLowerCase()) abbrs[g.id] = ab;
+        });
+      });
+
+      var features = geoms.map(function(g){
+        return {type:'Feature', id:g.id, properties:g.properties||{}, geometry:g};
+      });
+
+      L.geoJSON({type:'FeatureCollection', features:features}, {
+        style: function(f) {
+          var ab  = abbrs[f.id];
+          var d   = capData.byState[ab] || {};
+          var wpw = d.wpw || 0;
+          return {
+            fillColor:   getColor(wpw, maxWpw),
+            fillOpacity: wpw > 0 ? 0.85 : 0.12,
+            color:       'rgba(255,255,255,0.1)',
+            weight:      0.7
+          };
+        },
+        onEachFeature: function(f, layer) {
+          var ab  = abbrs[f.id];
+          var d   = capData.byState[ab] || {};
+          var wpw = d.wpw || 0;
+
+          layer.on('mouseover', function(e) {
+            layer.setStyle({fillOpacity: Math.min(1, (wpw>0?0.85:0.12)+0.12), weight:1.5, color:'rgba(255,255,255,0.3)'});
+            L.popup({closeButton:false, offset:[0,-5]})
+              .setLatLng(e.latlng)
+              .setContent(
+                '<div style="font-weight:700;font-size:13px;margin-bottom:3px;">' + (STATE_NAMES[ab]||'') + '</div>' +
+                (wpw > 0
+                  ? '<div style="color:#38bdf8;font-weight:800;font-size:14px;">~' + wpw.toFixed(1) + ' trucks/wk avg</div>'
+                  : '<div style="color:rgba(255,255,255,.45);font-size:12px;">Occasional coverage</div>')
+              )
+              .openOn(leafletMap);
+          });
+          layer.on('mouseout', function() {
+            layer.setStyle({fillOpacity:wpw>0?0.85:0.12, weight:selectedState===ab?2:0.7, color:selectedState===ab?'#38bdf8':'rgba(255,255,255,0.1)'});
+            leafletMap.closePopup();
+          });
+          layer.on('click', function() {
+            if (!ab) return;
+            selectState(ab, layer, maxWpw);
+          });
+
+          geoLayers[ab] = layer;
+        }
+      }).addTo(leafletMap);
+
+      renderStateList(maxWpw);
+      renderLanes();
+      renderKPIs(maxWpw);
+    });
+}
+
+// ── State selection ───────────────────────────────────────────────────────────
+function selectState(ab, layer, maxWpw) {
+  // Reset previous selection
+  if (selectedState && geoLayers[selectedState]) {
+    var prev = capData.byState[selectedState] || {};
+    geoLayers[selectedState].setStyle({fillOpacity:prev.wpw>0?0.85:0.12, weight:0.7, color:'rgba(255,255,255,0.1)'});
+  }
+  selectedState = ab;
+  if (layer) layer.setStyle({fillOpacity:0.9, weight:2.5, color:'#38bdf8'});
+
+  var d = capData.byState[ab];
+  if (!d) return;
+
+  // Render city panel
+  var cities = Object.entries(d.cities||{}).filter(function(e){return e[0];}).sort(function(a,b){return b[1]-a[1];});
+  document.getElementById('cityCardTitle').textContent = STATE_NAMES[ab] || ab;
+  document.getElementById('cityCardWpw').textContent   = '~' + d.wpw.toFixed(1) + '/wk';
+  document.getElementById('cityCard').style.display    = '';
+  document.getElementById('cityList').innerHTML = cities.length
+    ? cities.map(function(c){
+        return '<div class="city-row"><span class="city-name">' + c[0] + '</span><span class="city-count">' + c[1] + ' load' + (c[1]!==1?'s':'') + '</span></div>';
+      }).join('')
+    : '<div style="font-size:12px;color:var(--muted);">No city detail available.</div>';
+
+  // Highlight row in state list
+  document.querySelectorAll('.state-row').forEach(function(r){ r.style.background = ''; });
+  var row = document.getElementById('sr-'+ab);
+  if (row) { row.style.background = 'rgba(56,189,248,0.06)'; row.style.borderRadius = '6px'; }
+}
+
+// ── State list sidebar ────────────────────────────────────────────────────────
+function renderStateList(maxWpw) {
+  var states = Object.entries(capData.byState)
+    .filter(function(e){ return e[1].wpw > 0; })
+    .sort(function(a,b){ return b[1].wpw - a[1].wpw; });
+
+  document.getElementById('stateList').innerHTML = states.map(function(e) {
+    var ab = e[0], d = e[1];
+    var colDot = getColor(d.wpw, maxWpw);
+    return '<div class="state-row" id="sr-'+ab+'" onclick="selectState(\''+ab+'\', geoLayers[\''+ab+'\'], '+maxWpw+')">' +
+      '<div style="display:flex;align-items:center;gap:7px;">' +
+        '<div style="width:8px;height:8px;border-radius:50%;background:'+colDot+';flex-shrink:0"></div>' +
+        '<span class="state-name-col">' + (STATE_NAMES[ab]||ab) + '</span>' +
+      '</div>' +
+      '<span class="state-wpw-col">' + d.wpw.toFixed(1) + '/wk</span>' +
+    '</div>';
+  }).join('');
+}
+
+// ── Lane list ─────────────────────────────────────────────────────────────────
+function renderLanes() {
+  var lanes   = capData.topLanes || [];
+  var maxLWpw = lanes.length ? lanes[0].wpw : 1;
+  document.getElementById('laneCount').textContent = lanes.length + ' shown';
+  document.getElementById('laneList').innerHTML = lanes.length
+    ? lanes.map(function(l){
+        var pct = Math.round(l.wpw / maxLWpw * 100);
+        return '<div class="lane-row">' +
+          '<span class="lane-label">' + l.lane + '</span>' +
+          '<div class="lane-bar-wrap"><div class="lane-bar" style="width:'+pct+'%"></div></div>' +
+          '<span class="lane-wpw">'+l.wpw.toFixed(1)+'/wk</span>' +
+        '</div>';
+      }).join('')
+    : '<div style="color:var(--muted);font-size:12px;">No lane data.</div>';
+}
+
+// ── KPI strip ─────────────────────────────────────────────────────────────────
+function renderKPIs(maxWpw) {
+  var states = Object.entries(capData.byState).filter(function(e){return e[1].wpw>0;});
+  var topEntry = states.sort(function(a,b){return b[1].wpw-a[1].wpw;})[0];
+  document.getElementById('kpiStates').textContent = states.length;
+  document.getElementById('kpiLanes').textContent  = (capData.topLanes||[]).length;
+  document.getElementById('kpiTopState').textContent = topEntry ? (topEntry[0] + ' (' + topEntry[1].wpw.toFixed(1) + ')') : '—';
+}
+</script>
+</body>
+</html>
