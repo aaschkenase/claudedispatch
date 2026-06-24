@@ -2292,10 +2292,15 @@ body.light-mode .flatpickr-current-month input.cur-year, body.light-mode .flatpi
             <button id="lm-btn-origin" onclick="lmSetView('origin')" style="flex:1;padding:6px;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;background:rgba(232,93,47,0.15);color:var(--accent-blue);border:1px solid rgba(232,93,47,0.35);">📤 Origins</button>
             <button id="lm-btn-dest" onclick="lmSetView('dest')" style="flex:1;padding:6px;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;background:var(--bg-elevated);color:var(--text-muted);border:1px solid var(--border-subtle);">📥 Destinations</button>
             <button id="lm-btn-flow" onclick="lmSetView('flow')" style="flex:1;padding:6px;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;background:var(--bg-elevated);color:var(--text-muted);border:1px solid var(--border-subtle);">↔ Lanes</button>
+            <button id="lm-btn-capacity" onclick="lmSetView('capacity')" style="flex:1;padding:6px;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;background:var(--bg-elevated);color:var(--text-muted);border:1px solid var(--border-subtle);">📡 Capacity</button>
           </div>
           <!-- Combo analyzer button — only shown in Lanes mode -->
           <div id="lm-combo-bar" style="display:none;margin-bottom:10px;">
             <button onclick="window.lmOpenComboAnalyzer()" style="width:100%;padding:8px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;background:linear-gradient(135deg,rgba(167,139,250,0.18),rgba(232,93,47,0.12));border:1px solid rgba(167,139,250,0.35);color:#c4b5fd;">🔗 Find Lane Combinations</button>
+          </div>
+          <!-- Share button — only shown in Capacity mode -->
+          <div id="lm-capacity-bar" style="display:none;margin-bottom:10px;">
+            <button onclick="window.lmOpenShareCapacity()" style="width:100%;padding:8px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;background:rgba(56,189,248,0.12);border:1px solid rgba(56,189,248,0.35);color:#38bdf8;">📤 Share Capacity Map</button>
           </div>
           <!-- Sort -->
           <div style="display:flex;gap:6px;align-items:center;">
@@ -3814,6 +3819,24 @@ body.light-mode .flatpickr-current-month input.cur-year, body.light-mode .flatpi
             <button onclick="forceCloudReload()" style="padding:10px 18px;background:rgba(79,158,248,0.15);border:1px solid rgba(79,158,248,0.4);color:#4f9ef8;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">☁️ Force Reload from Cloud</button>
             <button onclick="forcePushLocalToCloud()" style="padding:10px 18px;background:rgba(59,185,80,0.15);border:1px solid rgba(59,185,80,0.4);color:#3fb950;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">⬆️ Force Push Local → Cloud</button>
             <button onclick="showCloudSyncDiagnostic()" style="padding:10px 18px;background:var(--bg-primary);border:1px solid var(--border-medium);color:var(--text-secondary);border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">🔍 Show Sync Diagnostic</button>
+          </div>
+        </div>
+
+        <!-- CAPACITY MAP SYNC SECTION -->
+        <div style="background:rgba(56,189,248,0.05);border:1px solid rgba(56,189,248,0.2);border-radius:10px;padding:16px 18px;margin-bottom:18px;">
+          <div style="font-size:13px;font-weight:800;color:var(--text-primary);margin-bottom:4px;">📡 Public Capacity Map</div>
+          <div style="font-size:12px;color:var(--text-muted);line-height:1.6;margin-bottom:4px;">
+            Syncs anonymized capacity data (trucks/week by state, cities, lane volume) to the public map at <strong style="color:#38bdf8;">aaschkenase.github.io/claudedispatch/capacity.html</strong>. No rates, no driver names.
+          </div>
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px;" id="capacitySyncStatus">Never synced</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
+            <select id="capacitySyncRange" style="padding:8px 12px;background:var(--bg-primary);border:1px solid var(--border-medium);border-radius:8px;color:var(--text-primary);font-size:13px;">
+              <option value="30">Last 30 days</option>
+              <option value="90" selected>Last 90 days</option>
+              <option value="180">Last 6 months</option>
+              <option value="0">All time</option>
+            </select>
+            <button onclick="syncCapacityMap()" style="padding:10px 18px;background:rgba(56,189,248,0.15);border:1px solid rgba(56,189,248,0.4);color:#38bdf8;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">📡 Sync Capacity Map Now</button>
           </div>
         </div>
 
@@ -12619,9 +12642,11 @@ window.showLoadSimulator = function(driverId) {
     _lmView = view;
     _lmSelected = null;
     document.getElementById('lm-state-panel').style.display = 'none';
-    var comboBar = document.getElementById('lm-combo-bar');
-    if (comboBar) comboBar.style.display = view === 'flow' ? '' : 'none';
-    ['origin','dest','flow'].forEach(function(v) {
+    var comboBar    = document.getElementById('lm-combo-bar');
+    var capacityBar = document.getElementById('lm-capacity-bar');
+    if (comboBar)    comboBar.style.display    = view === 'flow'     ? '' : 'none';
+    if (capacityBar) capacityBar.style.display = view === 'capacity' ? '' : 'none';
+    ['origin','dest','flow','capacity'].forEach(function(v) {
       var btn = document.getElementById('lm-btn-' + v);
       if (!btn) return;
       var active = v === view;
@@ -12659,6 +12684,62 @@ window.showLoadSimulator = function(driverId) {
       return;
     }
     document.getElementById('lm-empty').style.display = 'none';
+
+    if (_lmView === 'capacity') {
+      // ── CAPACITY MODE ──────────────────────────────────────────────────────
+      var capData = buildCapacityData(loads, dates.from, dates.to);
+      var maxWpw  = Math.max.apply(null, Object.values(capData.byState).map(function(d){return d.wpw;}).concat([1]));
+
+      _lmGeoJson.features.forEach(function(feature) {
+        var name = feature.properties.name;
+        var abbr = Object.keys(STATE_NAMES).find(function(k){ return STATE_NAMES[k] === name; });
+        if (!abbr) return;
+        var d    = capData.byState[abbr];
+        var wpw  = d ? d.wpw : 0;
+        var fill = wpw === 0 ? 'rgba(255,255,255,0.03)'
+          : wpw >= maxWpw * 0.7 ? '#042C53'
+          : wpw >= maxWpw * 0.4 ? '#185FA5'
+          : wpw >= maxWpw * 0.2 ? '#378ADD'
+          : wpw >= maxWpw * 0.08 ? '#85B7EB'
+          : '#B5D4F4';
+
+        var isSelected = _lmSelected === abbr;
+        var layer = L.geoJSON(feature, {
+          style: {
+            fillColor:   isSelected ? '#38bdf8' : fill,
+            fillOpacity: wpw > 0 ? 0.88 : 0.18,
+            color:       isSelected ? '#7dd3fc' : 'rgba(255,255,255,0.1)',
+            weight:      isSelected ? 2 : 0.6
+          }
+        });
+        layer.on('click', function() { lmSelectCapacityState(abbr, name, capData); });
+        layer.on('mouseover', function(e) {
+          if (!isSelected) e.target.setStyle({ fillOpacity: Math.min(1, (wpw>0?0.88:0.18)+0.1), weight:1.2, color:'rgba(255,255,255,0.25)' });
+        });
+        layer.on('mouseout', function(e) {
+          if (!isSelected) e.target.setStyle({ fillOpacity: wpw>0?0.88:0.18, weight:0.6, color:'rgba(255,255,255,0.1)' });
+        });
+        layer.addTo(_lmMap);
+        _lmLayers[abbr] = layer;
+
+        if (wpw > 0) {
+          var center = layer.getBounds().getCenter();
+          var label  = wpw >= 10 ? Math.round(wpw)+'x' : wpw.toFixed(1)+'x';
+          var textCol = wpw >= maxWpw * 0.2 ? '#fff' : '#0c1a2e';
+          var marker = L.marker(center, {
+            icon: L.divIcon({
+              className: '',
+              html: '<div style="font-size:9px;font-weight:800;color:'+textCol+';text-shadow:0 1px 2px rgba(0,0,0,0.6);white-space:nowrap;pointer-events:none;">'+label+'/wk</div>',
+              iconSize: [40, 14], iconAnchor: [20, 7]
+            }),
+            interactive: false
+          });
+          marker.addTo(_lmMap);
+          _lmMarkers.push(marker);
+        }
+      });
+      return;
+    }
 
     if (_lmView === 'flow') {
       // ── FLOW / LANES MODE ─────────────────────────────────────────────────
@@ -12886,6 +12967,11 @@ window.showLoadSimulator = function(driverId) {
     var list   = document.getElementById('lm-list');
     if (!list) return;
 
+    if (_lmView === 'capacity') {
+      lmRenderCapacityList(loads, dates);
+      return;
+    }
+
     if (_lmView === 'flow') {
       // ── LANES LIST ─────────────────────────────────────────────────────────
       var lanes   = buildLaneData(loads, dates.from, dates.to);
@@ -12962,6 +13048,10 @@ window.showLoadSimulator = function(driverId) {
       var lanes = buildLaneData(loads, dates.from, dates.to);
       thirdLabel = 'lanes';
       thirdVal = Object.keys(lanes).length;
+    } else if (_lmView === 'capacity') {
+      var capD = buildCapacityData(loads, dates.from, dates.to);
+      thirdLabel = 'states covered';
+      thirdVal = Object.keys(capD.byState).length;
     } else {
       thirdLabel = 'states';
       thirdVal = Object.keys(buildData(loads, _lmView)).length;
@@ -13379,6 +13469,365 @@ window.showLoadSimulator = function(driverId) {
     renderCombos('allInRpm');
   };
 
+
+  // ── CAPACITY DATA ENGINE ──────────────────────────────────────────────────
+  // Builds trucks/week by state and city from loads in the selected date range.
+  function buildCapacityData(loads, dateFrom, dateTo) {
+    var byState = {};
+    var byLane  = {};
+    var msPerWeek = 7 * 24 * 60 * 60 * 1000;
+
+    // Convert string dates to timestamps for range calculation
+    var fromMs = dateFrom ? new Date(dateFrom).getTime() : 0;
+    var toMs   = dateTo   ? new Date(dateTo).getTime()   : Date.now();
+
+    // For "all time" or missing from-date, derive from earliest load
+    if (!fromMs || isNaN(fromMs)) {
+      var dates = loads.map(function(l){ return l.date; }).filter(Boolean).sort();
+      fromMs = dates.length > 0 ? new Date(dates[0]).getTime() : (toMs - 90*24*60*60*1000);
+    }
+    if (isNaN(toMs)) toMs = Date.now();
+
+    var rangeWeeks = Math.max(1, (toMs - fromMs) / msPerWeek);
+
+    // Convert back to YYYY-MM-DD strings for load filtering
+    var fromStr = new Date(fromMs).toISOString().substring(0,10);
+    var toStr   = new Date(toMs).toISOString().substring(0,10);
+
+    function addState(abbr, city) {
+      if (!abbr || abbr.length !== 2) return;
+      if (!byState[abbr]) byState[abbr] = { count:0, cities:{} };
+      byState[abbr].count++;
+      if (city) {
+        var cityKey = city.trim().split(',')[0].trim();
+        if (cityKey) byState[abbr].cities[cityKey] = (byState[abbr].cities[cityKey] || 0) + 1;
+      }
+    }
+
+    loads.forEach(function(l) {
+      if (l.date && l.date < fromStr) return;
+      if (l.date && l.date > toStr)   return;
+
+      addState(l.originState || riParseState(l.origin), l.origin ? l.origin.split(',')[0] : '');
+      addState(l.destState   || riParseState(l.dest),   l.dest   ? l.dest.split(',')[0]   : '');
+
+      var oSt = l.originState || riParseState(l.origin);
+      var dSt = l.destState   || riParseState(l.dest);
+      if (oSt && dSt && oSt !== dSt) {
+        var lk = oSt + '→' + dSt;
+        byLane[lk] = (byLane[lk] || 0) + 1;
+      }
+    });
+
+    // Compute trucks per week per state
+    Object.keys(byState).forEach(function(abbr) {
+      byState[abbr].wpw = byState[abbr].count / rangeWeeks;
+    });
+
+    // Top lanes by volume
+    var topLanes = Object.entries(byLane)
+      .sort(function(a,b){ return b[1]-a[1]; })
+      .slice(0, 8)
+      .map(function(e){ return { lane:e[0], count:e[1], wpw: e[1]/rangeWeeks }; });
+
+    return { byState:byState, topLanes:topLanes, rangeWeeks:rangeWeeks };
+  }
+
+  // Select a state in capacity view — shows city breakdown in side panel
+  function lmSelectCapacityState(abbr, name, capData) {
+    _lmSelected = abbr;
+    lmRenderMap();
+
+    var panel   = document.getElementById('lm-state-panel');
+    var titleEl = document.getElementById('lm-panel-title');
+    var bodyEl  = document.getElementById('lm-panel-body');
+    var loadsEl = document.getElementById('lm-panel-loads');
+
+    var d = capData.byState[abbr];
+    titleEl.textContent = (STATE_NAMES[abbr] || abbr);
+    panel.style.display = 'block';
+
+    if (!d) {
+      bodyEl.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">No load data for this state.</div>';
+      loadsEl.innerHTML = '';
+      return;
+    }
+
+    bodyEl.innerHTML =
+      '<div><span style="color:var(--text-muted);">Avg trucks/week:</span> <strong style="color:#38bdf8;">' + d.wpw.toFixed(1) + '</strong></div>' +
+      '<div><span style="color:var(--text-muted);">Total touches:</span> <strong style="color:var(--text-primary);">' + d.count + '</strong></div>';
+
+    var cities = Object.entries(d.cities)
+      .filter(function(e){ return e[0]; })
+      .sort(function(a,b){ return b[1]-a[1]; });
+
+    if (cities.length > 0) {
+      loadsEl.innerHTML = '<div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Cities touched</div>' +
+        cities.map(function(e) {
+          return '<div style="padding:5px 0;border-top:1px solid var(--border-subtle);display:flex;justify-content:space-between;align-items:center;font-size:11px;">' +
+            '<span style="color:var(--text-secondary);font-weight:600;">' + escapeHtml(e[0]) + '</span>' +
+            '<span style="color:#38bdf8;font-weight:700;">' + e[1] + ' load' + (e[1]!==1?'s':'') + '</span>' +
+          '</div>';
+        }).join('');
+    } else {
+      loadsEl.innerHTML = '<div style="font-size:11px;color:var(--text-muted);">No city detail available.</div>';
+    }
+  }
+
+  // Capacity list view — top states by trucks/week
+  function lmRenderCapacityList(loads, dates) {
+    var list = document.getElementById('lm-list');
+    if (!list) return;
+    var capData = buildCapacityData(loads, dates.from, dates.to);
+    var states  = Object.entries(capData.byState)
+      .sort(function(a,b){ return b[1].wpw - a[1].wpw; });
+
+    if (states.length === 0) {
+      list.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:32px;font-size:13px;">No load data yet.</div>';
+      return;
+    }
+
+    list.innerHTML = states.map(function(e) {
+      var abbr = e[0], d = e[1];
+      var isSelected = _lmSelected === abbr;
+      return '<div onclick="lmSelectCapacityState(\'' + abbr + '\',\'' + (STATE_NAMES[abbr]||abbr).replace(/'/g,"\\'") + '\',' + JSON.stringify(capData) + ')" style="padding:8px 16px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border-subtle);' + (isSelected?'background:rgba(56,189,248,0.08);':'') + '">' +
+        '<div>' +
+          '<div style="font-size:12px;font-weight:700;color:var(--text-primary);">' + (STATE_NAMES[abbr]||abbr) + ' <span style="font-size:10px;color:var(--text-muted);font-weight:400;">(' + abbr + ')</span></div>' +
+          '<div style="font-size:11px;color:var(--text-muted);">' + Object.keys(d.cities).length + ' cities touched</div>' +
+        '</div>' +
+        '<div style="text-align:right;">' +
+          '<div style="font-size:13px;font-weight:800;color:#38bdf8;">' + d.wpw.toFixed(1) + '/wk</div>' +
+          '<div style="font-size:10px;color:var(--text-muted);">' + d.count + ' total</div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  // ── SHARE CAPACITY MAP ────────────────────────────────────────────────────
+  window.lmOpenShareCapacity = function() {
+    document.getElementById('lmShareCapacityModal') && document.getElementById('lmShareCapacityModal').remove();
+
+    var modal = document.createElement('div');
+    modal.id = 'lmShareCapacityModal';
+    modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:25000;display:flex;align-items:center;justify-content:center;padding:16px;';
+    modal.onclick = function(e){ if(e.target===modal) modal.remove(); };
+    modal.innerHTML =
+      '<div style="background:var(--bg-elevated);border:1px solid rgba(56,189,248,0.3);border-radius:16px;width:100%;max-width:440px;padding:24px;" onclick="event.stopPropagation()">' +
+        '<div style="font-size:17px;font-weight:900;color:var(--text-primary);margin-bottom:6px;">📤 Share Capacity Map</div>' +
+        '<div style="font-size:12px;color:var(--text-muted);margin-bottom:20px;">Generates a standalone interactive map file. No driver names, no rates — capacity and lane volume only.</div>' +
+        '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px;">Time range</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:20px;" id="lmShareRangeBtns">' +
+          ['30 days','90 days','6 months','All time'].map(function(r,i){
+            return '<button onclick="document.querySelectorAll(\'#lmShareRangeBtns button\').forEach(b=>{b.style.background=\'rgba(255,255,255,0.04)\';b.style.borderColor=\'rgba(255,255,255,0.1)\';b.style.color=\'var(--text-muted)\'});this.style.background=\'rgba(56,189,248,0.15)\';this.style.borderColor=\'rgba(56,189,248,0.4)\';this.style.color=\'#38bdf8\';window._lmShareRange=\''+r+'\';" style="padding:10px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.04);border-radius:8px;color:var(--text-muted);font-size:12px;font-weight:600;cursor:pointer;">'+(i===1?'<strong style="color:#38bdf8">':'')+r+(i===1?'</strong>':'')+'</button>';
+          }).join('') +
+        '</div>' +
+        '<div style="background:rgba(56,189,248,0.06);border:1px solid rgba(56,189,248,0.15);border-radius:8px;padding:12px;margin-bottom:20px;font-size:12px;color:rgba(255,255,255,0.6);">'+
+          '✅ Included: trucks/week by state, city-level detail, lane volume<br>'+
+          '🚫 Excluded: driver names, rates, individual load details, company name can be customized' +
+        '</div>' +
+        '<div id="lmShareStatus" style="font-size:12px;color:var(--text-muted);min-height:16px;margin-bottom:12px;"></div>' +
+        '<div style="display:flex;gap:10px;">' +
+          '<button onclick="lmGenerateCapacityFile()" style="flex:1;padding:11px;background:rgba(56,189,248,0.15);border:1px solid rgba(56,189,248,0.4);color:#38bdf8;border-radius:8px;font-size:13px;font-weight:800;cursor:pointer;">⬇️ Download capacity map</button>' +
+          '<button onclick="document.getElementById(\'lmShareCapacityModal\').remove()" style="padding:11px 16px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:var(--text-muted);border-radius:8px;font-size:13px;cursor:pointer;">Cancel</button>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(modal);
+    window._lmShareRange = '90 days';
+    // Highlight default
+    setTimeout(function(){
+      var btns = document.querySelectorAll('#lmShareRangeBtns button');
+      if (btns[1]) { btns[1].style.background='rgba(56,189,248,0.15)'; btns[1].style.borderColor='rgba(56,189,248,0.4)'; btns[1].style.color='#38bdf8'; }
+    }, 50);
+  };
+
+  window.lmGenerateCapacityFile = function() {
+    var status = document.getElementById('lmShareStatus');
+    if (status) status.textContent = '⏳ Building map…';
+
+    // Compute date range
+    var now = new Date();
+    var from;
+    var range = window._lmShareRange || '90 days';
+    if (range === '30 days')   from = new Date(now - 30*86400000);
+    else if (range === '90 days')  from = new Date(now - 90*86400000);
+    else if (range === '6 months') from = new Date(now - 182*86400000);
+    else                           from = new Date(2000,0,1);
+    var to = new Date();
+
+    var loads   = getAllMapLoads();
+    var capData = buildCapacityData(loads, from, to);
+
+    // Anonymize state names map (just abbrs + full names, no sensitive data)
+    var stateNamesJson = JSON.stringify(STATE_NAMES);
+    var stateCentersJson = JSON.stringify(STATE_CENTERS);
+    var capJson  = JSON.stringify(capData);
+    var generated = new Date().toLocaleDateString();
+
+    var html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tag Trans — Available Capacity</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0b0e13;color:#e2e8f0;min-height:100vh}
+.header{padding:20px 24px;border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.brand{font-size:20px;font-weight:800;color:#fff}
+.sub{font-size:12px;color:rgba(255,255,255,0.45);margin-top:3px}
+.body{display:grid;grid-template-columns:1fr 240px;gap:14px;padding:16px;max-width:1200px;margin:0 auto}
+#map{height:480px;border-radius:10px;border:1px solid rgba(255,255,255,0.08)}
+.panel{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:14px}
+.panel h3{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:rgba(255,255,255,0.4);margin-bottom:10px;font-weight:700}
+.state-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.06);font-size:12px}
+.state-row:last-child{border-bottom:none}
+.state-name{font-weight:600;color:#e2e8f0}
+.state-wpw{font-weight:800;color:#38bdf8}
+.lane-row{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12px}
+.lane-name{font-weight:600;color:#e2e8f0;width:70px;flex-shrink:0}
+.lane-bar-wrap{flex:1;height:4px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden}
+.lane-bar{height:4px;background:#378ADD;border-radius:2px}
+.lane-wpw{color:rgba(255,255,255,0.5);width:40px;text-align:right}
+.legend{display:flex;gap:10px;flex-wrap:wrap;padding:10px 16px;font-size:11px;color:rgba(255,255,255,0.45)}
+.legend-item{display:flex;align-items:center;gap:5px}
+.legend-dot{width:12px;height:12px;border-radius:2px;flex-shrink:0}
+.tooltip-box{background:#111722;border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:8px 12px;font-size:12px;color:#e2e8f0;box-shadow:0 4px 12px rgba(0,0,0,0.5)}
+#cityPanel{min-height:100px}
+.city-row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.06);font-size:12px}
+.footer{text-align:center;padding:16px;font-size:11px;color:rgba(255,255,255,0.25)}
+@media(max-width:640px){.body{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="header">
+  <div>
+    <div class="brand">Tag Trans — Available Capacity</div>
+    <div class="sub">Based on ${range} of data · generated ${generated} · click any state for city detail</div>
+  </div>
+  <div style="font-size:12px;color:rgba(255,255,255,0.4);">Contact us for capacity →</div>
+</div>
+<div class="body">
+  <div>
+    <div id="map"></div>
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#B5D4F4"></div>1–2/wk</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#85B7EB"></div>3–5/wk</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#378ADD"></div>6–10/wk</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#185FA5"></div>11–20/wk</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#042C53"></div>20+/wk</div>
+    </div>
+    <div class="panel" style="margin-top:12px">
+      <h3>Top active lanes · avg loads/week</h3>
+      <div id="laneList"></div>
+    </div>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:12px">
+    <div class="panel">
+      <h3>Top states by capacity</h3>
+      <div id="stateList"></div>
+    </div>
+    <div class="panel" id="cityPanel">
+      <h3 id="cityTitle">Click a state</h3>
+      <div id="cityList" style="color:rgba(255,255,255,0.4);font-size:12px">Select a state on the map to see city-level detail.</div>
+    </div>
+  </div>
+</div>
+<div class="footer">Capacity data only · no rates or driver information · © Tag Trans Inc</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"><\/script>
+<script>
+var CAP = ${capJson};
+var STATE_NAMES = ${stateNamesJson};
+var STATE_CENTERS = ${stateCentersJson};
+
+function getColor(wpw, maxWpw) {
+  if (!wpw) return 'rgba(255,255,255,0.03)';
+  if (wpw >= maxWpw*0.7) return '#042C53';
+  if (wpw >= maxWpw*0.4) return '#185FA5';
+  if (wpw >= maxWpw*0.2) return '#378ADD';
+  if (wpw >= maxWpw*0.08) return '#85B7EB';
+  return '#B5D4F4';
+}
+
+var maxWpw = Math.max.apply(null, Object.values(CAP.byState).map(function(d){return d.wpw;}).concat([1]));
+
+var map = L.map('map',{zoomControl:true,attributionControl:false}).setView([39,-96],4);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png',{maxZoom:18,subdomains:'abcd'}).addTo(map);
+
+fetch('https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json').then(function(r){return r.json();}).then(function(us){
+  var topo = us;
+  var states;
+  try {
+    var tj = window.topojson || {};
+    states = {type:'FeatureCollection',features:[]};
+    us.objects && Object.keys(us.objects).forEach(function(k){
+      us.objects[k].geometries && us.objects[k].geometries.forEach(function(g){
+        states.features.push({type:'Feature',properties:g.properties||{},geometry:g.type==='GeometryCollection'?g.geometries[0]:g});
+      });
+    });
+  } catch(e) { console.error(e); }
+
+  fetch('https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json').then(function(r2){return r2.json();}).then(function(us2){
+    var feats = [];
+    if (us2.objects && us2.objects.states) {
+      us2.objects.states.geometries.forEach(function(g){feats.push(g);});
+    }
+    var abbrs = {};
+    Object.keys(STATE_NAMES).forEach(function(ab){
+      feats.forEach(function(f){ if((f.properties.name||'').toLowerCase()===STATE_NAMES[ab].toLowerCase()) abbrs[f.id]=ab; });
+    });
+
+    var tooltip = L.popup({className:'tooltip-box',closeButton:false,offset:[0,-10]});
+
+    L.geoJSON({type:'FeatureCollection',features:feats.map(function(g){ return {type:'Feature',id:g.id,properties:g.properties||{},geometry:g}; })}, {
+      style:function(feature){
+        var ab=abbrs[feature.id]; var d=CAP.byState[ab]||{}; var wpw=d.wpw||0;
+        return {fillColor:getColor(wpw,maxWpw),fillOpacity:wpw>0?0.85:0.15,color:'rgba(255,255,255,0.1)',weight:0.6};
+      },
+      onEachFeature:function(feature,layer){
+        var ab=abbrs[feature.id]; var d=CAP.byState[ab]||{}; var wpw=d.wpw||0;
+        layer.on('mouseover',function(e){
+          tooltip.setLatLng(e.latlng).setContent('<strong>'+(STATE_NAMES[ab]||ab||'')+'</strong><br>'+(wpw?('~'+wpw.toFixed(1)+' trucks/wk avg'):'Occasional')).openOn(map);
+          layer.setStyle({fillOpacity:Math.min(1,(wpw>0?0.85:0.15)+0.1)});
+        });
+        layer.on('mouseout',function(){map.closePopup();layer.setStyle({fillOpacity:wpw>0?0.85:0.15});});
+        layer.on('click',function(){
+          if(!ab||!d.wpw) return;
+          document.getElementById('cityTitle').textContent=(STATE_NAMES[ab]||ab)+' — '+d.wpw.toFixed(1)+'/wk avg';
+          var cities=Object.entries(d.cities||{}).sort(function(a,b){return b[1]-a[1];});
+          document.getElementById('cityList').innerHTML=cities.length?cities.map(function(c){
+            return '<div class="city-row"><span>'+c[0]+'</span><span style="color:#38bdf8;font-weight:700;">'+c[1]+' loads</span></div>';
+          }).join(''):'<div style="color:rgba(255,255,255,0.4);font-size:12px">No city detail available.</div>';
+        });
+      }
+    }).addTo(map);
+  });
+});
+
+var statesSorted=Object.entries(CAP.byState).sort(function(a,b){return b[1].wpw-a[1].wpw;}).slice(0,12);
+document.getElementById('stateList').innerHTML=statesSorted.map(function(e){
+  return '<div class="state-row"><span class="state-name">'+(STATE_NAMES[e[0]]||e[0])+'</span><span class="state-wpw">'+e[1].wpw.toFixed(1)+'/wk</span></div>';
+}).join('');
+
+var maxLWpw=CAP.topLanes.length?CAP.topLanes[0].wpw:1;
+document.getElementById('laneList').innerHTML=CAP.topLanes.map(function(l){
+  var pct=Math.round(l.wpw/maxLWpw*100);
+  return '<div class="lane-row"><span class="lane-name">'+l.lane+'</span><div class="lane-bar-wrap"><div class="lane-bar" style="width:'+pct+'%"></div></div><span class="lane-wpw">'+l.wpw.toFixed(1)+'/wk</span></div>';
+}).join('');
+<\/script>
+</body>
+</html>`;
+
+    // Download
+    var blob = new Blob([html], {type:'text/html'});
+    var url  = URL.createObjectURL(blob);
+    var a    = document.createElement('a');
+    a.href   = url;
+    a.download = 'tagtrans-capacity-' + new Date().toISOString().substring(0,10) + '.html';
+    a.click();
+    URL.revokeObjectURL(url);
+    if (status) { status.textContent = '✅ Downloaded! Share the .html file — it opens in any browser.'; status.style.color = '#3fb950'; }
+  };
 
   // Hook into showTab to init the map when tab is first shown
   var _origShowTab = window.showTab;
@@ -16520,77 +16969,107 @@ if __name__=="__main__":
   var _cloudSaveTimer = null;
   var _lastSavedHash = '';  // Fingerprint of last successful write
 
+  // The actual Firestore write — extracted so it can be called either
+  // debounced (normal typing) or immediately (on tab hide / page close).
+  function _performCloudSave() {
+    if (!fbUser || !fbDb) return;
+
+    // Dirty check: skip write if state hasn't changed since last save
+    var stateSnapshot = JSON.stringify({
+      currentDriverId: state.currentDriverId,
+      drivers: state.drivers,
+      settings: settings
+    });
+    var hash = 0;
+    for (var i = 0; i < stateSnapshot.length; i++) {
+      hash = ((hash << 5) - hash + stateSnapshot.charCodeAt(i)) | 0;
+    }
+    var hashStr = String(hash);
+    if (hashStr === _lastSavedHash) {
+      dbg('☁️ Skip cloud save — no changes');
+      return;
+    }
+
+    // Strip bulky fields that don't need to live in Firestore.
+    // routeGeo is an array of hundreds of lat/lng coords per load — it's
+    // regenerated on demand from Google Maps and is the #1 cause of the
+    // 1MB Firestore document limit being hit.
+    function slimForCloud(drivers) {
+      const sanitized = sanitizeForFirebase(drivers);
+      Object.values(sanitized).forEach(function(drv) {
+        Object.values(drv.weeks || {}).forEach(function(wk) {
+          (wk.loads || []).forEach(function(l) {
+            delete l.routeGeo;       // polyline coords — large, re-fetchable
+            if (l.details) {
+              delete l.details.mpg;         // derived from settings
+              delete l.details.fuelPrice;   // derived from settings
+              delete l.details.maintRate;   // derived from settings
+              delete l.details.loadsPerWeek;// derived from settings
+            }
+          });
+        });
+      });
+      return sanitized;
+    }
+
+    const sanitizedDrivers = slimForCloud(state.drivers);
+
+    // Pre-flight size check — Firestore hard limit is 1MB per document
+    var sizeTest = JSON.stringify({ drivers: sanitizedDrivers, settings: settings });
+    if (sizeTest.length > 900000) {
+      console.warn('☁️ Doc ~' + Math.round(sizeTest.length/1024) + 'KB — trimming old weeks');
+      Object.values(sanitizedDrivers).forEach(function(drv) {
+        if (!drv.weeks) return;
+        var wids = Object.keys(drv.weeks).sort();
+        while (wids.length > 8) { delete drv.weeks[wids.shift()]; }
+      });
+    }
+
+    fbDb.collection('users').doc(fbUser.uid).set({
+      currentDriverId: state.currentDriverId,
+      drivers: sanitizedDrivers,
+      settings: settings,
+      savedAt: new Date().toISOString()
+    }).then(function() {
+      console.log("☁️ Cloud saved");
+      _lastSavedHash = hashStr;
+      updateSyncBanner('saved');
+    }).catch(function(e) {
+      console.warn("Cloud save error:", e);
+      console.error("Full error:", e);
+      updateSyncBanner('error', e.message);
+    });
+  }
+
   function cloudSave() {
     if (!fbUser || !fbDb) return;
     clearTimeout(_cloudSaveTimer);
-    _cloudSaveTimer = setTimeout(function() {
-      // Dirty check: skip write if state hasn't changed since last save
-      var stateSnapshot = JSON.stringify({
-        currentDriverId: state.currentDriverId,
-        drivers: state.drivers,
-        settings: settings
-      });
-      var hash = 0;
-      for (var i = 0; i < stateSnapshot.length; i++) {
-        hash = ((hash << 5) - hash + stateSnapshot.charCodeAt(i)) | 0;
-      }
-      var hashStr = String(hash);
-      if (hashStr === _lastSavedHash) {
-        dbg('☁️ Skip cloud save — no changes');
-        return;
-      }
-
-      // Strip bulky fields that don't need to live in Firestore.
-      // routeGeo is an array of hundreds of lat/lng coords per load — it's
-      // regenerated on demand from Google Maps and is the #1 cause of the
-      // 1MB Firestore document limit being hit.
-      function slimForCloud(drivers) {
-        const sanitized = sanitizeForFirebase(drivers);
-        Object.values(sanitized).forEach(function(drv) {
-          Object.values(drv.weeks || {}).forEach(function(wk) {
-            (wk.loads || []).forEach(function(l) {
-              delete l.routeGeo;       // polyline coords — large, re-fetchable
-              if (l.details) {
-                delete l.details.mpg;         // derived from settings
-                delete l.details.fuelPrice;   // derived from settings
-                delete l.details.maintRate;   // derived from settings
-                delete l.details.loadsPerWeek;// derived from settings
-              }
-            });
-          });
-        });
-        return sanitized;
-      }
-
-      const sanitizedDrivers = slimForCloud(state.drivers);
-
-      // Pre-flight size check — Firestore hard limit is 1MB per document
-      var sizeTest = JSON.stringify({ drivers: sanitizedDrivers, settings: settings });
-      if (sizeTest.length > 900000) {
-        console.warn('☁️ Doc ~' + Math.round(sizeTest.length/1024) + 'KB — trimming old weeks');
-        Object.values(sanitizedDrivers).forEach(function(drv) {
-          if (!drv.weeks) return;
-          var wids = Object.keys(drv.weeks).sort();
-          while (wids.length > 8) { delete drv.weeks[wids.shift()]; }
-        });
-      }
-
-      fbDb.collection('users').doc(fbUser.uid).set({
-        currentDriverId: state.currentDriverId,
-        drivers: sanitizedDrivers,
-        settings: settings,
-        savedAt: new Date().toISOString()
-      }).then(function() {
-        console.log("☁️ Cloud saved");
-        _lastSavedHash = hashStr;
-        updateSyncBanner('saved');
-      }).catch(function(e) {
-        console.warn("Cloud save error:", e);
-        console.error("Full error:", e);
-        updateSyncBanner('error', e.message);
-      });
-    }, CONFIG.CLOUD_SAVE_DEBOUNCE);
+    _cloudSaveTimer = setTimeout(_performCloudSave, CONFIG.CLOUD_SAVE_DEBOUNCE);
   }
+
+  // ── Flush any pending debounced save immediately ──────────────────────────
+  // A 1.5s debounce is fine for normal typing, but if the tab is closed,
+  // the app is backgrounded, or the phone screen locks within that window,
+  // the pending setTimeout is killed by the browser before it ever fires —
+  // meaning the edit saved to localStorage but never reached Firestore.
+  // This is the #1 cause of "cloud sync is stale on another device."
+  function flushCloudSave() {
+    if (!fbUser || !fbDb) return;
+    if (_cloudSaveTimer) {
+      clearTimeout(_cloudSaveTimer);
+      _cloudSaveTimer = null;
+      console.log('☁️ Flushing pending cloud save before tab hides/closes');
+      _performCloudSave();
+    }
+  }
+
+  // Mobile: screen lock / app switch fires 'visibilitychange', not 'beforeunload'
+  document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'hidden') flushCloudSave();
+  });
+  // Desktop/mobile: page actually being torn down or navigated away from
+  window.addEventListener('pagehide', flushCloudSave);
+  window.addEventListener('beforeunload', flushCloudSave);
 
   // Patch saveState to also cloud-save (non-breaking)
   var _origSave = saveState;
@@ -16994,6 +17473,95 @@ function buildDatPrompt(driver, equipment) {
 // ═══════════════════════════════════════════════════════════════════════════
 // FORCE CLOUD RELOAD — bypasses timestamp check, always loads Firebase data
 // ═══════════════════════════════════════════════════════════════════════════
+window.syncCapacityMap = async function() {
+  var statusEl = document.getElementById('capacitySyncStatus');
+  if (statusEl) { statusEl.textContent = '⏳ Computing…'; statusEl.style.color = 'var(--text-muted)'; }
+  try {
+    var days     = parseInt((document.getElementById('capacitySyncRange') || {}).value || '90') || 0;
+    var toDate   = new Date();
+    var fromDate = days > 0 ? new Date(toDate - days * 86400000) : new Date(2000,0,1);
+    var fromStr  = fromDate.toISOString().substring(0,10);
+    var toStr    = toDate.toISOString().substring(0,10);
+
+    // Gather all loads
+    var loads = [];
+    Object.values(state.drivers || {}).forEach(function(drv) {
+      if (drv.archived) return;
+      Object.values(drv.weeks || {}).forEach(function(wk) {
+        (wk.loads || []).forEach(function(l) {
+          loads.push({ origin: l.origin||'', dest: l.dest||'', originState: riParseState(l.origin)||'', destState: riParseState(l.dest)||'', date: l.date||'' });
+        });
+      });
+    });
+    try {
+      var mc = typeof mcleodGetStoredLoads === 'function' ? mcleodGetStoredLoads() : [];
+      mc.forEach(function(l) {
+        loads.push({ origin: l.origin||'', dest: l.destination||l.dest||'', originState: (l.originState||'').toUpperCase(), destState: (l.destState||'').toUpperCase(), date: l.date||'' });
+      });
+    } catch(e){}
+
+    var msPerWeek  = 7*24*60*60*1000;
+    var rangeWeeks = Math.max(1, (toDate - fromDate) / msPerWeek);
+
+    // Aggregation helper
+    function makeAgg() { return {}; }
+    function addToAgg(agg, abbr, city) {
+      if (!abbr || abbr.length !== 2) return;
+      if (!agg[abbr]) agg[abbr] = { count:0, cities:{} };
+      agg[abbr].count++;
+      if (city) { var k = city.trim().split(',')[0].trim(); if(k) agg[abbr].cities[k] = (agg[abbr].cities[k]||0)+1; }
+    }
+    function finalise(agg) {
+      Object.keys(agg).forEach(function(a){ agg[a].wpw = Math.round((agg[a].count / rangeWeeks) * 10) / 10; });
+      return agg;
+    }
+
+    var byState = makeAgg(), byOrigin = makeAgg(), byDest = makeAgg(), byLane = {};
+
+    loads.forEach(function(l) {
+      if (l.date && l.date < fromStr) return;
+      if (l.date && l.date > toStr)   return;
+      var oCity = l.origin ? l.origin.split(',')[0] : '';
+      var dCity = l.dest   ? l.dest.split(',')[0]   : '';
+      // Combined (overview)
+      addToAgg(byState,  l.originState, oCity);
+      addToAgg(byState,  l.destState,   dCity);
+      // Split
+      addToAgg(byOrigin, l.originState, oCity);
+      addToAgg(byDest,   l.destState,   dCity);
+      // Lanes
+      if (l.originState && l.destState && l.originState !== l.destState) {
+        var lk = l.originState + '→' + l.destState;
+        byLane[lk] = (byLane[lk]||0)+1;
+      }
+    });
+
+    finalise(byState); finalise(byOrigin); finalise(byDest);
+
+    var topLanes = Object.entries(byLane)
+      .sort(function(a,b){return b[1]-a[1];})
+      .slice(0,20)
+      .map(function(e){
+        var parts = e[0].split('→');
+        return { lane:e[0], origin:parts[0]||'', dest:parts[1]||'', count:e[1], wpw:Math.round(e[1]/rangeWeeks*10)/10 };
+      });
+
+    var rangeLabel = days===0?'All time':days<=30?'Last 30 days':days<=90?'Last 90 days':'Last 6 months';
+    var payload = {
+      data: JSON.stringify({ byState, byOrigin, byDest, topLanes, rangeWeeks, rangeLabel }),
+      syncedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      rangeLabel
+    };
+    await fbDb.collection('public').doc('capacity').set(payload);
+
+    var now = new Date().toLocaleString();
+    if (statusEl) { statusEl.textContent = '✅ Synced at ' + now + ' · ' + rangeLabel; statusEl.style.color = '#3fb950'; }
+  } catch(e) {
+    console.error('Capacity sync error:', e);
+    if (statusEl) { statusEl.textContent = '❌ Sync failed: ' + e.message; statusEl.style.color = '#ff4455'; }
+  }
+};
+
 window.forceCloudReload = async function() {
   const statusEl = document.getElementById('debugSyncStatus');
   function setStatus(msg, color) {
