@@ -2938,6 +2938,7 @@ body.light-mode .flatpickr-current-month input.cur-year, body.light-mode .flatpi
       <div style="display:flex;gap:0;background:var(--bg-secondary);border:1px solid var(--border-subtle);border-radius:8px;overflow:hidden;">
         <button id="an-tab-dash" onclick="anSwitchView('dash')" style="padding:6px 16px;font-size:12px;font-weight:700;border:none;cursor:pointer;background:var(--accent-blue);color:#fff;">📊 Dashboard</button>
         <button id="an-tab-broker" onclick="anSwitchView('broker')" style="padding:6px 16px;font-size:12px;font-weight:700;border:none;cursor:pointer;background:transparent;color:var(--text-muted);">🤝 Brokers</button>
+        <button id="an-tab-weeklab" onclick="anSwitchView('weeklab')" style="padding:6px 16px;font-size:12px;font-weight:700;border:none;cursor:pointer;background:transparent;color:var(--text-muted);">🧪 Week Lab</button>
       </div>
     </div>
 
@@ -3096,6 +3097,37 @@ body.light-mode .flatpickr-current-month input.cur-year, body.light-mode .flatpi
         <div id="bs-table"></div>
       </div>
       <div style="font-size:10px;color:var(--text-muted);margin-top:8px;padding:0 4px;">Consistency = how predictable the pay is (5 dots = very consistent, 1 dot = wide variance). Grades: A = above fleet avg RPM, B = within 10% below, C = materially below.</div>
+    </div>
+
+    <!-- ── WEEK LAB VIEW ── -->
+    <div id="an-view-weeklab" style="display:none;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
+        <div style="display:flex;gap:5px;" id="wl-mode-btns">
+          <button class="bs-sort-btn on" onclick="wlSetMode('balanced',this)">Balanced</button>
+          <button class="bs-sort-btn" onclick="wlSetMode('net',this)">Net Heavy</button>
+          <button class="bs-sort-btn" onclick="wlSetMode('rpm',this)">RPM</button>
+          <button class="bs-sort-btn" onclick="wlSetMode('target',this)">Vs Target</button>
+        </div>
+        <div style="display:flex;gap:5px;" id="wl-type-btns">
+          <button class="bs-sort-btn on" onclick="wlSetType('all',this)">All</button>
+          <button class="bs-sort-btn" onclick="wlSetType('oo',this)">Owner-Ops</button>
+          <button class="bs-sort-btn" onclick="wlSetType('co',this)">Company</button>
+        </div>
+      </div>
+
+      <!-- Pattern insights -->
+      <div id="wl-insights" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:16px;"></div>
+
+      <!-- Scored weeks table -->
+      <div style="background:var(--bg-elevated);border:1px solid var(--border-medium);border-radius:10px;overflow:hidden;">
+        <div style="display:grid;grid-template-columns:50px 1fr 110px 48px 74px 78px 54px 18px;gap:8px;padding:7px 16px;font-size:9px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-muted);border-bottom:1px solid var(--border-subtle);">
+          <div>Score</div><div>Driver / Week</div><div>Route</div>
+          <div style="text-align:right">Loads</div><div style="text-align:right">Gross</div>
+          <div style="text-align:right" id="wl-net-hdr">Net</div><div style="text-align:right">RPM</div><div></div>
+        </div>
+        <div id="wl-rows"></div>
+      </div>
+      <div style="font-size:10px;color:var(--text-muted);margin-top:8px;padding:0 4px;">Weeks with 2+ loads, all drivers including archived. Scores are percentile-ranked within driver type (owner-op vs company, each on their own net). Benchmarks use the last 12 months; patterns use all history.</div>
     </div>
 
   </div><!-- end #analytics tab -->
@@ -4722,8 +4754,40 @@ let settings = loadSettings();
  * BASIC HELPERS 
  *************************/
 function saveState(){
-  localStorage.setItem(STORE_KEY, JSON.stringify(state));
-  localStorage.setItem(STORE_KEY + '_savedAt', new Date().toISOString());
+  // Strip bulky regenerable geometry (routeGeo polylines) from the STORED copy
+  // only — the in-memory state keeps them for this session's map rendering.
+  // Without this, localStorage's ~5MB quota is an eventual guaranteed crash.
+  function slimStateForStorage(src) {
+    var copy = JSON.parse(JSON.stringify(src));
+    Object.values(copy.drivers || {}).forEach(function(drv) {
+      Object.values(drv.weeks || {}).forEach(function(wk) {
+        (wk.loads || []).forEach(function(l) { delete l.routeGeo; });
+      });
+    });
+    return copy;
+  }
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify(slimStateForStorage(state)));
+    localStorage.setItem(STORE_KEY + '_savedAt', new Date().toISOString());
+  } catch(e) {
+    console.error('💾 localStorage save failed:', e && e.name, e && e.message);
+    if (e && (e.name === 'QuotaExceededError' || e.code === 22)) {
+      // Last resort: drop derived per-load detail blobs too and retry once.
+      try {
+        var slim = slimStateForStorage(state);
+        Object.values(slim.drivers || {}).forEach(function(drv) {
+          Object.values(drv.weeks || {}).forEach(function(wk) {
+            (wk.loads || []).forEach(function(l) { delete l.details; });
+          });
+        });
+        localStorage.setItem(STORE_KEY, JSON.stringify(slim));
+        localStorage.setItem(STORE_KEY + '_savedAt', new Date().toISOString());
+        console.warn('💾 Saved with reduced detail after quota error — cloud copy remains complete');
+      } catch(e2) {
+        console.error('💾 localStorage completely full — local save skipped (cloud sync still active):', e2 && e2.message);
+      }
+    }
+  }
 }
 
 
@@ -6447,6 +6511,40 @@ function undoCloseWeek(){
 /************************* 
  * CALCS + DATE RANGE TOTALS 
  *************************/
+/**
+ * Shared week-slicing helper — the single source of truth for "which loads
+ * count toward week N". Mirrors computeWeekTotals' revenue attribution:
+ *   - current:    week N loads that do NOT deliver next week (revenue in N)
+ *   - carriedIn:  week N-1 loads flagged deliversNextWeek (revenue in N)
+ *   - carriedOut: week N loads flagged deliversNextWeek (revenue in N+1, NOT N)
+ * Display counts for week N should use current + carriedIn.
+ */
+function getWeekLoadsSplit(driver, weekId) {
+  var wk = (driver && driver.weeks && driver.weeks[weekId]) || { loads: [] };
+  var loads = wk.loads || [];
+  var current    = loads.filter(function(l) { return !l.deliversNextWeek; });
+  var carriedOut = loads.filter(function(l) { return  l.deliversNextWeek; });
+  var carriedIn  = [];
+  if (driver && wk.start) {
+    try {
+      var thisStart  = new Date(wk.start + 'T00:00:00');
+      var prevMonday = new Date(thisStart);
+      prevMonday.setDate(prevMonday.getDate() - 7);
+      var prevWeek = driver.weeks && driver.weeks[isoDate(prevMonday)];
+      if (prevWeek) {
+        (prevWeek.loads || []).filter(function(l) { return l.deliversNextWeek; }).forEach(function(cl) {
+          var alreadyCarried = current.some(function(l) {
+            return l.fromPreviousWeek && l.origin === cl.origin && l.dest === cl.dest
+              && toNum(l.gross) === toNum(cl.gross) && toNum(l.miles) === toNum(cl.miles);
+          });
+          if (!alreadyCarried) carriedIn.push(cl);
+        });
+      }
+    } catch(e) {}
+  }
+  return { week: wk, current: current, carriedIn: carriedIn, carriedOut: carriedOut };
+}
+
 function computeWeekTotals(week, driver){
   const loads = week.loads || [];
   // Exclude loads that deliver next week from this week's revenue
@@ -14144,10 +14242,11 @@ function showDriverDetailModal(driverId) {
   if (!d) return;
 
   var thisWeekId = isoDate(startOfWeekMonday(new Date()));
-  var wkId = d.weeks && d.weeks[thisWeekId] ? thisWeekId : d.currentWeekId;
-  var wk   = (d.weeks && d.weeks[wkId]) || { loads: [] };
-  var t    = computeWeekTotals(wk, d);
-  var loads = (wk.loads || []).filter(function(l) { return !l.deliversNextWeek; });
+  var wkId  = d.weeks && d.weeks[thisWeekId] ? thisWeekId : d.currentWeekId;
+  var slice = getWeekLoadsSplit(d, wkId);
+  var wk    = slice.week;
+  var t     = computeWeekTotals(wk, d);
+  var loads = slice.current.concat(slice.carriedIn); // matches t's revenue attribution
 
   var targetNet = getDriverTargetNet(d);
   var progPct   = targetNet > 0 ? Math.min(100, (t.net / targetNet) * 100) : 0;
@@ -14369,14 +14468,14 @@ function renderDispatchView() {
     var d  = state.drivers[id];
     if (!d) return '';
     var isArchived = !!d.archived;
-    var wkId = d.weeks && d.weeks[thisWeekId] ? thisWeekId : d.currentWeekId;
-    var wk   = (d.weeks && d.weeks[wkId]) || { loads: [] };
-    var loads = (wk.loads || []).filter(function(l) { return !l.deliversNextWeek; });
-    var wkT  = computeWeekTotals(wk, d);
+    var wkId  = d.weeks && d.weeks[thisWeekId] ? thisWeekId : d.currentWeekId;
+    var slice = getWeekLoadsSplit(d, wkId);
+    var wk    = slice.week;
+    var wkT   = computeWeekTotals(wk, d);
 
     if (!isArchived) {
-      var crossWk = (wk.loads || []).filter(function(l){ return l.deliversNextWeek; });
-      totalLoads  += loads.length + crossWk.length;
+      // current + carriedIn = loads whose revenue lands in this week (matches wkT)
+      totalLoads  += slice.current.length + slice.carriedIn.length;
       totalGross  += wkT.gross;
       totalNet    += wkT.net;
       totalMiles  += wkT.miles;
@@ -14391,7 +14490,8 @@ function renderDispatchView() {
     var isCompany = d.driverType === 'company';
     var liveData  = window.samGetLiveDataForDriver ? window.samGetLiveDataForDriver(id) : null;
     var liveCity  = liveData && liveData.gpsCity ? liveData.gpsCity : null;
-    var lastLoad  = loads.length > 0 ? loads[loads.length-1] : null;
+    var _counted  = slice.current.concat(slice.carriedIn);
+    var lastLoad  = _counted.length > 0 ? _counted[_counted.length-1] : null;
     var lastDest  = lastLoad ? (lastLoad.dest || 'Unknown') : 'No loads yet';
     var currentRoute = lastLoad ? (escapeHtml(lastLoad.origin||'') + ' &#x2192; ' + escapeHtml(lastLoad.dest||'')) : 'No active load';
     var truckInfo = [d.truckNumber ? '#' + d.truckNumber : '', d.trailerNumber ? 'TRL #' + d.trailerNumber : ''].filter(Boolean).join(' &middot; ') || '';
@@ -14424,7 +14524,7 @@ function renderDispatchView() {
       + '</div>'
 
       + '<div class="driver-metrics">'
-        + metricBox('Loads', loads.length, 'var(--text-primary)')
+        + metricBox('Loads', _counted.length, 'var(--text-primary)')
         + metricBox('Gross', money(wkT.gross), 'var(--success)')
         + metricBox(isCompany ? 'Co. Net' : 'Net', money(wkT.net), wkT.net >= 0 ? 'var(--success)' : 'var(--danger)')
         + metricBox('Miles', (wkT.miles||0).toLocaleString(), 'var(--text-primary)')
@@ -14546,20 +14646,18 @@ function renderCashFlowProjection() {
 
   var drivers = Object.values(state.drivers || {}).filter(function(d) { return !d.archived; });
   var rows = drivers.map(function(drv) {
-    var allWkLoads = (drv.weeks && drv.weeks[weekId] && drv.weeks[weekId].loads) || [];
-    var wk         = (drv.weeks && drv.weeks[weekId]) || { loads: allWkLoads };
-    var loads      = allWkLoads.filter(function(l) { return !l.deliversNextWeek; });
-    var crossWkLoads = allWkLoads.filter(function(l) { return l.deliversNextWeek; });
-    var gross  = loads.reduce(function(s, l) { return s + (l.gross || 0); }, 0)
-               + crossWkLoads.reduce(function(s, l) { return s + (l.gross || 0); }, 0);
-    var net    = loads.reduce(function(s, l) { return s + (l.net   || 0); }, 0)
-               + crossWkLoads.reduce(function(s, l) { return s + (l.net   || 0); }, 0);
+    // Shared helper: current + carriedIn = loads whose revenue lands THIS week.
+    // carriedOut's revenue belongs to next week and is excluded (matches computeWeekTotals).
+    var slice   = getWeekLoadsSplit(drv, weekId);
+    var counted = slice.current.concat(slice.carriedIn);
+    var gross  = counted.reduce(function(s, l) { return s + (toNum(l.gross)); }, 0);
+    var net    = counted.reduce(function(s, l) { return s + (toNum(l.net));   }, 0);
     var target = getDriverTargetNet(drv) || 0;
 
     // Projection: use loads/day pace × remaining days, not time-of-week
-    var totalLoadCount  = loads.length + crossWkLoads.length;
+    var totalLoadCount  = counted.length;
     var loadsPerDay     = totalLoadCount > 0 ? totalLoadCount / daysElapsed : 0;
-    var avgGrossPerLoad = loads.length > 0 ? gross / loads.length : fleetAvgGross;
+    var avgGrossPerLoad = totalLoadCount > 0 ? gross / totalLoadCount : fleetAvgGross;
     var projected       = gross + (loadsPerDay * avgGrossPerLoad * daysLeft);
 
     var pct = target > 0 ? Math.min(1, net / target) : (net > 0 ? 1 : 0);
@@ -14582,7 +14680,7 @@ function renderCashFlowProjection() {
     else if (totalLoadCount === 0)             status = 'none';
     else                                       status = 'behind';
 
-    return { drv, gross, net, target, projected, pct, loadsNeeded, loads: loads.length, status };
+    return { drv, gross, net, target, projected, pct, loadsNeeded, loads: totalLoadCount, status };
   }).filter(function(r) { return r.target > 0 || r.gross > 0; });
 
   // Sort by gross desc
@@ -14653,9 +14751,12 @@ function renderFleetCards(){
     
     // Always show this week for fleet overview (fall back to currentWeekId if this week doesn't exist)
     const fleetWkId = d.weeks?.[thisWeekId] ? thisWeekId : d.currentWeekId;
-    const wk = d.weeks?.[fleetWkId] || { loads: [] };
-    const loads = (wk.loads || []).filter(l => !l.deliversNextWeek);
-    const crossWeekLoads = (wk.loads || []).filter(l => l.deliversNextWeek);
+    // Slice loads with the shared helper so counts match computeWeekTotals'
+    // revenue attribution exactly: current + carriedIn have revenue THIS week;
+    // carriedOut's revenue belongs to NEXT week and is excluded from both.
+    const slice = getWeekLoadsSplit(d, fleetWkId);
+    const wk = slice.week;
+    const countedLoads = slice.current.concat(slice.carriedIn);
     
     const wkTotals = computeWeekTotals(wk, d);
     const gross = wkTotals.gross;
@@ -14663,19 +14764,17 @@ function renderFleetCards(){
     const net = wkTotals.net;
     const rpm = miles > 0 ? gross / miles : 0;
     
-    // Last drop location — check cross-week loads too
+    // Last drop location — from the loads counted this week
     let lastLocation = 'No loads yet';
-    const allLoads = loads.concat(crossWeekLoads);
-    if (allLoads.length > 0) {
-      const lastLoad = allLoads[allLoads.length - 1];
+    if (countedLoads.length > 0) {
+      const lastLoad = countedLoads[countedLoads.length - 1];
       lastLocation = lastLoad.dest || 'Unknown';
     }
     
-    // Next load (cross-week load going forward)
-    const nextWeekLoads = crossWeekLoads;
+    // Next load = this week's carried-out load (delivers next week)
     let nextLoadInfo = null;
-    if (nextWeekLoads.length > 0) {
-      const nl = nextWeekLoads[nextWeekLoads.length - 1];
+    if (slice.carriedOut.length > 0) {
+      const nl = slice.carriedOut[slice.carriedOut.length - 1];
       nextLoadInfo = nl.origin + ' → ' + nl.dest + ' 📅';
     }
     
@@ -14705,7 +14804,7 @@ function renderFleetCards(){
       net,
       rpm,
       rpmTier,
-      loadCount: loads.length + crossWeekLoads.length,
+      loadCount: countedLoads.length,
       lastLocation,
       nextLoadInfo,
       isPaused,
@@ -16783,10 +16882,18 @@ if __name__=="__main__":
     if (typeof obj === 'object') {
       const sanitized = {};
       for (const key in obj) {
-        sanitized[key] = sanitizeForFirebase(obj[key]);
+        // Firestore rejects documents containing `undefined` anywhere — one
+        // stray field (e.g. tollsPerMile: undefined) fails the ENTIRE write.
+        // Skip undefined keys; also convert NaN (invalid in Firestore) to null.
+        const val = obj[key];
+        if (val === undefined) continue;
+        if (typeof val === 'number' && !Number.isFinite(val)) { sanitized[key] = null; continue; }
+        sanitized[key] = sanitizeForFirebase(val);
       }
       return sanitized;
     }
+    if (obj === undefined) return null;          // bare undefined in an array slot
+    if (typeof obj === 'number' && !Number.isFinite(obj)) return null; // NaN/Infinity
     return obj;
   }
 
@@ -16955,6 +17062,9 @@ if __name__=="__main__":
         doc = await fbDb.collection('users').doc(user.uid).get();
         if (doc.exists) {
           var d = doc.data();
+          // Track which side won so SETTINGS follow the same decision as drivers.
+          // Default true: if there are no local drivers at all, cloud is authoritative.
+          var settingsFromCloud = true;
           if (d.drivers && Object.keys(d.drivers).length > 0) {
             var cloudSavedAt    = d.savedAt ? new Date(d.savedAt).getTime() : 0;
             var localSavedAtRaw = localStorage.getItem(STORE_KEY + '_savedAt');
@@ -16990,12 +17100,16 @@ if __name__=="__main__":
               localStorage.setItem(STORE_KEY + '_savedAt', d.savedAt || new Date().toISOString());
             } else {
               console.log("💾 Local data is newer — keeping local, re-uploading (cloud:", d.savedAt, "| local:", localSavedAtRaw || 'none', ")");
+              settingsFromCloud = false; // local won — don't roll settings back either
               setTimeout(cloudSave, 500);
             }
           }
-          if (d.settings) {
-            settings = d.settings;
+          if (d.settings && settingsFromCloud) {
+            // Merge over defaults so newly added keys (e.g. savedLanes) exist
+            settings = { ...defaultSettings, ...d.settings };
             bindSettingsToInputs();
+          } else if (d.settings) {
+            console.log("💾 Keeping local settings (local data was newer)");
           }
           console.log("✅ Cloud sync resolved");
         }
@@ -18290,24 +18404,405 @@ window.bsSetSort = function(key, btn) {
 };
 
 window.anSwitchView = function(view) {
-  var dash   = document.getElementById('an-view-dash');
-  var broker = document.getElementById('an-view-broker');
-  var tDash  = document.getElementById('an-tab-dash');
-  var tBrok  = document.getElementById('an-tab-broker');
-  if (!dash || !broker) return;
+  var views = { dash:'an-view-dash', broker:'an-view-broker', weeklab:'an-view-weeklab' };
+  var tabs  = { dash:'an-tab-dash',  broker:'an-tab-broker',  weeklab:'an-tab-weeklab'  };
+  Object.keys(views).forEach(function(v) {
+    var el = document.getElementById(views[v]);
+    var tb = document.getElementById(tabs[v]);
+    var on = v === view;
+    if (el) el.style.display = on ? '' : 'none';
+    if (tb) { tb.style.background = on ? 'var(--accent-blue)' : 'transparent'; tb.style.color = on ? '#fff' : 'var(--text-muted)'; }
+  });
+  if (view === 'broker'  && typeof bsRenderTable  === 'function') bsRenderTable();
+  if (view === 'weeklab' && typeof wlRender       === 'function') wlRender();
+};
 
-  if (view === 'broker') {
-    dash.style.display   = 'none';
-    broker.style.display = '';
-    if (tDash)  { tDash.style.background  = 'transparent'; tDash.style.color  = 'var(--text-muted)'; }
-    if (tBrok)  { tBrok.style.background  = 'var(--accent-blue)'; tBrok.style.color  = '#fff'; }
-    bsRenderTable();
-  } else {
-    broker.style.display = 'none';
-    dash.style.display   = '';
-    if (tDash)  { tDash.style.background  = 'var(--accent-blue)'; tDash.style.color  = '#fff'; }
-    if (tBrok)  { tBrok.style.background  = 'transparent'; tBrok.style.color  = 'var(--text-muted)'; }
+// ════════════════════════════════════════════════════════════════════════════
+// WEEK LAB — full driver-week analyzer
+// Scores every 2+ load week (all drivers, incl. archived), percentile-ranked
+// within driver type. Benchmarks: last 12 months. Patterns: all history.
+// ════════════════════════════════════════════════════════════════════════════
+
+var _wlMode = 'balanced';
+var _wlType = 'all';
+var _wlExpanded = null;
+var _wlPlanOpen = null;
+var _wlCache = null;
+
+var WL_REGIONS = {
+  'Northeast': ['NY','NJ','CT','MA','RI','NH','VT','ME','PA','MD','DE'],
+  'Southeast': ['GA','FL','SC','NC','TN','AL','MS','VA','WV','KY'],
+  'Midwest':   ['IL','IN','OH','MI','WI','MN','IA','MO'],
+  'South Central': ['TX','OK','AR','LA','KS','NE'],
+  'West':      ['CA','OR','WA','NV','AZ','NM','CO','UT','ID','MT','WY','ND','SD']
+};
+
+function wlStateRegion(st) {
+  for (var r in WL_REGIONS) if (WL_REGIONS[r].indexOf(st) >= 0) return r;
+  return null;
+}
+
+// State centers for deadhead estimation (haversine × 1.25 road factor)
+var WL_CENTERS = {AL:[32.8,-86.9],AR:[34.8,-92.2],AZ:[34.3,-111.1],CA:[37.2,-119.5],CO:[39.0,-105.5],CT:[41.6,-72.7],DE:[39.0,-75.5],FL:[27.8,-81.7],GA:[32.7,-83.4],IA:[42.1,-93.5],ID:[44.4,-114.6],IL:[40.0,-89.2],IN:[40.3,-86.1],KS:[38.5,-98.4],KY:[37.5,-85.3],LA:[31.2,-91.8],MA:[42.3,-71.8],MD:[39.0,-76.8],ME:[45.4,-69.0],MI:[44.3,-85.4],MN:[46.4,-93.1],MO:[38.5,-92.5],MS:[32.7,-89.7],MT:[47.0,-110.5],NC:[35.5,-79.4],ND:[47.5,-100.5],NE:[41.5,-99.9],NH:[43.9,-71.6],NJ:[40.1,-74.7],NM:[34.3,-106.1],NV:[38.5,-117.1],NY:[42.9,-75.5],OH:[40.4,-82.7],OK:[35.6,-96.9],OR:[44.1,-120.5],PA:[40.9,-77.8],RI:[41.7,-71.6],SC:[33.9,-80.9],SD:[44.4,-100.3],TN:[35.9,-86.4],TX:[31.5,-99.3],UT:[39.4,-111.5],VA:[37.8,-79.5],VT:[44.0,-72.7],WA:[47.4,-120.5],WI:[44.3,-89.8],WV:[38.9,-80.5],WY:[43.0,-107.6],DC:[38.9,-77.0]};
+
+function wlHaversine(a, b) {
+  var R = 3959, dLat = (b[0]-a[0])*Math.PI/180, dLon = (b[1]-a[1])*Math.PI/180;
+  var x = Math.sin(dLat/2)*Math.sin(dLat/2) + Math.cos(a[0]*Math.PI/180)*Math.cos(b[0]*Math.PI/180)*Math.sin(dLon/2)*Math.sin(dLon/2);
+  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1-x));
+}
+
+// ── Build the full week dataset ──────────────────────────────────────────────
+function wlBuildWeeks() {
+  var weeks = [];
+  var thisWeekId = isoDate(startOfWeekMonday(new Date()));
+
+  Object.entries(state.drivers || {}).forEach(function(entry) {
+    var id = entry[0], drv = entry[1];
+    var driverType = drv.driverType === 'company' ? 'co' : 'oo';
+
+    Object.keys(drv.weeks || {}).forEach(function(wkId) {
+      var slice   = getWeekLoadsSplit(drv, wkId);
+      var counted = slice.current.concat(slice.carriedIn);
+      if (counted.length < 2) return; // 2+ load minimum
+
+      var wkT   = computeWeekTotals(slice.week, drv);
+      var gross = wkT.gross, net = wkT.net, miles = wkT.miles;
+      var rpm   = miles > 0 ? gross / miles : 0;
+
+      // Route signature: origin state of first load, then each dest state, collapse dupes
+      var seq = [];
+      counted.forEach(function(l, i) {
+        var oSt = l.originState || riParseState(l.origin);
+        var dSt = l.destState   || riParseState(l.dest);
+        if (i === 0 && oSt) seq.push(oSt);
+        if (dSt && seq[seq.length-1] !== dSt) seq.push(dSt);
+      });
+      var routeSig = seq.join('→');
+
+      // Regions touched
+      var regions = {};
+      seq.forEach(function(st){ var r = wlStateRegion(st); if (r) regions[r] = true; });
+
+      // Deadhead estimate: state-center distance between each drop and next pickup
+      var deadhead = 0;
+      for (var i = 0; i < counted.length - 1; i++) {
+        var dSt = counted[i].destState   || riParseState(counted[i].dest);
+        var oSt = counted[i+1].originState || riParseState(counted[i+1].origin);
+        if (dSt && oSt && dSt !== oSt && WL_CENTERS[dSt] && WL_CENTERS[oSt]) {
+          deadhead += wlHaversine(WL_CENTERS[dSt], WL_CENTERS[oSt]) * 1.25;
+        }
+      }
+
+      weeks.push({
+        driverId: id, driverName: drv.name || 'Unnamed', archived: !!drv.archived,
+        type: driverType, weekId: wkId, isCurrent: wkId === thisWeekId,
+        loads: counted, loadCount: counted.length,
+        gross: gross, net: net, miles: miles, rpm: rpm,
+        routeSig: routeSig, regions: Object.keys(regions),
+        deadhead: Math.round(deadhead),
+        target: getDriverTargetNet(drv) || 0
+      });
+    });
+  });
+  return weeks;
+}
+
+// Percentile of value within sorted array (0-100)
+function wlPercentile(val, sortedArr) {
+  if (sortedArr.length === 0) return 50;
+  var below = 0;
+  for (var i = 0; i < sortedArr.length; i++) if (sortedArr[i] < val) below++;
+  return Math.round((below / sortedArr.length) * 100);
+}
+
+// ── Score all weeks ──────────────────────────────────────────────────────────
+function wlScoreWeeks(weeks, mode) {
+  var cutoff = new Date(Date.now() - 365*86400000).toISOString().substring(0,10);
+
+  // Benchmark pools: last 12 months, split by type
+  var pools = { oo: { net:[], rpm:[], dh:[] }, co: { net:[], rpm:[], dh:[] } };
+  weeks.forEach(function(w) {
+    if (w.weekId < cutoff) return;
+    pools[w.type].net.push(w.net);
+    pools[w.type].rpm.push(w.rpm);
+    pools[w.type].dh.push(w.deadhead);
+  });
+  Object.values(pools).forEach(function(p) { p.net.sort(function(a,b){return a-b;}); p.rpm.sort(function(a,b){return a-b;}); p.dh.sort(function(a,b){return a-b;}); });
+
+  // Volume sweet spot: load count with best median net (12-mo, all types)
+  var byCount = {};
+  weeks.forEach(function(w) {
+    if (w.weekId < cutoff) return;
+    (byCount[w.loadCount] = byCount[w.loadCount] || []).push(w.net);
+  });
+  var sweetSpot = 5, bestMed = -Infinity;
+  Object.keys(byCount).forEach(function(c) {
+    var arr = byCount[c].sort(function(a,b){return a-b;});
+    if (arr.length < 3) return; // need evidence
+    var med = arr[Math.floor(arr.length/2)];
+    if (med > bestMed) { bestMed = med; sweetSpot = parseInt(c); }
+  });
+
+  var W = mode === 'net'    ? { net:.75, rpm:.10, vol:.10, eff:.05 }
+        : mode === 'rpm'    ? { net:.20, rpm:.60, vol:.10, eff:.10 }
+        :                     { net:.50, rpm:.20, vol:.15, eff:.15 };
+
+  weeks.forEach(function(w) {
+    var p = pools[w.type];
+    var netScore = wlPercentile(w.net, p.net);
+    var rpmScore = wlPercentile(w.rpm, p.rpm);
+    var effScore = 100 - wlPercentile(w.deadhead, p.dh); // less deadhead = better
+    var volScore = Math.max(0, 100 - 18 * Math.abs(w.loadCount - sweetSpot));
+
+    if (mode === 'target') {
+      w.score = w.target > 0 ? Math.round(Math.min(100, (w.net / w.target) * 100)) : netScore;
+    } else {
+      w.score = Math.round(netScore*W.net + rpmScore*W.rpm + volScore*W.vol + effScore*W.eff);
+    }
+    w._parts = { netScore: netScore, rpmScore: rpmScore, volScore: volScore, effScore: effScore, sweetSpot: sweetSpot };
+
+    // Median net for the type (for "why" chips)
+    var tp = p.net;
+    w._typeMedianNet = tp.length ? tp[Math.floor(tp.length/2)] : 0;
+  });
+
+  return { weeks: weeks, sweetSpot: sweetSpot, byCount: byCount };
+}
+
+// ── Pattern insights (all-time pool) ─────────────────────────────────────────
+function wlBuildInsights(weeks, scored) {
+  var insights = [];
+  var allNets = weeks.map(function(w){return w.net;}).sort(function(a,b){return a-b;});
+  var fleetMedian = allNets.length ? allNets[Math.floor(allNets.length/2)] : 0;
+
+  // 1. Winning route loop: signature with ≥3 weeks, highest avg net
+  var bySig = {};
+  weeks.forEach(function(w) {
+    if (!w.routeSig || w.routeSig.indexOf('→') < 0) return;
+    (bySig[w.routeSig] = bySig[w.routeSig] || []).push(w);
+  });
+  var best = null;
+  Object.keys(bySig).forEach(function(sig) {
+    var arr = bySig[sig];
+    if (arr.length < 3) return;
+    var avg = arr.reduce(function(s,w){return s+w.net;},0) / arr.length;
+    if (!best || avg > best.avg) {
+      var drivers = {};
+      arr.forEach(function(w){ drivers[w.driverId] = true; });
+      best = { sig: sig, avg: avg, count: arr.length, drivers: Object.keys(drivers).length };
+    }
+  });
+  if (best && fleetMedian > 0) {
+    insights.push({
+      icon: '🔁', title: 'Winning loop', good: true,
+      text: 'Weeks running <strong>' + best.sig + '</strong> average <strong style="color:#3fb950;">' + money(best.avg) + ' net</strong> vs ' + money(fleetMedian) + ' fleet median. Seen in ' + best.count + ' weeks across ' + best.drivers + ' driver' + (best.drivers!==1?'s':'') + '.'
+    });
   }
+
+  // 2. Volume sweet spot
+  var ss = scored.sweetSpot;
+  var ssArr  = (scored.byCount[ss]   || []).slice().sort(function(a,b){return a-b;});
+  var adjArr = (scored.byCount[ss-1] || []).slice().sort(function(a,b){return a-b;});
+  if (ssArr.length >= 3 && adjArr.length >= 3) {
+    var ssMed  = ssArr[Math.floor(ssArr.length/2)];
+    var adjMed = adjArr[Math.floor(adjArr.length/2)];
+    if (adjMed > 0) {
+      var pct = Math.round(((ssMed - adjMed) / adjMed) * 100);
+      insights.push({
+        icon: '📦', title: 'Volume sweet spot', good: true,
+        text: '<strong>' + ss + '-load weeks</strong> out-earn ' + (ss-1) + '-load weeks by <strong style="color:#3fb950;">' + pct + '%</strong> median net.'
+      });
+    }
+  }
+
+  // 3. Drag region: region whose weeks average lowest vs non-touching
+  var worst = null;
+  Object.keys(WL_REGIONS).forEach(function(region) {
+    var inR = [], outR = [];
+    weeks.forEach(function(w) { (w.regions.indexOf(region) >= 0 ? inR : outR).push(w.net); });
+    if (inR.length < 3 || outR.length < 3) return;
+    var inAvg  = inR.reduce(function(s,v){return s+v;},0)/inR.length;
+    var outAvg = outR.reduce(function(s,v){return s+v;},0)/outR.length;
+    if (outAvg <= 0) return;
+    var delta = (inAvg - outAvg) / outAvg;
+    if (!worst || delta < worst.delta) worst = { region: region, delta: delta, count: inR.length };
+  });
+  if (worst && worst.delta < -0.08) {
+    // McLeod corroboration: avg RPM of McLeod loads originating in that region
+    var mcNote = '';
+    try {
+      var mc = typeof mcleodGetStoredLoads === 'function' ? mcleodGetStoredLoads() : [];
+      var rg = 0, rm = 0, ag = 0, am = 0;
+      mc.forEach(function(l) {
+        var g = Number(l.revenue || l.gross || 0), m = Number(l.miles || 0);
+        if (!g || !m || m < 100) return;
+        ag += g; am += m;
+        if (WL_REGIONS[worst.region].indexOf((l.originState||'').toUpperCase()) >= 0) { rg += g; rm += m; }
+      });
+      if (rm > 0 && am > 0 && (rg/rm) < (ag/am)) mcNote = ' McLeod lane data agrees — outbound RPM from this region runs $' + (rg/rm).toFixed(2) + ' vs $' + (ag/am).toFixed(2) + ' fleet-wide.';
+    } catch(e) {}
+    insights.push({
+      icon: '⚠️', title: 'Drag region', good: false,
+      text: 'Weeks touching the <strong>' + worst.region + '</strong> average <strong style="color:#ff4455;">' + Math.abs(Math.round(worst.delta*100)) + '% lower net</strong> (' + worst.count + ' weeks).' + mcNote
+    });
+  }
+
+  return insights;
+}
+
+// ── Rendering ────────────────────────────────────────────────────────────────
+function wlGradeStyle(s) {
+  return s >= 85 ? 'background:rgba(59,185,80,0.15);color:#3fb950;'
+       : s >= 60 ? 'background:rgba(245,158,11,0.12);color:#f59e0b;'
+                 : 'background:rgba(255,68,85,0.10);color:#ff4455;';
+}
+
+window.wlRender = function() {
+  var weeks  = wlBuildWeeks();
+  var scored = wlScoreWeeks(weeks, _wlMode);
+  _wlCache   = scored;
+
+  // Insights
+  var insEl = document.getElementById('wl-insights');
+  if (insEl) {
+    var insights = wlBuildInsights(weeks, scored);
+    insEl.innerHTML = insights.length ? insights.map(function(ins) {
+      return '<div style="background:var(--bg-elevated);border:1px solid ' + (ins.good ? 'var(--border-medium)' : 'rgba(255,68,85,0.25)') + ';border-radius:10px;padding:13px 15px;">' +
+        '<div style="font-size:12px;font-weight:800;color:var(--text-primary);margin-bottom:6px;">' + ins.icon + ' ' + ins.title + '</div>' +
+        '<div style="font-size:12px;color:var(--text-secondary);line-height:1.55;">' + ins.text + '</div>' +
+      '</div>';
+    }).join('') : '<div style="grid-column:1/-1;padding:16px;text-align:center;color:var(--text-muted);font-size:12px;">Not enough scored weeks yet for pattern insights — patterns appear once route signatures repeat 3+ times.</div>';
+  }
+
+  // Net header label
+  var hdr = document.getElementById('wl-net-hdr');
+  if (hdr) hdr.textContent = _wlType === 'co' ? 'Co. Net' : _wlType === 'oo' ? 'Driver Net' : 'Net';
+
+  wlRenderRows();
+};
+
+function wlRenderRows() {
+  var el = document.getElementById('wl-rows');
+  if (!el || !_wlCache) return;
+
+  var list = _wlCache.weeks
+    .filter(function(w) { return _wlType === 'all' || w.type === _wlType; })
+    .sort(function(a,b) { return b.score - a.score || (b.weekId > a.weekId ? 1 : -1); });
+
+  if (list.length === 0) {
+    el.innerHTML = '<div style="padding:28px;text-align:center;color:var(--text-muted);font-size:13px;">No weeks with 2+ loads found for this filter.</div>';
+    return;
+  }
+
+  el.innerHTML = list.map(function(w, i) {
+    var isOpen = _wlExpanded === i;
+    var gs = wlGradeStyle(w.score);
+    var netCol = w.net >= w._typeMedianNet ? '#3fb950' : w.net >= w._typeMedianNet * 0.6 ? 'var(--text-primary)' : '#ff4455';
+
+    var row = '<div onclick="wlToggle(' + i + ')" style="display:grid;grid-template-columns:50px 1fr 110px 48px 74px 78px 54px 18px;gap:8px;align-items:center;padding:9px 16px;border-bottom:1px solid var(--border-subtle);cursor:pointer;' + (isOpen ? 'background:rgba(255,255,255,0.02);' : '') + '">' +
+      '<div><span style="display:inline-flex;align-items:center;justify-content:center;min-width:32px;padding:3px 6px;border-radius:6px;font-size:12px;font-weight:800;' + gs + '">' + w.score + '</span></div>' +
+      '<div><div style="font-size:12px;font-weight:700;color:var(--text-primary);">' + escapeHtml(w.driverName) +
+        (w.type === 'co' ? ' <span style="font-size:9px;color:var(--text-muted);font-weight:600;">CO</span>' : '') +
+        (w.archived ? ' <span style="font-size:9px;color:var(--text-muted);">🗄</span>' : '') +
+      '</div><div style="font-size:10px;color:var(--text-muted);">Week of ' + w.weekId + (w.isCurrent ? ' · in progress' : '') + '</div></div>' +
+      '<div style="font-size:10px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (w.routeSig || '—') + '</div>' +
+      '<div style="text-align:right;font-size:12px;color:var(--text-secondary);">' + w.loadCount + '</div>' +
+      '<div style="text-align:right;font-size:12px;color:var(--text-secondary);">' + money(w.gross) + '</div>' +
+      '<div style="text-align:right;font-size:12px;font-weight:700;color:' + netCol + ';">' + money(w.net) + '</div>' +
+      '<div style="text-align:right;font-size:12px;color:var(--text-secondary);">$' + w.rpm.toFixed(2) + '</div>' +
+      '<div style="text-align:right;font-size:10px;color:var(--text-muted);">' + (isOpen ? '▲' : '▼') + '</div>' +
+    '</div>';
+
+    if (!isOpen) return row;
+
+    // ── Expanded detail ──
+    var maxRpm = Math.max.apply(null, w.loads.map(function(l){ var m = toNum(l.miles); return m > 0 ? toNum(l.gross)/m : 0; }).concat([0.01]));
+    var seq = w.loads.map(function(l) {
+      var m = toNum(l.miles), g = toNum(l.gross);
+      var lr = m > 0 ? g/m : 0;
+      var barW = Math.round((lr/maxRpm)*100);
+      return '<div style="display:grid;grid-template-columns:1fr 90px 68px 54px;gap:10px;align-items:center;font-size:11px;padding:3px 0;">' +
+        '<span style="color:var(--text-secondary);">' + escapeHtml((l.origin||'?')) + ' → ' + escapeHtml((l.dest||'?')) + (l.customer ? ' <span style="color:var(--text-muted);">· ' + escapeHtml(l.customer) + '</span>' : '') + '</span>' +
+        '<span><span style="display:block;height:4px;border-radius:2px;background:#38bdf8;width:' + barW + '%;"></span></span>' +
+        '<span style="text-align:right;color:var(--text-secondary);">' + money(g) + '</span>' +
+        '<span style="text-align:right;font-weight:700;color:var(--text-primary);">$' + lr.toFixed(2) + '</span>' +
+      '</div>';
+    }).join('');
+
+    // Why chips
+    var p = w._parts;
+    var netDelta = w.net - w._typeMedianNet;
+    var chips = [
+      ['Net vs type median', (netDelta >= 0 ? '+' : '−') + money(Math.abs(netDelta)), netDelta >= 0],
+      ['RPM percentile', p.rpmScore + 'th', p.rpmScore >= 50],
+      ['Volume', w.loadCount + ' loads (sweet spot: ' + p.sweetSpot + ')', p.volScore >= 70],
+      ['Est. deadhead', w.deadhead + ' mi between loads', p.effScore >= 50]
+    ].map(function(c) {
+      var st = c[2] ? 'background:rgba(59,185,80,0.1);color:#3fb950;' : 'background:rgba(255,68,85,0.08);color:#ff4455;';
+      return '<span style="font-size:10px;padding:4px 10px;border-radius:6px;' + st + '">' + c[0] + ': ' + c[1] + '</span>';
+    }).join('');
+
+    var planBtn = '<button onclick="event.stopPropagation();wlTogglePlan(' + i + ')" style="margin-top:12px;padding:6px 14px;font-size:11px;font-weight:700;border-radius:7px;border:1px solid rgba(56,189,248,0.4);background:rgba(56,189,248,0.1);color:#38bdf8;cursor:pointer;">' + (_wlPlanOpen === i ? '▲ Hide plan' : '📋 Turn this week into a plan') + '</button>';
+
+    var planPanel = '';
+    if (_wlPlanOpen === i) {
+      var days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+      var planRows = w.loads.map(function(l, li) {
+        var g = toNum(l.gross), m = toNum(l.miles);
+        var lr = m > 0 ? g/m : 0;
+        return '<div style="display:grid;grid-template-columns:38px 1fr 90px 70px;gap:10px;align-items:center;font-size:11px;padding:5px 0;border-bottom:1px solid var(--border-subtle);">' +
+          '<span style="font-weight:800;color:#38bdf8;">' + (days[Math.min(li, 6)]) + '</span>' +
+          '<span style="color:var(--text-primary);font-weight:600;">' + escapeHtml(l.origin||'?') + ' → ' + escapeHtml(l.dest||'?') + (l.customer ? ' <span style="font-weight:400;color:var(--text-muted);">· ' + escapeHtml(l.customer) + '</span>' : '') + '</span>' +
+          '<span style="text-align:right;color:var(--text-secondary);">Floor: <strong style="color:#3fb950;">' + money(g) + '</strong></span>' +
+          '<span style="text-align:right;color:var(--text-secondary);">$' + lr.toFixed(2) + '/mi</span>' +
+        '</div>';
+      }).join('');
+      planPanel = '<div style="margin-top:10px;background:rgba(56,189,248,0.04);border:1px solid rgba(56,189,248,0.2);border-radius:8px;padding:12px 14px;">' +
+        '<div style="font-size:11px;font-weight:800;color:#38bdf8;margin-bottom:2px;">📋 Repeatable Plan — ' + (w.routeSig || 'route') + '</div>' +
+        '<div style="font-size:10px;color:var(--text-muted);margin-bottom:8px;">Rate floors are this week\'s actual rates. Book each leg at or above floor to replicate ' + money(w.net) + ' net' + (w.deadhead ? ' · ~' + w.deadhead + ' mi repositioning' : '') + '.</div>' +
+        planRows +
+        '<div style="display:flex;justify-content:space-between;font-size:11px;padding-top:8px;font-weight:700;">' +
+          '<span style="color:var(--text-secondary);">Week total if all floors hit</span>' +
+          '<span style="color:#3fb950;">' + money(w.gross) + ' gross → ~' + money(w.net) + ' net</span>' +
+        '</div>' +
+      '</div>';
+    }
+
+    var panel = '<div style="padding:12px 16px 14px;background:rgba(0,0,0,0.2);border-bottom:1px solid var(--border-subtle);">' +
+      '<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text-muted);margin-bottom:6px;">Load sequence</div>' +
+      seq +
+      '<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text-muted);margin:12px 0 6px;">What drove the score</div>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:6px;">' + chips + '</div>' +
+      planBtn + planPanel +
+    '</div>';
+
+    return row + panel;
+  }).join('');
+}
+
+window.wlToggle = function(i) {
+  _wlExpanded = _wlExpanded === i ? null : i;
+  _wlPlanOpen = null;
+  wlRenderRows();
+};
+
+window.wlTogglePlan = function(i) {
+  _wlPlanOpen = _wlPlanOpen === i ? null : i;
+  wlRenderRows();
+};
+
+window.wlSetMode = function(mode, btn) {
+  _wlMode = mode; _wlExpanded = null; _wlPlanOpen = null;
+  document.querySelectorAll('#wl-mode-btns .bs-sort-btn').forEach(function(b){ b.classList.remove('on'); });
+  if (btn) btn.classList.add('on');
+  wlRender();
+};
+
+window.wlSetType = function(type, btn) {
+  _wlType = type; _wlExpanded = null; _wlPlanOpen = null;
+  document.querySelectorAll('#wl-type-btns .bs-sort-btn').forEach(function(b){ b.classList.remove('on'); });
+  if (btn) btn.classList.add('on');
+  wlRender();
 };
 
 // WATCHTOWER SMOKE TEST — runSmokeTest()
