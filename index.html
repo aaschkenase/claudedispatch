@@ -2939,6 +2939,7 @@ body.light-mode .flatpickr-current-month input.cur-year, body.light-mode .flatpi
         <button id="an-tab-dash" onclick="anSwitchView('dash')" style="padding:6px 16px;font-size:12px;font-weight:700;border:none;cursor:pointer;background:var(--accent-blue);color:#fff;">📊 Dashboard</button>
         <button id="an-tab-broker" onclick="anSwitchView('broker')" style="padding:6px 16px;font-size:12px;font-weight:700;border:none;cursor:pointer;background:transparent;color:var(--text-muted);">🤝 Brokers</button>
         <button id="an-tab-weeklab" onclick="anSwitchView('weeklab')" style="padding:6px 16px;font-size:12px;font-weight:700;border:none;cursor:pointer;background:transparent;color:var(--text-muted);">🧪 Week Lab</button>
+        <button id="an-tab-fac" onclick="anSwitchView('fac')" style="padding:6px 16px;font-size:12px;font-weight:700;border:none;cursor:pointer;background:transparent;color:var(--text-muted);">🏭 Facilities</button>
       </div>
     </div>
 
@@ -3128,6 +3129,63 @@ body.light-mode .flatpickr-current-month input.cur-year, body.light-mode .flatpi
         <div id="wl-rows"></div>
       </div>
       <div style="font-size:10px;color:var(--text-muted);margin-top:8px;padding:0 4px;">Weeks with 2+ loads, all drivers including archived. Scores are percentile-ranked within driver type (owner-op vs company, each on their own net). Benchmarks use the last 12 months; patterns use all history.</div>
+    </div>
+
+    <!-- ── FACILITIES VIEW ── -->
+    <div id="an-view-fac" style="display:none;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px;">
+        <div style="display:flex;gap:5px;" id="fac-role-btns">
+          <button class="bs-sort-btn on" onclick="facSetRole('all',this)">All</button>
+          <button class="bs-sort-btn" onclick="facSetRole('shipper',this)">Shippers</button>
+          <button class="bs-sort-btn" onclick="facSetRole('receiver',this)">Receivers</button>
+          <span style="width:1px;background:var(--border-medium);margin:0 4px;"></span>
+          <span id="fac-view-btns" style="display:flex;gap:5px;">
+            <button class="bs-sort-btn on" onclick="facSetView('list',this)">☰ List</button>
+            <button class="bs-sort-btn" onclick="facSetView('map',this)">🗺 Map</button>
+          </span>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;flex:1;max-width:420px;">
+          <input id="fac-search" placeholder="Search facility or city…" oninput="facRenderRows()" style="flex:1;padding:7px 12px;background:var(--bg-elevated);border:1px solid var(--border-medium);border-radius:8px;color:var(--text-primary);font-size:12px;">
+          <select id="fac-sort" onchange="facRenderRows()" style="padding:7px 10px;background:var(--bg-elevated);border:1px solid var(--border-medium);border-radius:8px;color:var(--text-primary);font-size:12px;">
+            <option value="visits">Most visits</option>
+            <option value="revenue">Most revenue</option>
+            <option value="recent">Most recent</option>
+            <option value="rpm">Best RPM</option>
+          </select>
+          <button onclick="facExportCsv()" style="padding:7px 12px;font-size:11px;font-weight:700;border-radius:8px;border:1px solid rgba(56,189,248,0.4);background:rgba(56,189,248,0.1);color:#38bdf8;cursor:pointer;white-space:nowrap;">⬇ CSV</button>
+        </div>
+      </div>
+
+      <div id="fac-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px;"></div>
+
+      <div id="fac-sel-bar" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 12px;margin-bottom:12px;background:rgba(56,189,248,0.05);border:1px solid rgba(56,189,248,0.2);border-radius:10px;">
+        <span style="font-size:12px;font-weight:800;color:#38bdf8;" id="fac-sel-count">0 selected</span>
+        <button class="bs-sort-btn" onclick="facSelectShown()">Select shown</button>
+        <button class="bs-sort-btn" onclick="facClearSelection()">Clear</button>
+        <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-secondary);cursor:pointer;margin-left:4px;">
+          <input type="checkbox" id="fac-sel-only" onchange="facRenderRows()" style="accent-color:#38bdf8;"> Selected only
+        </label>
+        <span style="flex:1;"></span>
+        <button id="fac-export-btn" onclick="facExportHubspot()" disabled style="padding:7px 14px;font-size:12px;font-weight:800;border-radius:8px;border:1px solid rgba(59,185,80,0.45);background:rgba(59,185,80,0.12);color:#3fb950;cursor:pointer;opacity:0.45;">⬇ Export for HubSpot (0)</button>
+      </div>
+
+      <div id="fac-map-wrap" style="display:none;margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:10px;color:var(--text-muted);margin-bottom:6px;padding:0 2px;">
+          <span><span style="color:#34d399;">●</span> Shipper &nbsp; <span style="color:#fb923c;">●</span> Receiver &nbsp; <span style="color:#a78bfa;">●</span> Both &nbsp;· dot size = visits</span>
+          <span id="fac-map-status"></span>
+        </div>
+        <div id="fac-map" style="height:560px;border-radius:10px;border:1px solid var(--border-medium);overflow:hidden;"></div>
+      </div>
+
+      <div id="fac-list-wrap" style="background:var(--bg-elevated);border:1px solid var(--border-medium);border-radius:10px;overflow:hidden;">
+        <div style="display:grid;grid-template-columns:22px 1fr 120px 70px 60px 84px 56px 76px 18px;gap:8px;padding:7px 16px;font-size:9px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-muted);border-bottom:1px solid var(--border-subtle);">
+          <div></div><div>Facility</div><div>Location</div><div>Role</div>
+          <div style="text-align:right">Visits</div><div style="text-align:right">Revenue</div>
+          <div style="text-align:right">RPM</div><div style="text-align:right">Last Visit</div><div></div>
+        </div>
+        <div id="fac-rows"></div>
+      </div>
+      <div style="font-size:10px;color:var(--text-muted);margin-top:8px;padding:0 4px;">Built from McLeod loads with Shipper Name / Consignee Name columns. Visits = pickups at shipper docks + deliveries at receiver docks. RPM is the average on loads touching the facility.</div>
     </div>
 
   </div><!-- end #analytics tab -->
@@ -10058,27 +10116,52 @@ function mcleodGetMeta() {
 }
 
 function mcleodSaveLoads(loads, meta) {
+  // ── 1) Cloud + in-memory cache FIRST — authoritative and unaffected by
+  // localStorage quota. Previously this ran after localStorage.setItem, so a
+  // quota error silently skipped the cloud push AND the cache refresh, which
+  // is why big imports never reached Firestore or the Facilities tab.
+  if (typeof window.saveCompanyLoadBatch === 'function') {
+    // Upload loads that are NEW to the company store — OR that carry facility
+    // names (shipper/consignee) the cloud copy lacks.
+    var existing = window._companyMcleodLoads || [];
+    var existingMap = new Map();
+    existing.forEach(function(l) {
+      existingMap.set((l.origin||'') + '|' + (l.destination||'') + '|' + (l.date||'') + '|' + (l.revenue||''), l);
+    });
+    var newForCloud = loads.filter(function(l) {
+      var ex = existingMap.get((l.origin||'') + '|' + (l.destination||'') + '|' + (l.date||'') + '|' + (l.revenue||''));
+      if (!ex) return true; // brand new
+      return (l.shipperName && !ex.shipperName) || (l.consigneeName && !ex.consigneeName);
+    });
+    if (newForCloud.length > 0) {
+      window.saveCompanyLoadBatch(newForCloud, meta);
+    }
+    // In-memory cache = the full merged dataset, immediately.
+    window._companyMcleodLoads = loads;
+  }
+
+  // ── 2) localStorage backup — best effort. On quota, keep the newest slice
+  // locally (dateless loads count as newest-unknown so they aren't the ones
+  // silently discarded); the cloud copy above remains complete either way.
   try {
-    // Always keep localStorage as local backup
     localStorage.setItem(MCLEOD_STORAGE_KEY, JSON.stringify(loads));
     localStorage.setItem(MCLEOD_META_KEY, JSON.stringify(meta));
-    // Also push to Firestore company store if signed in as admin
-    if (typeof window.saveCompanyLoadBatch === 'function') {
-      // Only save the NEW loads (the diff from what's already in the company store)
-      var existing = window._companyMcleodLoads || [];
-      var existingSet = new Set(existing.map(function(l) {
-        return (l.origin||'') + '|' + (l.destination||'') + '|' + (l.date||'') + '|' + (l.revenue||'');
-      }));
-      var newLoads = loads.filter(function(l) {
-        return !existingSet.has((l.origin||'') + '|' + (l.destination||'') + '|' + (l.date||'') + '|' + (l.revenue||''));
-      });
-      if (newLoads.length > 0) {
-        window.saveCompanyLoadBatch(newLoads, meta);
+    return 'ok';
+  } catch(e) {
+    if (e && (e.name === 'QuotaExceededError' || e.code === 22)) {
+      try {
+        var trimmed = loads.slice().sort(function(a,b) {
+          return (b.date || '9999').localeCompare(a.date || '9999');
+        }).slice(0, 3000);
+        localStorage.setItem(MCLEOD_STORAGE_KEY, JSON.stringify(trimmed));
+        localStorage.setItem(MCLEOD_META_KEY, JSON.stringify({ ...meta, localTrimmed: true, localCount: trimmed.length }));
+        return 'quota-local';
+      } catch(e2) {
+        console.error('McLeod local backup failed entirely:', e2 && e2.message);
+        return 'quota-local'; // cloud still has everything
       }
     }
-    return true;
-  } catch(e) {
-    if (e.name === 'QuotaExceededError') return 'quota';
+    console.error('McLeod save failed:', e && e.message);
     return false;
   }
 }
@@ -10090,11 +10173,19 @@ const MCLEOD_COL_ALIASES = {
   originState:  ['Origin State','Orig State','Pickup State','PU State','From State','Shipper State','Orig St','PU St'],
   destCity:     ['Destination','Destination City','Dest City','Delivery City','Del City','To City','Consignee City'],
   destState:    ['Destination State','Dest State','Delivery State','Del State','To State','Consignee State','Dest St'],
-  revenue:      ['Total Revenue','Revenue','Charge','Total Charge','Gross Revenue','Line Haul','Linehaul','Bill Amount','Total Amount','Rate','Freight'],
-  miles:        ['Loaded Miles','Miles','Bill Miles','Total Miles','Trip Miles','Distance','Mileage'],
+  revenue:      ['Total Revenue','Revenue','Charge','Total Charge','Total charges','Gross Revenue','Line Haul','Linehaul','Bill Amount','Total Amount','Rate','Freight'],
+  miles:        ['Loaded Miles','Miles','Bill Miles','Bill Distance','Total Miles','Trip Miles','Distance','Mileage'],
   rpm:          ['Rev/loaded mile','Rev/total mile','RPM','Rate Per Mile','Revenue Per Mile','Rev Per Mile'],
   customer:     ['Customer','Customer Name','Bill To','Bill To Name','Shipper','Company','Account'],
-  date:         ['Delivery Date','Pickup Date','PU Date','Ship Date','Date','Origin Date','Load Date','Dispatch Date','Actual Pickup Date'],
+  // Generic 'Date' is LAST on purpose — full McLeod order exports have a
+  // CBP-crossing column literally named "Date" that is blank on 99% of rows;
+  // it must only match when nothing better exists.
+  date:         ['Delivery Date','Consignee actual arrival','Shipper actual departure','Shipper actual arrival','Pickup Date','PU Date','Ship Date','Date ordered','Origin Date','Load Date','Dispatch Date','Actual Pickup Date','Date'],
+  // Facility fields (optional) — the physical dock, not the billing party.
+  // Listed AFTER customer so a lone "Shipper" header keeps mapping to customer
+  // (existing behavior); these only claim columns nothing else has taken.
+  shipperName:  ['Shipper Name','Shipper location name','Pickup Name','Origin Name','PU Name','Shipper Company','Pickup Location','Origin Location Name'],
+  consigneeName:['Consignee Name','Consignee location name','Consignee','Receiver','Receiver Name','Delivery Name','Del Name','Dest Name','Consignee Company','Delivery Location','Dest Location Name'],
 };
 
 function mcleodDetectColumns(headers) {
@@ -10104,7 +10195,9 @@ function mcleodDetectColumns(headers) {
   for (const [field, aliases] of Object.entries(MCLEOD_COL_ALIASES)) {
     for (const alias of aliases) {
       const idx = hNorm.findIndex(h => h.toLowerCase() === alias.toLowerCase());
-      if (idx >= 0) { map[field] = headers[idx]; break; }
+      // A header already claimed by an earlier field can't be claimed again —
+      // keeps a lone "Shipper" column on customer, not shipperName.
+      if (idx >= 0 && !Object.values(map).includes(headers[idx])) { map[field] = headers[idx]; break; }
     }
     // Fuzzy fallback: partial match
     if (!map[field]) {
@@ -10116,7 +10209,9 @@ function mcleodDetectColumns(headers) {
         revenue:['revenue','charge','gross','haul','amount','rate'],
         miles:['miles','mile','distance','mileage'],
         customer:['customer','bill','shipper','company','account'],
-        date:['date','pickup','ship']
+        date:['date','pickup','ship'],
+        shipperName:['shipper name','pickup name','origin name','pickup loc','origin loc'],
+        consigneeName:['consignee','receiver','delivery name','dest name','delivery loc']
       };
       const kws = keywords[field] || [];
       for (const kw of kws) {
@@ -10229,7 +10324,9 @@ function mcleodRenderMapping() {
     miles:       'Miles',
     rpm:         'RPM (auto-calc if blank)',
     customer:    'Customer / Broker',
-    date:        'Date'
+    date:        'Date',
+    shipperName:   'Shipper Name (facility)',
+    consigneeName: 'Consignee Name (facility)'
   };
 
   grid.innerHTML = Object.entries(LABELS).map(([field, label]) => {
@@ -10243,7 +10340,7 @@ function mcleodRenderMapping() {
 }
 
 function mcleodGetMappingValues() {
-  const fields = ['originCity','originState','destCity','destState','revenue','miles','rpm','customer','date'];
+  const fields = ['originCity','originState','destCity','destState','revenue','miles','rpm','customer','date','shipperName','consigneeName'];
   const map = {};
   fields.forEach(f => {
     const el = document.getElementById('mcleod_col_' + f);
@@ -10309,13 +10406,18 @@ function mcleodDoImport() {
     const rpm       = rpmParsed > 0 ? +rpmParsed.toFixed(3) : (miles > 0 ? +(revenue / miles).toFixed(3) : 0);
     const customer  = getCell(row, colMap.customer);
     const date      = parseDate(getCell(row, colMap.date));
+    const shipperName   = getCell(row, colMap.shipperName);
+    const consigneeName = getCell(row, colMap.consigneeName);
 
     if (!origCity || !origState || !destCity || !destState || revenue <= 0) { skipped++; continue; }
     if (!STATE_ABBR.has(origState) || !STATE_ABBR.has(destState)) { skipped++; continue; }
 
-    newLoads.push({ origin: origCity, originState: origState,
+    const nl = { origin: origCity, originState: origState,
       destination: destCity, destState: destState,
-      revenue, miles, rpm, customer, date });
+      revenue, miles, rpm, customer, date };
+    if (shipperName)   nl.shipperName   = shipperName;
+    if (consigneeName) nl.consigneeName = consigneeName;
+    newLoads.push(nl);
   }
 
   if (!newLoads.length) {
@@ -10323,16 +10425,31 @@ function mcleodDoImport() {
     return;
   }
 
-  // Merge with existing: deduplicate by origin+dest+revenue+date
+  // Merge with existing: deduplicate by origin+dest+revenue+date.
+  // Duplicates that carry NEW facility names ENRICH the stored load in place —
+  // so re-uploading full history with Shipper/Consignee columns added upgrades
+  // every existing load instead of being blocked by dedupe.
   const existing  = mcleodGetStoredLoads();
   const existMeta = mcleodGetMeta();
 
   function loadKey(l) {
     return [l.origin, l.originState, l.destination, l.destState, l.revenue, l.date].join('|');
   }
-  const existKeys = new Set(existing.map(loadKey));
-  const dedupedNew = newLoads.filter(l => !existKeys.has(loadKey(l)));
-  const merged     = [...existing, ...dedupedNew];
+  const existByKey = new Map();
+  existing.forEach(l => existByKey.set(loadKey(l), l));
+
+  let enriched = 0;
+  const dedupedNew = [];
+  newLoads.forEach(l => {
+    const ex = existByKey.get(loadKey(l));
+    if (!ex) { dedupedNew.push(l); return; }
+    let touched = false;
+    if (l.shipperName   && !ex.shipperName)   { ex.shipperName   = l.shipperName;   touched = true; }
+    if (l.consigneeName && !ex.consigneeName) { ex.consigneeName = l.consigneeName; touched = true; }
+    if (l.customer && !ex.customer) { ex.customer = l.customer; touched = true; }
+    if (touched) enriched++;
+  });
+  const merged = [...existing, ...dedupedNew];
 
   const meta = {
     totalLoads:   merged.length,
@@ -10340,24 +10457,24 @@ function mcleodDoImport() {
     lastFile:     document.getElementById('mcleodFileInput').value || 'mcleod_export.xlsx',
     uploadCount:  (existMeta.uploadCount || 0) + 1,
     addedThisUpload: dedupedNew.length,
+    enrichedThisUpload: enriched,
     dateRange:    mcleodDateRange(merged)
   };
 
   const saveResult = mcleodSaveLoads(merged, meta);
-  if (saveResult === 'quota') {
-    // Try saving just the newest 3000 loads if storage is full
-    const trimmed = merged.sort((a,b) => b.date.localeCompare(a.date)).slice(0,3000);
-    mcleodSaveLoads(trimmed, { ...meta, totalLoads: trimmed.length, trimmed: true });
+  if (saveResult === 'quota-local') {
     mcleodShowStatus('warn',
-      '⚠️ Storage almost full — kept newest 3,000 loads. Added ' + dedupedNew.length +
-      ' new, skipped ' + (newLoads.length - dedupedNew.length) + ' duplicates.');
+      '✅ Imported ' + dedupedNew.length.toLocaleString() + ' new loads' +
+      (enriched > 0 ? ' · enriched ' + enriched.toLocaleString() + ' existing' : '') +
+      '. Full dataset (' + merged.length.toLocaleString() + ' loads) saved to cloud — local backup trimmed to newest 3,000 (browser storage full).');
   } else if (!saveResult) {
-    mcleodShowStatus('error', '❌ Failed to save to localStorage. Try clearing old data first.');
+    mcleodShowStatus('error', '❌ Failed to save. Try clearing old data first.');
     return;
   } else {
     mcleodShowStatus('success',
       '✅ Imported ' + dedupedNew.length.toLocaleString() + ' new loads' +
-      (newLoads.length - dedupedNew.length > 0 ? ' (' + (newLoads.length - dedupedNew.length) + ' duplicates skipped)' : '') +
+      (enriched > 0 ? ' · enriched ' + enriched.toLocaleString() + ' existing loads with facility names' : '') +
+      (newLoads.length - dedupedNew.length - enriched > 0 ? ' (' + (newLoads.length - dedupedNew.length - enriched) + ' duplicates skipped)' : '') +
       '. Total dataset: ' + merged.length.toLocaleString() + ' loads.');
   }
 
@@ -10428,8 +10545,28 @@ function mcleodClearUploads() {
   if (!confirm('Clear all uploaded McLeod data? The built-in 5-month dataset will remain. This cannot be undone.')) return;
   localStorage.removeItem(MCLEOD_STORAGE_KEY);
   localStorage.removeItem(MCLEOD_META_KEY);
-  mcleodShowStatus('success', '✅ Uploaded data cleared.');
-  mcleodRenderStats();
+
+  // Admin: offer to wipe the company cloud store too — needed for a clean
+  // re-import when the date basis of a new export differs from old uploads
+  // (otherwise the old cloud batches resurface on next login and duplicate).
+  var didCloud = false;
+  if (window.fbDb && window.fbUser && typeof window.clearCompanyLoadBatches === 'function') {
+    if (confirm('ALSO clear the company cloud store (' + ((window._companyMcleodLoads || []).length.toLocaleString()) + ' loads, shared across devices)?\n\nDo this before re-importing a full-history export so old copies don\'t duplicate.')) {
+      didCloud = true;
+      window.clearCompanyLoadBatches().then(function(n) {
+        mcleodShowStatus('success', '✅ Local + cloud cleared (' + n + ' batch docs deleted). Re-import your full export now.');
+        mcleodRenderStats();
+      }).catch(function(e) {
+        mcleodShowStatus('error', '⚠️ Local cleared, but cloud wipe failed: ' + e.message);
+        mcleodRenderStats();
+      });
+    }
+  }
+  if (!didCloud) {
+    window._companyMcleodLoads = [];
+    mcleodShowStatus('success', '✅ Uploaded data cleared.');
+    mcleodRenderStats();
+  }
 }
 
 // ── Integration: Get combined loads for Lane Sim / Analytics ──────────────
@@ -10631,7 +10768,11 @@ function mcleodGetAllLoads() {
     while (day < horizon) {
       var leg = legs[legIdx % 2];
       var dhMilesThisLeg = leg.dh || 0;
-      var dhDays = dhMilesThisLeg > 100 ? Math.ceil(dhMilesThisLeg / 500) : 0;
+      // Same-day drop → pickup: up to 250 DH miles fits in the delivery day
+      // (deliver AM, deadhead a few hours, pick up PM). Beyond that, the first
+      // 250 mi are absorbed into the delivery day and the rest costs full
+      // days at 500 mi/day.
+      var dhDays = dhMilesThisLeg <= 250 ? 0 : Math.ceil((dhMilesThisLeg - 250) / 500);
       hosDrivingDays += dhDays;
 
       var pickDay = nextWorkday(day + dhDays);
@@ -16778,8 +16919,21 @@ if __name__=="__main__":
         var d = doc.data();
         if (Array.isArray(d.loads)) all = all.concat(d.loads);
       });
-      window._companyMcleodLoads = all;
-      console.log('\uD83D\uDCE6 Company loads fetched: ' + all.length);
+      // Dedupe across batches by load key, MERGING facility fields — an
+      // enrichment batch re-uploads existing loads with shipper/consignee
+      // names added, and those names must survive no matter which batch
+      // copy is kept.
+      var byKey = new Map();
+      all.forEach(function(l) {
+        var k = (l.origin||'') + '|' + (l.destination||'') + '|' + (l.date||'') + '|' + (l.revenue||'');
+        var ex = byKey.get(k);
+        if (!ex) { byKey.set(k, l); return; }
+        if (l.shipperName   && !ex.shipperName)   ex.shipperName   = l.shipperName;
+        if (l.consigneeName && !ex.consigneeName) ex.consigneeName = l.consigneeName;
+        if (l.customer      && !ex.customer)      ex.customer      = l.customer;
+      });
+      window._companyMcleodLoads = Array.from(byKey.values());
+      console.log('\uD83D\uDCE6 Company loads fetched: ' + all.length + ' → ' + window._companyMcleodLoads.length + ' after dedupe/merge');
     } catch(e) {
       console.log('\u2139\uFE0F Could not fetch company loads: ' + e.message);
       window._companyMcleodLoads = window._companyMcleodLoads || [];
@@ -16794,22 +16948,41 @@ if __name__=="__main__":
       return false;
     }
     try {
-      var batchId = 'batch_' + Date.now();
-      await fbDb.collection('company').doc('loads').collection('batches').doc(batchId).set({
-        loads: loads,
-        uploadedAt: new Date().toISOString(),
-        uploadedBy: fbUser.email,
-        count: loads.length,
-        meta: meta || {}
-      });
-      // Update in-memory cache
-      window._companyMcleodLoads = (window._companyMcleodLoads || []).concat(loads);
-      console.log('\u2705 Saved ' + loads.length + ' loads to company store');
+      // Chunked: a 7,500-load import in one doc would blow Firestore's 1MB limit.
+      var CHUNK = 1500;
+      var ts = Date.now();
+      for (var c = 0; c < loads.length; c += CHUNK) {
+        var chunk = loads.slice(c, c + CHUNK);
+        await fbDb.collection('company').doc('loads').collection('batches')
+          .doc('batch_' + ts + '_' + (c / CHUNK)).set({
+            loads: chunk,
+            uploadedAt: new Date().toISOString(),
+            uploadedBy: fbUser.email,
+            count: chunk.length,
+            meta: meta || {}
+          });
+      }
+      // Cache refresh is handled by mcleodSaveLoads (sets the full merged
+      // dataset) — concatenating here would double-count enriched loads.
+      console.log('\u2705 Saved ' + loads.length + ' loads to company store (' + Math.ceil(loads.length / CHUNK) + ' batch docs)');
       return true;
     } catch(e) {
       console.error('Failed to save company loads:', e);
       return false;
     }
+  };
+
+  // Admin: wipe every company batch doc (used by Clear Uploaded Data for a
+  // clean full re-import). Returns the number of batch docs deleted.
+  window.clearCompanyLoadBatches = async function() {
+    if (!fbDb || !fbUser || fbUser.email !== ADMIN_EMAIL) throw new Error('admin only');
+    var snap = await fbDb.collection('company').doc('loads').collection('batches').get();
+    var deletions = [];
+    snap.forEach(function(doc) { deletions.push(doc.ref.delete()); });
+    await Promise.all(deletions);
+    window._companyMcleodLoads = [];
+    console.log('\uD83D\uDDD1 Cleared ' + deletions.length + ' company batch docs');
+    return deletions.length;
   };
 
   // ── Admin: view all company members and their data ─────────────────────────
@@ -18404,8 +18577,8 @@ window.bsSetSort = function(key, btn) {
 };
 
 window.anSwitchView = function(view) {
-  var views = { dash:'an-view-dash', broker:'an-view-broker', weeklab:'an-view-weeklab' };
-  var tabs  = { dash:'an-tab-dash',  broker:'an-tab-broker',  weeklab:'an-tab-weeklab'  };
+  var views = { dash:'an-view-dash', broker:'an-view-broker', weeklab:'an-view-weeklab', fac:'an-view-fac' };
+  var tabs  = { dash:'an-tab-dash',  broker:'an-tab-broker',  weeklab:'an-tab-weeklab',  fac:'an-tab-fac'  };
   Object.keys(views).forEach(function(v) {
     var el = document.getElementById(views[v]);
     var tb = document.getElementById(tabs[v]);
@@ -18415,6 +18588,7 @@ window.anSwitchView = function(view) {
   });
   if (view === 'broker'  && typeof bsRenderTable  === 'function') bsRenderTable();
   if (view === 'weeklab' && typeof wlRender       === 'function') wlRender();
+  if (view === 'fac'     && typeof facRender      === 'function') facRender();
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -18803,6 +18977,591 @@ window.wlSetType = function(type, btn) {
   document.querySelectorAll('#wl-type-btns .bs-sort-btn').forEach(function(b){ b.classList.remove('on'); });
   if (btn) btn.classList.add('on');
   wlRender();
+};
+
+// ════════════════════════════════════════════════════════════════════════════
+// FACILITIES — shipper/receiver prospecting intelligence from McLeod loads
+// Every physical dock we've touched: visit counts, lanes, rates, last visit.
+// ════════════════════════════════════════════════════════════════════════════
+
+var _facRole = 'all';
+var FAC_SEL_KEY = 'fac_selected_v1';
+var _facSelected = (function() {
+  try { return new Set(JSON.parse(localStorage.getItem(FAC_SEL_KEY) || '[]')); } catch(e) { return new Set(); }
+})();
+var _facExpanded = null;
+var _facData = null;
+
+function facNormName(name) {
+  return (name || '').toString().trim().replace(/\s+/g, ' ').toUpperCase();
+}
+
+function facBuildData() {
+  var loads = typeof mcleodGetStoredLoads === 'function' ? mcleodGetStoredLoads() : [];
+  var byFac = {};
+
+  function touch(rawName, role, l) {
+    var nameKey = facNormName(rawName);
+    if (!nameKey || nameKey.length < 2) return;
+
+    // Facility location: origin side for shipper role, dest side for receiver
+    var city = role === 'shipper'
+      ? (l.origin ? l.origin + ', ' + (l.originState || '') : '')
+      : (l.destination ? l.destination + ', ' + (l.destState || '') : '');
+    city = city.replace(/, $/, '');
+
+    // Key = name + city: each physical dock is its own facility, so a chain
+    // name in several cities becomes several prospects (and several map dots).
+    var key = nameKey + '|' + city.toUpperCase();
+    var f = byFac[key];
+    if (!f) {
+      f = byFac[key] = { key: key, name: rawName.toString().trim(), pickups: 0, deliveries: 0,
+        revenue: 0, miles: 0, cities: {}, lanes: {}, lastDate: '', firstDate: '', customers: {} };
+    }
+    if (role === 'shipper') f.pickups++; else f.deliveries++;
+
+    var rev = Number(l.revenue) || 0, mi = Number(l.miles) || 0;
+    f.revenue += rev; f.miles += mi;
+    if (city) f.cities[city] = (f.cities[city] || 0) + 1;
+
+    // Lane through this facility (always origin→dest of the load)
+    if (l.originState && l.destState) {
+      var lk = (l.origin || '?') + ', ' + l.originState + ' → ' + (l.destination || '?') + ', ' + l.destState;
+      var ln = f.lanes[lk] || (f.lanes[lk] = { count: 0, revenue: 0, miles: 0 });
+      ln.count++; ln.revenue += rev; ln.miles += mi;
+    }
+
+    if (l.customer) f.customers[l.customer] = (f.customers[l.customer] || 0) + 1;
+    if (l.date && l.date > f.lastDate) f.lastDate = l.date;
+    if (l.date && (!f.firstDate || l.date < f.firstDate)) f.firstDate = l.date;
+  }
+
+  loads.forEach(function(l) {
+    if (l.shipperName)   touch(l.shipperName,   'shipper',  l);
+    if (l.consigneeName) touch(l.consigneeName, 'receiver', l);
+  });
+
+  var arr = Object.values(byFac).map(function(f) {
+    f.visits  = f.pickups + f.deliveries;
+    f.rpm     = f.miles > 0 ? f.revenue / f.miles : 0;
+    var cityArr = Object.entries(f.cities).sort(function(a,b){ return b[1]-a[1]; });
+    f.mainCity  = cityArr.length ? cityArr[0][0] : '—';
+    f.cityCount = cityArr.length;
+    f.role = f.pickups > 0 && f.deliveries > 0 ? 'both' : f.pickups > 0 ? 'shipper' : 'receiver';
+    return f;
+  });
+  // Index id for onclick handlers (facility names can contain quotes, so
+  // handlers pass the id and look the facility up — never the raw name)
+  arr.forEach(function(f, i) { f.id = i; });
+
+  var withFacility = loads.filter(function(l){ return l.shipperName || l.consigneeName; }).length;
+  return { facilities: arr, loadsTotal: loads.length, loadsWithFacility: withFacility };
+}
+
+window.facRender = function() {
+  _facData = facBuildData();
+  var kEl = document.getElementById('fac-kpis');
+  if (kEl) {
+    var d = _facData;
+    var shippers  = d.facilities.filter(function(f){ return f.pickups > 0; }).length;
+    var receivers = d.facilities.filter(function(f){ return f.deliveries > 0; }).length;
+    function kpi(val, lbl) {
+      return '<div style="background:var(--bg-elevated);border:1px solid var(--border-medium);border-radius:10px;padding:10px 14px;">' +
+        '<div style="font-size:18px;font-weight:800;color:var(--text-primary);">' + val + '</div>' +
+        '<div style="font-size:9px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-muted);">' + lbl + '</div></div>';
+    }
+    kEl.innerHTML = kpi(d.facilities.length.toLocaleString(), 'Facilities') +
+      kpi(shippers.toLocaleString(), 'Shipper docks') +
+      kpi(receivers.toLocaleString(), 'Receiver docks') +
+      kpi(d.loadsWithFacility.toLocaleString() + ' / ' + d.loadsTotal.toLocaleString(), 'Loads w/ facility data');
+  }
+  facRenderRows();
+};
+
+// Shared detail body — used by the list's expanded row AND the map popup
+function facDetailHtml(f) {
+  var lanes = Object.entries(f.lanes).sort(function(a,b){ return b[1].count - a[1].count; }).slice(0, 8);
+  var laneRows = lanes.map(function(e) {
+    var lk = e[0], ln = e[1];
+    var avgRate = ln.count > 0 ? ln.revenue / ln.count : 0;
+    var avgRpm  = ln.miles > 0 ? ln.revenue / ln.miles : 0;
+    return '<div style="display:grid;grid-template-columns:1fr 40px 86px 54px;gap:8px;align-items:center;font-size:11px;padding:3px 0;">' +
+      '<span style="color:var(--text-secondary);">' + escapeHtml(lk) + '</span>' +
+      '<span style="text-align:right;color:var(--text-muted);">×' + ln.count + '</span>' +
+      '<span style="text-align:right;color:#3fb950;">' + money(avgRate) + ' avg</span>' +
+      '<span style="text-align:right;font-weight:700;color:var(--text-primary);">' + (avgRpm > 0 ? '$' + avgRpm.toFixed(2) : '—') + '</span>' +
+    '</div>';
+  }).join('');
+
+  var brokers = Object.entries(f.customers).sort(function(a,b){ return b[1]-a[1]; }).slice(0, 5)
+    .map(function(e){ return '<span style="font-size:10px;padding:3px 9px;border-radius:6px;background:rgba(56,189,248,0.08);color:#38bdf8;">' + escapeHtml(e[0]) + ' ×' + e[1] + '</span>'; }).join(' ');
+
+  return '<div style="display:flex;gap:14px;font-size:11px;color:var(--text-secondary);margin-bottom:10px;flex-wrap:wrap;">' +
+      '<span>📤 Picked up here: <strong style="color:#34d399;">' + f.pickups + '×</strong></span>' +
+      '<span>📥 Delivered here: <strong style="color:#fb923c;">' + f.deliveries + '×</strong></span>' +
+    '</div>' +
+    '<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text-muted);margin-bottom:5px;">Lanes through this facility · avg rate</div>' +
+    laneRows +
+    (brokers ? '<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text-muted);margin:10px 0 5px;">Booked via</div><div style="display:flex;flex-wrap:wrap;gap:5px;">' + brokers + '</div>' : '');
+}
+
+// Shared by list + map so both always show the same filtered set
+function facFilteredList() {
+  if (!_facData) return [];
+  var q    = ((document.getElementById('fac-search') || {}).value || '').toLowerCase();
+  var sort = (document.getElementById('fac-sort') || {}).value || 'visits';
+  var selOnly = !!(document.getElementById('fac-sel-only') || {}).checked;
+  var list = _facData.facilities.filter(function(f) {
+    if (_facRole === 'shipper'  && f.pickups === 0)    return false;
+    if (_facRole === 'receiver' && f.deliveries === 0) return false;
+    if (q && f.name.toLowerCase().indexOf(q) < 0 && f.mainCity.toLowerCase().indexOf(q) < 0) return false;
+    if (selOnly && !_facSelected.has(f.key)) return false;
+    return true;
+  });
+  list.sort(function(a,b) {
+    if (sort === 'revenue') return b.revenue - a.revenue;
+    if (sort === 'recent')  return (b.lastDate || '').localeCompare(a.lastDate || '');
+    if (sort === 'rpm')     return b.rpm - a.rpm;
+    return b.visits - a.visits;
+  });
+  return list;
+}
+
+window.facRenderRows = function(skipMap) {
+  if (!skipMap && _facView === 'map' && typeof facRenderMap === 'function') facRenderMap(true);
+  facUpdateSelBar();
+  var el = document.getElementById('fac-rows');
+  if (!el || !_facData) return;
+
+  if (_facData.loadsWithFacility === 0) {
+    el.innerHTML = '<div style="padding:32px 20px;text-align:center;color:var(--text-muted);font-size:12px;line-height:1.7;">' +
+      'No facility data yet.<br>Re-export your McLeod loads report with <strong style="color:var(--text-primary);">Shipper Name</strong> and <strong style="color:var(--text-primary);">Consignee Name</strong> columns included,<br>then upload it in <strong style="color:var(--text-primary);">Settings → McLeod Import</strong>. Existing loads will be enriched automatically.</div>';
+    return;
+  }
+
+  var list = facFilteredList();
+
+  if (!list.length) {
+    el.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:12px;">No facilities match this filter.</div>';
+    return;
+  }
+
+  el.innerHTML = list.slice(0, 300).map(function(f, i) {
+    var isOpen = _facExpanded === i;
+    var roleChip = f.role === 'both'
+      ? '<span style="font-size:9px;padding:2px 7px;border-radius:5px;background:rgba(167,139,250,0.12);color:#a78bfa;font-weight:700;">BOTH</span>'
+      : f.role === 'shipper'
+        ? '<span style="font-size:9px;padding:2px 7px;border-radius:5px;background:rgba(52,211,153,0.12);color:#34d399;font-weight:700;">SHIP</span>'
+        : '<span style="font-size:9px;padding:2px 7px;border-radius:5px;background:rgba(251,146,60,0.12);color:#fb923c;font-weight:700;">RECV</span>';
+
+    var row = '<div onclick="facToggle(' + i + ')" style="display:grid;grid-template-columns:22px 1fr 120px 70px 60px 84px 56px 76px 18px;gap:8px;align-items:center;padding:9px 16px;border-bottom:1px solid var(--border-subtle);cursor:pointer;' + (isOpen ? 'background:rgba(255,255,255,0.02);' : '') + '">' +
+      '<div onclick="event.stopPropagation();facToggleSelect(' + f.id + ')" style="display:flex;align-items:center;justify-content:center;">' +
+        '<input type="checkbox" ' + (_facSelected.has(f.key) ? 'checked ' : '') + 'style="cursor:pointer;accent-color:#38bdf8;pointer-events:none;">' +
+      '</div>' +
+      '<div style="font-size:12px;font-weight:700;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(f.name) + '</div>' +
+      '<div style="font-size:10px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(f.mainCity) + (f.cityCount > 1 ? ' +' + (f.cityCount-1) : '') + '</div>' +
+      '<div>' + roleChip + '</div>' +
+      '<div style="text-align:right;font-size:12px;font-weight:700;color:var(--text-primary);">' + f.visits + '</div>' +
+      '<div style="text-align:right;font-size:12px;color:#3fb950;">' + money(f.revenue) + '</div>' +
+      '<div style="text-align:right;font-size:11px;color:var(--text-secondary);">' + (f.rpm > 0 ? '$' + f.rpm.toFixed(2) : '—') + '</div>' +
+      '<div style="text-align:right;font-size:10px;color:var(--text-muted);">' + (f.lastDate || '—') + '</div>' +
+      '<div style="text-align:right;font-size:10px;color:var(--text-muted);">' + (isOpen ? '▲' : '▼') + '</div>' +
+    '</div>';
+
+    if (!isOpen) return row;
+
+    var panel = '<div style="padding:12px 16px 14px;background:rgba(0,0,0,0.2);border-bottom:1px solid var(--border-subtle);">' +
+      facDetailHtml(f) + '</div>';
+
+    return row + panel;
+  }).join('') + (list.length > 300 ? '<div style="padding:10px;text-align:center;font-size:10px;color:var(--text-muted);">Showing top 300 of ' + list.length + ' — narrow with search</div>' : '');
+};
+
+window.facToggle = function(i) { _facExpanded = _facExpanded === i ? null : i; facRenderRows(); };
+
+window.facSetRole = function(role, btn) {
+  _facRole = role; _facExpanded = null;
+  document.querySelectorAll('#fac-role-btns .bs-sort-btn').forEach(function(b){ b.classList.remove('on'); });
+  if (btn) btn.classList.add('on');
+  facRenderRows();
+};
+
+// ── FACILITY MAP ────────────────────────────────────────────────────────────
+// City-level placement via Google Geocoding (cached permanently in
+// localStorage — each city is looked up once, ever). Facilities sharing a
+// city fan out in a small spiral so every dock stays clickable.
+var _facView = 'list';
+var _facMap = null;
+var _facLayer = null;
+var _facGeoBusy = false;
+var FAC_GEO_KEY = 'fac_geo_cache_v1';
+
+function facGeoCache() {
+  try { return JSON.parse(localStorage.getItem(FAC_GEO_KEY) || '{}'); } catch(e) { return {}; }
+}
+function facGeoSave(cache) {
+  try { localStorage.setItem(FAC_GEO_KEY, JSON.stringify(cache)); } catch(e) { console.warn('fac geo cache save failed', e && e.name); }
+}
+
+window.facSetView = function(view, btn) {
+  _facView = view;
+  document.querySelectorAll('#fac-view-btns .bs-sort-btn').forEach(function(b){ b.classList.remove('on'); });
+  if (btn) btn.classList.add('on');
+  var mw = document.getElementById('fac-map-wrap');
+  var lw = document.getElementById('fac-list-wrap');
+  if (mw) mw.style.display = view === 'map' ? '' : 'none';
+  if (lw) lw.style.display = view === 'map' ? 'none' : '';
+  if (view === 'map') facRenderMap(true);
+};
+
+function facInitMap() {
+  if (_facMap) return;
+  // preferCanvas: thousands of circle markers stay smooth on canvas (SVG lags)
+  _facMap = L.map('fac-map', { zoomControl: true, attributionControl: false, scrollWheelZoom: true, preferCanvas: true })
+    .setView([39, -96], 4);
+  // Labeled dark basemap — city names help when prospecting a region
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(_facMap);
+  _facLayer = L.layerGroup().addTo(_facMap);
+}
+
+window.facRenderMap = function(fit) {
+  var wrap = document.getElementById('fac-map-wrap');
+  if (!wrap || wrap.style.display === 'none' || !_facData) return;
+  if (typeof L === 'undefined') return;
+  facInitMap();
+  setTimeout(function(){ if (_facMap) _facMap.invalidateSize(); }, 60);
+
+  var list  = facFilteredList();
+  var cache = facGeoCache();
+  var statusEl = document.getElementById('fac-map-status');
+  _facLayer.clearLayers();
+
+  var roleColor = { shipper:'#34d399', receiver:'#fb923c', both:'#a78bfa' };
+  var byCity = {}, approx = 0, pts = [];
+
+  list.forEach(function(f) {
+    var ck = (f.mainCity || '').toUpperCase();
+    if (!ck || ck === '—') return;
+    var coord = Array.isArray(cache[ck]) ? cache[ck] : null;
+    if (!coord) {
+      // Fallback until geocoded: state center (marked approximate)
+      var st = ck.split(',').pop().trim();
+      var centers = typeof WL_CENTERS !== 'undefined' ? WL_CENTERS : {};
+      if (!centers[st]) return;
+      coord = centers[st]; approx++;
+    }
+    var k = byCity[ck] = (byCity[ck] || 0) + 1;
+    // Golden-angle spiral offset for docks in the same city (k=1 stays centered)
+    var ang = (k - 1) * 2.39996, r = 0.012 * Math.sqrt(k - 1);
+    var lat = coord[0] + r * Math.cos(ang), lng = coord[1] + r * Math.sin(ang) * 1.3;
+    pts.push([lat, lng]);
+
+    var m = L.circleMarker([lat, lng], {
+      radius: 4 + Math.min(14, Math.sqrt(f.visits) * 1.6),
+      color: _facSelected.has(f.key) ? '#ffffff' : '#0d1117',
+      weight: _facSelected.has(f.key) ? 2.5 : 1,
+      fillColor: roleColor[f.role] || '#38bdf8', fillOpacity: 0.8
+    }).addTo(_facLayer);
+
+    // Hover tooltip and click popup kept SEPARATE — a bound tooltip's
+    // mouseout otherwise closes the popup.
+    m.bindTooltip(escapeHtml(f.name) + ' · ' + f.visits + ' visit' + (f.visits !== 1 ? 's' : ''), { sticky: true, direction: 'top' });
+    m.on('click', function() {
+      var html = '<div style="max-height:360px;overflow-y:auto;min-width:320px;">' +
+        '<div style="font-size:13px;font-weight:800;color:var(--text-primary);margin-bottom:2px;">' + escapeHtml(f.name) + '</div>' +
+        '<div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">' + escapeHtml(f.mainCity) +
+          (Array.isArray(cache[ck]) ? '' : ' · <span style="color:var(--warning);">approx. location</span>') + '</div>' +
+        '<div style="display:flex;gap:12px;font-size:11px;margin-bottom:10px;flex-wrap:wrap;">' +
+          '<span style="color:var(--text-secondary);">Visits <strong style="color:var(--text-primary);">' + f.visits + '</strong></span>' +
+          '<span style="color:var(--text-secondary);">Revenue <strong style="color:#3fb950;">' + money(f.revenue) + '</strong></span>' +
+          '<span style="color:var(--text-secondary);">RPM <strong style="color:var(--text-primary);">' + (f.rpm > 0 ? '$' + f.rpm.toFixed(2) : '—') + '</strong></span>' +
+          '<span style="color:var(--text-secondary);">Last <strong style="color:var(--text-primary);">' + (f.lastDate || '—') + '</strong></span>' +
+        '</div>' +
+        '<button id="fac-pop-sel-btn" onclick="facToggleSelect(' + f.id + ')" style="' + facPopBtnStyle(f) + '">' + facPopBtnText(f) + '</button>' +
+        facDetailHtml(f) +
+      '</div>';
+      L.popup({ className: 'map-popup', maxWidth: 460, autoPanPadding: [30, 30] })
+        .setLatLng([lat, lng]).setContent(html).openOn(_facMap);
+    });
+  });
+
+  if (fit && pts.length) {
+    try { _facMap.fitBounds(L.latLngBounds(pts).pad(0.08), { maxZoom: 9 }); } catch(e) {}
+  }
+
+  if (statusEl) {
+    statusEl.textContent = pts.length.toLocaleString() + ' facilities plotted' +
+      (approx ? ' · ' + approx + ' at approx. location' : '');
+  }
+
+  // Geocode missing cities in the background, then re-render (no refit)
+  if (approx > 0) facGeocodeMissing();
+};
+
+var _facGeoHaltUntil = 0;
+async function facGeocodeMissing() {
+  if (_facGeoBusy || !_facData) return;
+  if (Date.now() < _facGeoHaltUntil) return; // stopped by quota/denial — don't loop
+  var key = typeof gmapsGetKey === 'function' ? gmapsGetKey() : '';
+  var statusEl = document.getElementById('fac-map-status');
+  if (!key) {
+    if (statusEl) statusEl.textContent += ' — add a Google Maps key in Settings for exact city placement';
+    return;
+  }
+  var cache = facGeoCache();
+  // Geocode every facility city (not just the filtered set) so filter
+  // changes never trigger new lookups.
+  var todo = [];
+  _facData.facilities.forEach(function(f) {
+    var ck = (f.mainCity || '').toUpperCase();
+    if (ck && ck !== '—' && cache[ck] === undefined && todo.indexOf(ck) < 0) todo.push(ck);
+  });
+  if (!todo.length) return;
+
+  _facGeoBusy = true;
+  var done = 0, stop = false;
+  try {
+    for (var i = 0; i < todo.length && !stop; i += 5) {
+      var batch = todo.slice(i, i + 5);
+      await Promise.all(batch.map(async function(ck) {
+        try {
+          var res  = await fetch('https://maps.googleapis.com/maps/api/geocode/json?address=' + encodeURIComponent(ck) + '&components=country:US&key=' + key);
+          var data = await res.json();
+          if (data.status === 'OK' && data.results[0]) {
+            var loc = data.results[0].geometry.location;
+            cache[ck] = [loc.lat, loc.lng];
+          } else if (data.status === 'ZERO_RESULTS') {
+            cache[ck] = 'x'; // don't retry unfindable cities
+          } else if (data.status === 'OVER_QUERY_LIMIT' || data.status === 'REQUEST_DENIED') {
+            stop = true;
+            _facGeoHaltUntil = Date.now() + 5 * 60 * 1000;
+            if (statusEl) statusEl.textContent = data.status === 'REQUEST_DENIED'
+              ? '⚠️ Geocoding denied — enable the Geocoding API for your Google key'
+              : '⚠️ Google rate limit hit — will resume next time the map opens';
+          }
+        } catch(e) { /* network blip — retried next open */ }
+        done++;
+      }));
+      if (statusEl && !stop) statusEl.textContent = 'Locating cities… ' + done + ' / ' + todo.length;
+      if (done % 25 < 5 || i + 5 >= todo.length) { facGeoSave(cache); }
+      // Progressive: re-plot every ~200 lookups so dots move from state
+      // centers into their cities as the first-time geocode runs. Safe —
+      // facRenderMap's own geocode trigger no-ops while _facGeoBusy.
+      if (done % 200 < 5 && done > 0) facRenderMap(false);
+      await new Promise(function(r){ setTimeout(r, 120); });
+    }
+  } finally {
+    facGeoSave(cache);
+    _facGeoBusy = false;
+  }
+  if (!stop) facRenderMap(false);
+}
+
+// ── SELECTION + HUBSPOT EXPORT ──────────────────────────────────────────────
+function facSaveSelection() {
+  try { localStorage.setItem(FAC_SEL_KEY, JSON.stringify(Array.from(_facSelected))); } catch(e) {}
+}
+
+function facSelectedList() {
+  if (!_facData) return [];
+  return _facData.facilities.filter(function(f) { return _facSelected.has(f.key); })
+    .sort(function(a,b) { return b.visits - a.visits; });
+}
+
+function facUpdateSelBar() {
+  var n = facSelectedList().length; // only keys that exist in current data
+  var cEl = document.getElementById('fac-sel-count');
+  var bEl = document.getElementById('fac-export-btn');
+  if (cEl) cEl.textContent = n.toLocaleString() + ' selected';
+  if (bEl) {
+    bEl.textContent = '⬇ Export for HubSpot (' + n.toLocaleString() + ')';
+    bEl.disabled = n === 0;
+    bEl.style.opacity = n === 0 ? '0.45' : '1';
+    bEl.style.cursor  = n === 0 ? 'default' : 'pointer';
+  }
+}
+
+function facPopBtnText(f) {
+  return _facSelected.has(f.key) ? '✓ In export list — click to remove' : '➕ Add to export list';
+}
+function facPopBtnStyle(f) {
+  var on = _facSelected.has(f.key);
+  return 'width:100%;margin:0 0 10px;padding:7px 10px;font-size:11px;font-weight:800;border-radius:7px;cursor:pointer;' +
+    (on ? 'border:1px solid rgba(59,185,80,0.5);background:rgba(59,185,80,0.14);color:#3fb950;'
+        : 'border:1px solid rgba(56,189,248,0.45);background:rgba(56,189,248,0.1);color:#38bdf8;');
+}
+
+window.facToggleSelect = function(id) {
+  var f = _facData && _facData.facilities[id];
+  if (!f) return;
+  if (_facSelected.has(f.key)) _facSelected.delete(f.key); else _facSelected.add(f.key);
+  facSaveSelection();
+  // Update the popup button in place (if toggled from the map)
+  var pb = document.getElementById('fac-pop-sel-btn');
+  if (pb) { pb.textContent = facPopBtnText(f); pb.setAttribute('style', facPopBtnStyle(f)); }
+  // Re-draw: list without touching the map; map without refitting (popup stays open)
+  facRenderRows(true);
+  if (_facView === 'map') facRenderMap(false);
+};
+
+window.facSelectShown = function() {
+  var list = facFilteredList();
+  var shown = _facView === 'map' ? list : list.slice(0, 300); // list view renders top 300
+  shown.forEach(function(f) { _facSelected.add(f.key); });
+  facSaveSelection();
+  facRenderRows(true);
+  if (_facView === 'map') facRenderMap(false);
+};
+
+window.facClearSelection = function() {
+  if (_facSelected.size > 10 && !confirm('Clear all ' + _facSelected.size + ' selected facilities?')) return;
+  _facSelected.clear();
+  facSaveSelection();
+  facRenderRows(true);
+  if (_facView === 'map') facRenderMap(false);
+};
+
+// McLeod stores cities in caps — "ELK GROVE VILLAGE" → "Elk Grove Village"
+function facTitleCase(s) {
+  return (s || '').toLowerCase().replace(/\b([a-z])/g, function(m){ return m.toUpperCase(); });
+}
+
+function facFmtMonth(iso) {
+  if (!iso) return '';
+  var m = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var p = iso.split('-');
+  return p.length >= 2 ? m[parseInt(p[1], 10) - 1] + ' ' + p[0] : iso;
+}
+
+// One-line cold-call opener built from TAG's actual history at the dock.
+// Deliberately omits broker names — that's internal context, not a pitch line.
+function facTalkingPoint(f, city, topLane) {
+  var since = f.firstDate ? ' since ' + facFmtMonth(f.firstDate) : '';
+  var lanePart = '';
+  if (topLane) {
+    var ln = topLane[1], avg = ln.count > 0 ? ln.revenue / ln.count : 0;
+    var parts = topLane[0].split(' → ');
+    var other = f.role === 'receiver' ? 'from ' + parts[0] : 'to ' + (parts[1] || '');
+    lanePart = ' — most often ' + other + ' (~' + money(avg) + '/load)';
+  }
+  if (f.role === 'shipper')  return 'TAG Trans has picked up ' + f.pickups + ' flatbed loads at your ' + city + ' facility' + since + lanePart + '.';
+  if (f.role === 'receiver') return 'TAG Trans has delivered ' + f.deliveries + ' flatbed loads to your ' + city + ' facility' + since + lanePart + '.';
+  return 'TAG Trans has picked up ' + f.pickups + ' and delivered ' + f.deliveries + ' flatbed loads at your ' + city + ' facility' + since + lanePart + '.';
+}
+
+window.facExportHubspot = function() {
+  var sel = facSelectedList();
+  if (!sel.length) return;
+
+  function build() {
+    var today = new Date().toISOString().substring(0, 10);
+
+    // ── Sheet 1: one row per facility ──
+    var facRows = [[
+      'Facility Name','City','State','Role','Pickups (TAG loaded here)','Deliveries (TAG delivered here)',
+      'Total Visits','Total Revenue ($)','Avg Revenue per Load ($)','Avg RPM ($/mi)','First Visit','Last Visit',
+      '# Lanes','Top Lanes (loads · avg rate)','Booked Via (Customer/Broker)','Call Talking Point',
+      'Phone','Website','Contact First Name','Contact Last Name','Job Title','Email','Lookup Notes'
+    ]];
+    var laneRows = [['Facility Name','City','State','Direction','Lane','Loads','Avg Rate ($)','Avg RPM ($/mi)','Total Revenue ($)']];
+
+    sel.forEach(function(f) {
+      var cityParts = (f.mainCity || '').split(',');
+      var city  = facTitleCase((cityParts[0] || '').trim());
+      var state = (cityParts[1] || '').trim();
+      var lanes = Object.entries(f.lanes).sort(function(a,b){ return b[1].count - a[1].count; });
+      var topLanes = lanes.slice(0, 3).map(function(e) {
+        var avg = e[1].count > 0 ? e[1].revenue / e[1].count : 0;
+        return e[0] + ' (' + e[1].count + ' loads · ' + money(avg) + ' avg)';
+      }).join(' | ');
+      var brokers = Object.entries(f.customers).sort(function(a,b){ return b[1]-a[1]; }).slice(0, 5)
+        .map(function(e){ return e[0] + ' (' + e[1] + ')'; }).join(', ');
+      var roleLbl = f.role === 'both' ? 'Shipper + Receiver' : f.role === 'shipper' ? 'Shipper' : 'Receiver';
+      var visits  = f.visits || 0;
+
+      facRows.push([
+        f.name, city, state, roleLbl, f.pickups, f.deliveries,
+        visits, Math.round(f.revenue), visits > 0 ? Math.round(f.revenue / visits) : 0,
+        f.rpm > 0 ? Number(f.rpm.toFixed(2)) : '', f.firstDate || '', f.lastDate || '',
+        lanes.length, topLanes, brokers, facTalkingPoint(f, city || f.mainCity, lanes[0]),
+        '', '', '', '', '', '', ''   // to be filled during lookup
+      ]);
+
+      lanes.forEach(function(e) {
+        var ln = e[1];
+        var dir = e[0].indexOf(f.mainCity + ' →') === 0 ? 'Outbound (picked up here)'
+                : e[0].slice(-f.mainCity.length) === f.mainCity ? 'Inbound (delivered here)' : '';
+        laneRows.push([
+          f.name, city, state, dir, e[0], ln.count,
+          ln.count > 0 ? Math.round(ln.revenue / ln.count) : 0,
+          ln.miles > 0 ? Number((ln.revenue / ln.miles).toFixed(2)) : '',
+          Math.round(ln.revenue)
+        ]);
+      });
+    });
+
+    // ── Sheet 3: instructions so the file is self-explanatory to Claude ──
+    var instr = [
+      ['TAG Trans — HubSpot Prospect Build Instructions'],
+      ['Generated ' + today + ' from TAG Trans McLeod load history · ' + sel.length + ' facilities selected by Anders Aschkenase (Director of Logistics).'],
+      [''],
+      ['GOAL: Turn each row on the "Facilities" sheet into a HubSpot CONTACT record so Anders can call these shippers/receivers.'],
+      [''],
+      ['FOR EACH FACILITY:'],
+      ['1. Search the web for the Facility Name + City + State to find the facility\'s main phone number and website. Prefer the specific plant/warehouse location over a corporate HQ line.'],
+      ['2. If a shipping, logistics, traffic, or transportation manager is publicly listed for that location, use that person as the contact. Otherwise create the contact as First Name "Shipping", Last Name "Department", Job Title "Shipping / Receiving".'],
+      ['3. Before creating anything, search HubSpot for an existing contact or company with the same facility name or phone number to avoid duplicates.'],
+      ['4. Create the contact with: Company Name = Facility Name, Phone, City, State/Region, Website, Job Title, Lifecycle Stage = Lead.'],
+      ['5. Attach a note to the contact containing the Call Talking Point plus visits, revenue, first/last visit, and top lanes from that row (the "Lane Detail" sheet has every lane).'],
+      ['6. If a phone number cannot be confidently matched to that exact location, do NOT guess — list it back to Anders as "needs verification" instead of creating the contact.'],
+      ['7. When finished, give Anders a summary: created / skipped as duplicate / needs verification.'],
+      [''],
+      ['COLUMN NOTES:'],
+      ['Role: Shipper = TAG picked up freight there; Receiver = TAG delivered there; Shipper + Receiver = both.'],
+      ['Booked Via = the customer/broker TAG hauled the freight for. Internal context only — do not include it in outreach wording.'],
+      ['Phone / Website / Contact / Email / Lookup Notes columns are intentionally blank — fill them during lookup.']
+    ];
+
+    var wb = XLSX.utils.book_new();
+    var ws1 = XLSX.utils.aoa_to_sheet(facRows);
+    ws1['!cols'] = [30,18,6,16,10,10,9,13,12,10,11,11,8,70,40,80,16,24,14,14,18,26,30].map(function(w){ return { wch: w }; });
+    ws1['!autofilter'] = { ref: 'A1:W' + facRows.length };
+    var ws2 = XLSX.utils.aoa_to_sheet(laneRows);
+    ws2['!cols'] = [30,18,6,24,48,8,12,12,14].map(function(w){ return { wch: w }; });
+    ws2['!autofilter'] = { ref: 'A1:I' + laneRows.length };
+    var ws3 = XLSX.utils.aoa_to_sheet(instr);
+    ws3['!cols'] = [{ wch: 160 }];
+
+    XLSX.utils.book_append_sheet(wb, ws1, 'Facilities');
+    XLSX.utils.book_append_sheet(wb, ws2, 'Lane Detail');
+    XLSX.utils.book_append_sheet(wb, ws3, 'Instructions for Claude');
+    XLSX.writeFile(wb, 'tagtrans-hubspot-prospects-' + today + '.xlsx');
+  }
+
+  if (typeof XLSX !== 'undefined') { build(); return; }
+  var s = document.createElement('script');
+  s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+  s.onload = build;
+  s.onerror = function() { alert('Could not load the Excel library (SheetJS) — check your internet connection and try again.'); };
+  document.head.appendChild(s);
+};
+
+window.facExportCsv = function() {
+  if (!_facData || !_facData.facilities.length) return;
+  var rows = [['Facility','City','Role','Pickups','Deliveries','Total Visits','Revenue','Avg RPM','Last Visit','Top Lane','Top Lane Avg Rate']];
+  _facData.facilities.slice().sort(function(a,b){ return b.visits - a.visits; }).forEach(function(f) {
+    var topLane = Object.entries(f.lanes).sort(function(a,b){ return b[1].count - a[1].count; })[0];
+    rows.push([f.name, f.mainCity, f.role, f.pickups, f.deliveries, f.visits,
+      Math.round(f.revenue), f.rpm > 0 ? f.rpm.toFixed(2) : '',
+      f.lastDate || '', topLane ? topLane[0] : '',
+      topLane && topLane[1].count > 0 ? Math.round(topLane[1].revenue / topLane[1].count) : '']);
+  });
+  var csv = rows.map(function(r){ return r.map(function(c){ return '"' + String(c).replace(/"/g,'""') + '"'; }).join(','); }).join('\n');
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.download = 'tagtrans-facilities-' + new Date().toISOString().substring(0,10) + '.csv';
+  a.click();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); }, 5000);
 };
 
 // WATCHTOWER SMOKE TEST — runSmokeTest()
