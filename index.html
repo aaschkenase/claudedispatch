@@ -3165,6 +3165,10 @@ body.light-mode .flatpickr-current-month input.cur-year, body.light-mode .flatpi
         <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-secondary);cursor:pointer;margin-left:4px;">
           <input type="checkbox" id="fac-sel-only" onchange="facRenderRows()" style="accent-color:#38bdf8;"> Selected only
         </label>
+        <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-secondary);cursor:pointer;">
+          <input type="checkbox" id="fac-hide-exported" onchange="facRenderRows()" style="accent-color:#3fb950;"> Hide exported
+        </label>
+        <button class="bs-sort-btn" onclick="facResetExported()" title="Clear the exported marks on every facility">Reset marks</button>
         <span style="flex:1;"></span>
         <button id="fac-export-btn" onclick="facExportHubspot()" disabled style="padding:7px 14px;font-size:12px;font-weight:800;border-radius:8px;border:1px solid rgba(59,185,80,0.45);background:rgba(59,185,80,0.12);color:#3fb950;cursor:pointer;opacity:0.45;">⬇ Export for HubSpot (0)</button>
       </div>
@@ -18986,6 +18990,21 @@ window.wlSetType = function(type, btn) {
 
 var _facRole = 'all';
 var FAC_SEL_KEY = 'fac_selected_v1';
+var FAC_EXP_KEY = 'fac_exported_v1';
+// Which facilities have already been exported for HubSpot, and when.
+// Survives reloads so the same docks don't get pulled twice.
+var _facExported = (function() {
+  try { return JSON.parse(localStorage.getItem(FAC_EXP_KEY) || '{}'); } catch(e) { return {}; }
+})();
+function facExpSave() {
+  try { localStorage.setItem(FAC_EXP_KEY, JSON.stringify(_facExported)); } catch(e) {}
+}
+function facExpDate(key) {
+  var r = _facExported[key];
+  if (!r) return '';
+  var d = new Date(r.at);
+  return isNaN(d) ? '' : (d.getMonth()+1) + '/' + d.getDate() + '/' + String(d.getFullYear()).slice(2);
+}
 var _facSelected = (function() {
   try { return new Set(JSON.parse(localStorage.getItem(FAC_SEL_KEY) || '[]')); } catch(e) { return new Set(); }
 })();
@@ -19070,7 +19089,9 @@ window.facRender = function() {
         '<div style="font-size:18px;font-weight:800;color:var(--text-primary);">' + val + '</div>' +
         '<div style="font-size:9px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-muted);">' + lbl + '</div></div>';
     }
+    var exportedCount = d.facilities.filter(function(f){ return !!_facExported[f.key]; }).length;
     kEl.innerHTML = kpi(d.facilities.length.toLocaleString(), 'Facilities') +
+      kpi(exportedCount.toLocaleString(), 'Already exported') +
       kpi(shippers.toLocaleString(), 'Shipper docks') +
       kpi(receivers.toLocaleString(), 'Receiver docks') +
       kpi(d.loadsWithFacility.toLocaleString() + ' / ' + d.loadsTotal.toLocaleString(), 'Loads w/ facility data');
@@ -19111,11 +19132,13 @@ function facFilteredList() {
   var q    = ((document.getElementById('fac-search') || {}).value || '').toLowerCase();
   var sort = (document.getElementById('fac-sort') || {}).value || 'visits';
   var selOnly = !!(document.getElementById('fac-sel-only') || {}).checked;
+  var hideExp = !!(document.getElementById('fac-hide-exported') || {}).checked;
   var list = _facData.facilities.filter(function(f) {
     if (_facRole === 'shipper'  && f.pickups === 0)    return false;
     if (_facRole === 'receiver' && f.deliveries === 0) return false;
     if (q && f.name.toLowerCase().indexOf(q) < 0 && f.mainCity.toLowerCase().indexOf(q) < 0) return false;
     if (selOnly && !_facSelected.has(f.key)) return false;
+    if (hideExp && _facExported[f.key]) return false;
     return true;
   });
   list.sort(function(a,b) {
@@ -19158,7 +19181,10 @@ window.facRenderRows = function(skipMap) {
       '<div onclick="event.stopPropagation();facToggleSelect(' + f.id + ')" style="display:flex;align-items:center;justify-content:center;">' +
         '<input type="checkbox" ' + (_facSelected.has(f.key) ? 'checked ' : '') + 'style="cursor:pointer;accent-color:#38bdf8;pointer-events:none;">' +
       '</div>' +
-      '<div style="font-size:12px;font-weight:700;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(f.name) + '</div>' +
+      '<div style="font-size:12px;font-weight:700;color:' + (_facExported[f.key] ? 'var(--text-secondary)' : 'var(--text-primary)') + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' +
+        escapeHtml(f.name) +
+        (_facExported[f.key] ? ' <span title="Already exported for HubSpot" style="font-size:9px;font-weight:800;padding:1px 6px;border-radius:5px;background:rgba(59,185,80,0.14);color:#3fb950;white-space:nowrap;">\u2713 EXPORTED ' + facExpDate(f.key) + '</span>' : '') +
+      '</div>' +
       '<div style="font-size:10px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(f.mainCity) + (f.cityCount > 1 ? ' +' + (f.cityCount-1) : '') + '</div>' +
       '<div>' + roleChip + '</div>' +
       '<div style="text-align:right;font-size:12px;font-weight:700;color:var(--text-primary);">' + f.visits + '</div>' +
@@ -19258,14 +19284,16 @@ window.facRenderMap = function(fit) {
 
     var m = L.circleMarker([lat, lng], {
       radius: 4 + Math.min(14, Math.sqrt(f.visits) * 1.6),
-      color: _facSelected.has(f.key) ? '#ffffff' : '#0d1117',
-      weight: _facSelected.has(f.key) ? 2.5 : 1,
-      fillColor: roleColor[f.role] || '#38bdf8', fillOpacity: 0.8
+      color: _facSelected.has(f.key) ? '#ffffff' : (_facExported[f.key] ? '#3fb950' : '#0d1117'),
+      weight: _facSelected.has(f.key) ? 2.5 : (_facExported[f.key] ? 2 : 1),
+      fillColor: roleColor[f.role] || '#38bdf8',
+      fillOpacity: _facExported[f.key] ? 0.28 : 0.8
     }).addTo(_facLayer);
 
     // Hover tooltip and click popup kept SEPARATE — a bound tooltip's
     // mouseout otherwise closes the popup.
-    m.bindTooltip(escapeHtml(f.name) + ' · ' + f.visits + ' visit' + (f.visits !== 1 ? 's' : ''), { sticky: true, direction: 'top' });
+    m.bindTooltip(escapeHtml(f.name) + ' · ' + f.visits + ' visit' + (f.visits !== 1 ? 's' : '') +
+      (_facExported[f.key] ? ' · \u2713 exported ' + facExpDate(f.key) : ''), { sticky: true, direction: 'top' });
     m.on('click', function() {
       var html = '<div style="max-height:360px;overflow-y:auto;min-width:320px;">' +
         '<div style="font-size:13px;font-weight:800;color:var(--text-primary);margin-bottom:2px;">' + escapeHtml(f.name) + '</div>' +
@@ -19277,6 +19305,7 @@ window.facRenderMap = function(fit) {
           '<span style="color:var(--text-secondary);">RPM <strong style="color:var(--text-primary);">' + (f.rpm > 0 ? '$' + f.rpm.toFixed(2) : '—') + '</strong></span>' +
           '<span style="color:var(--text-secondary);">Last <strong style="color:var(--text-primary);">' + (f.lastDate || '—') + '</strong></span>' +
         '</div>' +
+        (_facExported[f.key] ? '<div style="font-size:11px;font-weight:700;color:#3fb950;margin-bottom:8px;">\u2713 Already exported for HubSpot on ' + facExpDate(f.key) + '</div>' : '') +
         '<button id="fac-pop-sel-btn" onclick="facToggleSelect(' + f.id + ')" style="' + facPopBtnStyle(f) + '">' + facPopBtnText(f) + '</button>' +
         facDetailHtml(f) +
       '</div>';
@@ -19372,7 +19401,9 @@ function facUpdateSelBar() {
   var n = facSelectedList().length; // only keys that exist in current data
   var cEl = document.getElementById('fac-sel-count');
   var bEl = document.getElementById('fac-export-btn');
-  if (cEl) cEl.textContent = n.toLocaleString() + ' selected';
+  var dupes = facSelectedList().filter(function(f){ return !!_facExported[f.key]; }).length;
+  if (cEl) cEl.textContent = n.toLocaleString() + ' selected' + (dupes > 0 ? ' \u00b7 ' + dupes + ' already exported' : '');
+  if (cEl) cEl.style.color = dupes > 0 ? '#f59e0b' : '#38bdf8';
   if (bEl) {
     bEl.textContent = '⬇ Export for HubSpot (' + n.toLocaleString() + ')';
     bEl.disabled = n === 0;
@@ -19448,6 +19479,15 @@ function facTalkingPoint(f, city, topLane) {
   if (f.role === 'receiver') return 'TAG Trans has delivered ' + f.deliveries + ' flatbed loads to your ' + city + ' facility' + since + lanePart + '.';
   return 'TAG Trans has picked up ' + f.pickups + ' and delivered ' + f.deliveries + ' flatbed loads at your ' + city + ' facility' + since + lanePart + '.';
 }
+
+window.facResetExported = function() {
+  var n = Object.keys(_facExported).length;
+  if (!n) { alert('No facilities are marked as exported yet.'); return; }
+  if (!confirm('Clear the exported mark on all ' + n + ' facilities? Their HubSpot contacts are not affected.')) return;
+  _facExported = {};
+  facExpSave();
+  facRender();
+};
 
 window.facExportHubspot = function() {
   var sel = facSelectedList();
@@ -19536,6 +19576,17 @@ window.facExportHubspot = function() {
     XLSX.utils.book_append_sheet(wb, ws2, 'Lane Detail');
     XLSX.utils.book_append_sheet(wb, ws3, 'Instructions for Claude');
     XLSX.writeFile(wb, 'tagtrans-hubspot-prospects-' + today + '.xlsx');
+
+    // Mark every facility in this file as exported, then clear the selection so
+    // the next pass starts clean and the same docks aren't pulled twice.
+    var stamp = new Date().toISOString();
+    sel.forEach(function(f) {
+      var prev = _facExported[f.key];
+      _facExported[f.key] = { at: stamp, count: (prev && prev.count ? prev.count : 0) + 1 };
+      _facSelected.delete(f.key);
+    });
+    facExpSave(); facSaveSelection();
+    facRender();
   }
 
   if (typeof XLSX !== 'undefined') { build(); return; }
@@ -19548,13 +19599,14 @@ window.facExportHubspot = function() {
 
 window.facExportCsv = function() {
   if (!_facData || !_facData.facilities.length) return;
-  var rows = [['Facility','City','Role','Pickups','Deliveries','Total Visits','Revenue','Avg RPM','Last Visit','Top Lane','Top Lane Avg Rate']];
+  var rows = [['Facility','City','Role','Pickups','Deliveries','Total Visits','Revenue','Avg RPM','Last Visit','Top Lane','Top Lane Avg Rate','Exported For HubSpot']];
   _facData.facilities.slice().sort(function(a,b){ return b.visits - a.visits; }).forEach(function(f) {
     var topLane = Object.entries(f.lanes).sort(function(a,b){ return b[1].count - a[1].count; })[0];
     rows.push([f.name, f.mainCity, f.role, f.pickups, f.deliveries, f.visits,
       Math.round(f.revenue), f.rpm > 0 ? f.rpm.toFixed(2) : '',
       f.lastDate || '', topLane ? topLane[0] : '',
-      topLane && topLane[1].count > 0 ? Math.round(topLane[1].revenue / topLane[1].count) : '']);
+      topLane && topLane[1].count > 0 ? Math.round(topLane[1].revenue / topLane[1].count) : '',
+      _facExported[f.key] ? facExpDate(f.key) : '']);
   });
   var csv = rows.map(function(r){ return r.map(function(c){ return '"' + String(c).replace(/"/g,'""') + '"'; }).join(','); }).join('\n');
   var a = document.createElement('a');
