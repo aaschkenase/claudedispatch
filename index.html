@@ -3974,6 +3974,19 @@ body.light-mode .flatpickr-current-month input.cur-year, body.light-mode .flatpi
           </div>
         </div>
 
+        <!-- SNAPSHOTS & BACKUPS SECTION -->
+        <div style="background:rgba(245,158,11,0.05);border:1px solid rgba(245,158,11,0.25);border-radius:10px;padding:16px 18px;margin-bottom:18px;">
+          <div style="font-size:13px;font-weight:800;color:var(--text-primary);margin-bottom:6px;">🕘 Snapshots &amp; Backups</div>
+          <div style="font-size:12px;color:var(--text-muted);line-height:1.6;margin-bottom:12px;">
+            A snapshot of the losing copy is taken automatically before any sync overwrite, and a cloud backup is written once per day (kept 14 days). If data ever goes missing, restore it from here.
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
+            <button onclick="wtShowSnapshots()" style="padding:10px 18px;background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.4);color:#f59e0b;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">🕘 View Snapshots &amp; Backups</button>
+            <button onclick="wtTakeSnapshot('manual');wtShowSnapshots()" style="padding:10px 18px;background:var(--bg-primary);border:1px solid var(--border-medium);color:var(--text-secondary);border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">📸 Snapshot Now</button>
+          </div>
+          <div id="wtSnapshotsList" style="display:none;"></div>
+        </div>
+
         <!-- CAPACITY MAP SYNC SECTION -->
         <div style="background:rgba(56,189,248,0.05);border:1px solid rgba(56,189,248,0.2);border-radius:10px;padding:16px 18px;margin-bottom:18px;">
           <div style="font-size:13px;font-weight:800;color:var(--text-primary);margin-bottom:4px;">📡 Public Capacity Map</div>
@@ -17803,10 +17816,164 @@ if __name__=="__main__":
   // Cloud save function - saves to user's own document (separate accounts)
   var _cloudSaveTimer = null;
   var _lastSavedHash = '';  // Fingerprint of last successful write
+  var _lastSyncedCloudStamp = null;  // savedAt of the cloud doc as this session last saw it
+
+  // ═══ DATA SNAPSHOTS — insurance against sync overwrites ═══
+  // Before any side (cloud or local) overwrites the other, the losing copy is
+  // snapshotted locally. A daily backup doc is also kept in Firestore.
+  var WT_SNAP_KEY = 'wt_state_snapshots_v1';
+
+  window.wtCountLoads = function(drivers) {
+    return Object.values(drivers || {}).reduce(function(sum, drv) {
+      return sum + Object.values(drv.weeks || {}).reduce(function(s, wk) {
+        return s + ((wk.loads || []).length);
+      }, 0);
+    }, 0);
+  };
+
+  window.wtSnapshotList = function() {
+    try { return JSON.parse(localStorage.getItem(WT_SNAP_KEY) || '[]'); } catch(e) { return []; }
+  };
+
+  window.wtTakeSnapshot = function(label, driversObj) {
+    try {
+      var drivers = driversObj || (window.state && state.drivers) || {};
+      if (!Object.keys(drivers).length) return;
+      var slim = JSON.parse(JSON.stringify(drivers));
+      Object.values(slim).forEach(function(drv) {
+        Object.values(drv.weeks || {}).forEach(function(wk) {
+          (wk.loads || []).forEach(function(l) { delete l.routeGeo; });
+        });
+      });
+      var snaps = window.wtSnapshotList();
+      snaps.unshift({
+        at: new Date().toISOString(),
+        label: label || 'manual',
+        loads: window.wtCountLoads(slim),
+        currentDriverId: (window.state && state.currentDriverId) || null,
+        drivers: slim
+      });
+      while (snaps.length > 4) snaps.pop();
+      try {
+        localStorage.setItem(WT_SNAP_KEY, JSON.stringify(snaps));
+      } catch(qe) {
+        while (snaps.length > 2) snaps.pop();
+        try { localStorage.setItem(WT_SNAP_KEY, JSON.stringify(snaps)); } catch(e2) {}
+      }
+      console.log('🕘 Snapshot taken: "' + (label || 'manual') + '"');
+    } catch(e) { console.warn('Snapshot failed:', e); }
+  };
+
+  // Snapshot a cloud doc's drivers (desanitizes Firestore format first)
+  window.wtSnapshotCloudDrivers = function(drivers, label) {
+    try { window.wtTakeSnapshot(label, desanitizeFromFirebase(drivers)); } catch(e) {}
+  };
+
+  function _wtApplyRestoredDrivers(drivers, currentDriverId, sourceLabel) {
+    window.wtTakeSnapshot('before restoring ' + sourceLabel);
+    state.drivers = drivers;
+    if (currentDriverId && state.drivers[currentDriverId]) state.currentDriverId = currentDriverId;
+    if (!state.currentDriverId || !state.drivers[state.currentDriverId]) {
+      state.currentDriverId = Object.keys(state.drivers)[0] || null;
+    }
+    saveState();
+    if (typeof resolveAllDriverWeeks === 'function') { try { resolveAllDriverWeeks(); } catch(e) {} }
+    if (typeof updateUI === 'function') { try { updateUI(); } catch(e) {} }
+    if (typeof refreshAll === 'function') { try { refreshAll(); } catch(e) {} }
+    if (typeof window.forcePushLocalToCloud === 'function') window.forcePushLocalToCloud();
+    if (window.toast) toast('✅ Restored ' + sourceLabel + ' — pushed to cloud', 'success');
+  }
+
+  window.wtRestoreSnapshot = function(idx) {
+    var snaps = window.wtSnapshotList();
+    var s = snaps[idx];
+    if (!s) { alert('Snapshot not found.'); return; }
+    if (!confirm('Restore snapshot from ' + new Date(s.at).toLocaleString() + '?\n\n' +
+      '• ' + s.loads + ' loads · ' + Object.keys(s.drivers || {}).length + ' drivers (' + s.label + ')\n\n' +
+      'Your current data will be snapshotted first, then replaced and pushed to the cloud.')) return;
+    _wtApplyRestoredDrivers(s.drivers, s.currentDriverId, 'snapshot (' + new Date(s.at).toLocaleString() + ')');
+    window.wtShowSnapshots();
+  };
+
+  window.wtRestoreCloudBackup = async function(dayId) {
+    if (!fbUser || !fbDb) { alert('Sign in first.'); return; }
+    try {
+      var doc = await fbDb.collection('users').doc(fbUser.uid).collection('backups').doc(dayId).get();
+      if (!doc.exists) { alert('Backup not found.'); return; }
+      var d = doc.data();
+      var drivers = desanitizeFromFirebase(d.drivers || {});
+      var loads = window.wtCountLoads(drivers);
+      if (!confirm('Restore the cloud backup from ' + dayId + '?\n\n' +
+        '• ' + loads + ' loads · ' + Object.keys(drivers).length + ' drivers (saved ' + (d.savedAt || dayId) + ')\n\n' +
+        'Your current data will be snapshotted first, then replaced and pushed to the cloud.')) return;
+      _wtApplyRestoredDrivers(drivers, d.currentDriverId, 'cloud backup ' + dayId);
+      window.wtShowSnapshots();
+    } catch(e) {
+      alert('Restore failed: ' + e.message);
+    }
+  };
+
+  window.wtShowSnapshots = async function() {
+    var el = document.getElementById('wtSnapshotsList');
+    if (!el) return;
+    el.style.display = 'block';
+    var rowStyle = 'display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border-bottom:1px solid var(--border-subtle);font-size:12px;color:var(--text-secondary);';
+    var btnStyle = 'padding:4px 12px;background:rgba(79,158,248,0.15);border:1px solid rgba(79,158,248,0.4);color:#4f9ef8;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;';
+    var html = '<div style="font-size:12px;font-weight:800;color:var(--text-primary);margin:8px 0 4px;">📍 Snapshots on this device</div>';
+    var snaps = window.wtSnapshotList();
+    html += snaps.length
+      ? snaps.map(function(s, i) {
+          return '<div style="' + rowStyle + '"><span>' + new Date(s.at).toLocaleString() + ' · <b>' + s.loads + ' loads</b> · ' + escapeHtml(s.label || '') + '</span>' +
+            '<button style="' + btnStyle + '" onclick="wtRestoreSnapshot(' + i + ')">↩︎ Restore</button></div>';
+        }).join('')
+      : '<div style="font-size:12px;color:var(--text-muted);padding:6px 0;">None yet — one is taken automatically before any sync overwrite.</div>';
+
+    html += '<div style="font-size:12px;font-weight:800;color:var(--text-primary);margin:14px 0 4px;">☁️ Daily cloud backups (kept 14 days)</div>';
+    if (fbUser && fbDb) {
+      try {
+        var snap = await fbDb.collection('users').doc(fbUser.uid).collection('backups').get();
+        var rows = [];
+        snap.forEach(function(doc) {
+          var dd = doc.data();
+          rows.push({ id: doc.id, loads: window.wtCountLoads(dd.drivers), savedAt: dd.savedAt });
+        });
+        rows.sort(function(a, b) { return b.id.localeCompare(a.id); });
+        html += rows.length
+          ? rows.map(function(r) {
+              return '<div style="' + rowStyle + '"><span>' + r.id + ' · <b>' + r.loads + ' loads</b></span>' +
+                '<button style="' + btnStyle + '" onclick="wtRestoreCloudBackup(\'' + r.id + '\')">↩︎ Restore</button></div>';
+            }).join('')
+          : '<div style="font-size:12px;color:var(--text-muted);padding:6px 0;">None yet — one is written automatically on the first save of each day.</div>';
+      } catch(e) {
+        html += '<div style="font-size:12px;color:var(--warning);padding:6px 0;">Could not list cloud backups: ' + escapeHtml(e.message) + '</div>';
+      }
+    } else {
+      html += '<div style="font-size:12px;color:var(--text-muted);padding:6px 0;">Sign in to see cloud backups.</div>';
+    }
+    el.innerHTML = html;
+  };
+
+  // Daily cloud backup — one doc per day under users/{uid}/backups/{YYYY-MM-DD}
+  function _maybeDailyBackup(payload) {
+    try {
+      if (!fbUser || !fbDb) return;
+      var today = new Date().toISOString().slice(0, 10);
+      if (localStorage.getItem('wt_last_cloud_backup_day') === today) return;
+      fbDb.collection('users').doc(fbUser.uid).collection('backups').doc(today).set(payload).then(function() {
+        localStorage.setItem('wt_last_cloud_backup_day', today);
+        console.log('🗄️ Daily cloud backup written (' + today + ')');
+        // Prune backups older than 14 days
+        fbDb.collection('users').doc(fbUser.uid).collection('backups').get().then(function(snap) {
+          var cutoff = new Date(Date.now() - 14 * 86400000).toISOString().slice(0, 10);
+          snap.forEach(function(doc) { if (doc.id < cutoff) doc.ref.delete().catch(function() {}); });
+        }).catch(function() {});
+      }).catch(function(e) { console.warn('Daily backup failed:', e); });
+    } catch(e) {}
+  }
 
   // The actual Firestore write — extracted so it can be called either
   // debounced (normal typing) or immediately (on tab hide / page close).
-  function _performCloudSave() {
+  function _performCloudSave(skipGuard) {
     if (!fbUser || !fbDb) return;
 
     // Dirty check: skip write if state hasn't changed since last save
@@ -17860,19 +18027,58 @@ if __name__=="__main__":
       });
     }
 
-    fbDb.collection('users').doc(fbUser.uid).set({
+    var writeStamp = new Date().toISOString();
+    var payload = {
       currentDriverId: state.currentDriverId,
       drivers: sanitizedDrivers,
       settings: settings,
-      savedAt: new Date().toISOString()
-    }).then(function() {
-      console.log("☁️ Cloud saved");
-      _lastSavedHash = hashStr;
-      updateSyncBanner('saved');
-    }).catch(function(e) {
-      console.warn("Cloud save error:", e);
-      console.error("Full error:", e);
-      updateSyncBanner('error', e.message);
+      savedAt: writeStamp
+    };
+
+    function doWrite() {
+      fbDb.collection('users').doc(fbUser.uid).set(payload).then(function() {
+        console.log("☁️ Cloud saved");
+        _lastSavedHash = hashStr;
+        _lastSyncedCloudStamp = writeStamp;
+        updateSyncBanner('saved');
+        _maybeDailyBackup(payload);
+      }).catch(function(e) {
+        console.warn("Cloud save error:", e);
+        console.error("Full error:", e);
+        updateSyncBanner('error', e.message);
+      });
+    }
+
+    // Stale-writer guard: if ANOTHER session wrote to the cloud since this
+    // session last synced, and that copy has MORE loads than we're about to
+    // write, do NOT clobber it — that's how a stale tab wipes out fresh data.
+    // (Skipped on tab-close flushes, where an async read can't complete.)
+    if (skipGuard === true) { doWrite(); return; }
+    fbDb.collection('users').doc(fbUser.uid).get().then(function(doc) {
+      try {
+        if (doc.exists) {
+          var d = doc.data();
+          if (d.savedAt && _lastSyncedCloudStamp && d.savedAt !== _lastSyncedCloudStamp) {
+            var cloudLoads = window.wtCountLoads(d.drivers);
+            var ourLoads   = window.wtCountLoads(sanitizedDrivers);
+            if (cloudLoads > ourLoads) {
+              console.warn('☁️ BLOCKED stale overwrite — another session saved ' + cloudLoads +
+                ' loads (we have ' + ourLoads + '). Snapshotting this device instead.');
+              window.wtTakeSnapshot('blocked from overwriting cloud (' + ourLoads + ' loads here vs ' + cloudLoads + ' in cloud)');
+              if (window.toast) toast('⚠️ Another session has newer cloud data — this tab did not overwrite it. Reload to pull the latest.', 'warn');
+              updateSyncBanner('error', 'Sync conflict — cloud copy kept');
+              return;
+            }
+            // Other session wrote, but we have >= loads: our write proceeds,
+            // keep a snapshot of what the cloud had, just in case.
+            window.wtSnapshotCloudDrivers(d.drivers, 'cloud copy before this device saved over it');
+          }
+        }
+      } catch(e) {}
+      doWrite();
+    }).catch(function() {
+      // Can't read (offline blip etc.) — behave as before
+      doWrite();
     });
   }
 
@@ -17894,7 +18100,7 @@ if __name__=="__main__":
       clearTimeout(_cloudSaveTimer);
       _cloudSaveTimer = null;
       console.log('☁️ Flushing pending cloud save before tab hides/closes');
-      _performCloudSave();
+      _performCloudSave(true); // skipGuard — async read can't complete during unload
     }
   }
 
@@ -17945,37 +18151,60 @@ if __name__=="__main__":
             var cloudSavedAt    = d.savedAt ? new Date(d.savedAt).getTime() : 0;
             var localSavedAtRaw = localStorage.getItem(STORE_KEY + '_savedAt');
             var localSavedAt    = localSavedAtRaw ? new Date(localSavedAtRaw).getTime() : 0;
+            var cloudLoadCount  = window.wtCountLoads(d.drivers);
+            var localLoadCount  = window.wtCountLoads(state.drivers);
 
-            // If no local timestamp exists yet (first run with new code), compare
-            // total load counts — whichever has more data wins. This prevents
-            // fresh local data being overwritten by an older cloud snapshot.
             var useCloud;
             if (!localSavedAtRaw) {
-              var cloudLoadCount = Object.values(d.drivers).reduce(function(sum, drv) {
-                return sum + Object.values(drv.weeks || {}).reduce(function(s, wk) {
-                  return s + ((wk.loads || []).length);
-                }, 0);
-              }, 0);
-              var localLoadCount = Object.values(state.drivers || {}).reduce(function(sum, drv) {
-                return sum + Object.values(drv.weeks || {}).reduce(function(s, wk) {
-                  return s + ((wk.loads || []).length);
-                }, 0);
-              }, 0);
-              // Cloud wins only if it has strictly more loads, otherwise keep local
+              // No local timestamp (first run with new code) — more data wins
               useCloud = cloudLoadCount > localLoadCount;
               console.log("🔍 No local timestamp — comparing load counts: cloud=" + cloudLoadCount + " local=" + localLoadCount + " → using " + (useCloud ? "cloud" : "local"));
             } else {
               useCloud = cloudSavedAt >= localSavedAt;
             }
 
+            // ⚠️ CONFLICT CHECK: if the "winner" has FEWER loads than the loser,
+            // something stale clobbered something fresh (usually an old tab on
+            // another device). Never resolve that silently — ask.
+            if (useCloud && cloudLoadCount < localLoadCount) {
+              var keepLocal = confirm(
+                '⚠️ SYNC CONFLICT\n\n' +
+                'Cloud copy: ' + cloudLoadCount + ' loads (saved ' + (d.savedAt || 'unknown') + ')\n' +
+                'This device: ' + localLoadCount + ' loads (saved ' + (localSavedAtRaw || 'unknown') + ')\n\n' +
+                'The cloud copy is newer but has FEWER loads.\n\n' +
+                'OK = keep THIS DEVICE’s data (more loads) and push it to the cloud\n' +
+                'Cancel = use the cloud copy (this device’s data is snapshotted — Settings → Debug & Sync)'
+              );
+              if (keepLocal) useCloud = false;
+            } else if (!useCloud && localLoadCount < cloudLoadCount) {
+              var keepCloud = confirm(
+                '⚠️ SYNC CONFLICT\n\n' +
+                'This device: ' + localLoadCount + ' loads (saved ' + (localSavedAtRaw || 'unknown') + ')\n' +
+                'Cloud copy: ' + cloudLoadCount + ' loads (saved ' + (d.savedAt || 'unknown') + ')\n\n' +
+                'This device’s copy is newer but has FEWER loads.\n\n' +
+                'OK = use the CLOUD copy (more loads)\n' +
+                'Cancel = keep this device’s data and push it to the cloud (the cloud copy is snapshotted first)'
+              );
+              if (keepCloud) useCloud = true;
+            }
+
+            _lastSyncedCloudStamp = d.savedAt || null;
+
+            var copiesDiffer = (cloudLoadCount !== localLoadCount) ||
+              (Object.keys(d.drivers).length !== Object.keys(state.drivers || {}).length);
+
             if (useCloud) {
               console.log("☁️ Using cloud data (cloud:", d.savedAt, "| local:", localSavedAtRaw || 'none', ")");
+              // Keep the losing local copy recoverable (only when it actually differs)
+              if (copiesDiffer) window.wtTakeSnapshot('this device, before cloud copy was applied');
               state.currentDriverId = d.currentDriverId || state.currentDriverId;
               state.drivers = desanitizeFromFirebase(d.drivers);
               localStorage.setItem(STORE_KEY, JSON.stringify(state));
               localStorage.setItem(STORE_KEY + '_savedAt', d.savedAt || new Date().toISOString());
             } else {
               console.log("💾 Local data is newer — keeping local, re-uploading (cloud:", d.savedAt, "| local:", localSavedAtRaw || 'none', ")");
+              // Keep the losing cloud copy recoverable (only when it actually differs)
+              if (copiesDiffer) window.wtSnapshotCloudDrivers(d.drivers, 'cloud copy, before this device re-uploaded');
               settingsFromCloud = false; // local won — don't roll settings back either
               setTimeout(cloudSave, 500);
             }
@@ -18527,6 +18756,14 @@ window.forcePushLocalToCloud = async function() {
   if (!_fbDb)   { setStatus('❌ Firebase not initialized.', '#ff4455'); return; }
 
   setStatus('⏳ Preparing…', 'var(--text-muted)');
+
+  // Keep whatever the cloud currently holds recoverable before overwriting it
+  try {
+    const prev = await _fbDb.collection('users').doc(_fbUser.uid).get();
+    if (prev.exists && prev.data().drivers && typeof window.wtSnapshotCloudDrivers === 'function') {
+      window.wtSnapshotCloudDrivers(prev.data().drivers, 'cloud copy before Force Push');
+    }
+  } catch(e) { /* snapshot is best-effort */ }
 
   try {
     const drvCount = Object.keys(state.drivers || {}).length;
