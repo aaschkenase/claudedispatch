@@ -175,7 +175,9 @@ body::before {
   border: 1px solid var(--border-medium);
   border-radius: 10px;
   box-shadow: var(--shadow-lg);
-  position: relative;
+  position: sticky;
+  top: 0;
+  z-index: 500;
   overflow: hidden;
   animation: slideDown 0.6s ease-out;
 }
@@ -1518,6 +1520,7 @@ td {
   .main-header {
     flex-direction: column;
     align-items: stretch;
+    position: static; /* sticky header would eat the whole screen on mobile */
   }
   
   .header-controls {
@@ -2244,7 +2247,7 @@ body.light-mode .flatpickr-current-month input.cur-year, body.light-mode .flatpi
         <input type="text" id="samDriverSearch" placeholder="🔍 Search drivers by name…" oninput="samFilterDrivers()" />
       </div>
       <div class="sam-pane-body" style="padding-top:12px;">
-        <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;font-style:italic;">Link drivers to apply real fuel cost data to their loads.</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;font-style:italic;">Link each Watchtower driver to their Samsara profile — use ⚡ Auto-Match or the search box on each row. Linking pulls the truck over automatically and powers live GPS, HOS and weekly miles on the dispatch tiles.</div>
         <div id="samDriversContent"><div class="sam-empty">No driver data loaded. Go to Sync and click "Drivers" or "Sync All".</div></div>
       </div>
     </div>
@@ -2537,21 +2540,28 @@ body.light-mode .flatpickr-current-month input.cur-year, body.light-mode .flatpi
       <div id="nextDestHosWarning" class="dash-dest-hos-warn"></div>
     </div>
 
-    <!-- ── STICKY NOTES INLINE ── -->
-    <div id="driverStickyWrap" class="dash-notes-row">
-      <div class="dash-notes-main">
-        <span class="dash-notes-label">Driver Notes <span style="font-family:'DM Sans',sans-serif;text-transform:none;letter-spacing:0;font-weight:400;color:var(--text-muted);font-size:9px;">— saved per driver</span></span>
-        <textarea id="driverStickyNotes" class="dash-notes-ta" placeholder="Examples: prefers Midwest loops • wants home Friday • avoids NYC • likes overnight runs • needs tire check..."></textarea>
-        <div class="dash-notes-footer">
-          <button class="dash-notes-save no-print" onclick="saveDriverStickyNotes()">💾 Save Notes</button>
-        </div>
+    <!-- ── STICKY NOTES INLINE (collapsible, collapsed by default) ── -->
+    <div id="driverStickyWrap" class="dash-notes-row" style="display:block;padding:0;">
+      <div onclick="toggleDriverNotes()" style="display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;padding:10px 16px;user-select:none;">
+        <span class="dash-notes-label" style="margin:0;">📝 Driver Notes <span id="driverNotesHint" style="font-family:'DM Sans',sans-serif;text-transform:none;letter-spacing:0;font-weight:400;color:var(--text-muted);font-size:10px;"></span></span>
+        <span id="driverNotesCaret" style="font-size:11px;color:var(--text-muted);transition:transform .15s;">▶</span>
       </div>
-      <div class="dash-quick-col">
-        <span class="dash-quick-label">Quick Add</span>
-        <button class="dash-quick-btn" onclick="appendStickyPrompt('Prefers: ')">🧭 Prefers lanes</button>
-        <button class="dash-quick-btn" onclick="appendStickyPrompt('Home time: ')">🏠 Home time</button>
-        <button class="dash-quick-btn" onclick="appendStickyPrompt('Avoid: ')">⛔ Avoid</button>
-        <button class="dash-quick-btn" onclick="appendStickyPrompt('Equipment/needs: ')">🛠️ Equipment</button>
+      <div id="driverNotesBody" style="display:none;padding:0 16px 12px;">
+        <div style="display:flex;gap:12px;align-items:flex-start;">
+          <div class="dash-notes-main">
+            <textarea id="driverStickyNotes" class="dash-notes-ta" placeholder="Examples: prefers Midwest loops • wants home Friday • avoids NYC • likes overnight runs • needs tire check..."></textarea>
+            <div class="dash-notes-footer">
+              <button class="dash-notes-save no-print" onclick="saveDriverStickyNotes()">💾 Save Notes</button>
+            </div>
+          </div>
+          <div class="dash-quick-col">
+            <span class="dash-quick-label">Quick Add</span>
+            <button class="dash-quick-btn" onclick="appendStickyPrompt('Prefers: ')">🧭 Prefers lanes</button>
+            <button class="dash-quick-btn" onclick="appendStickyPrompt('Home time: ')">🏠 Home time</button>
+            <button class="dash-quick-btn" onclick="appendStickyPrompt('Avoid: ')">⛔ Avoid</button>
+            <button class="dash-quick-btn" onclick="appendStickyPrompt('Equipment/needs: ')">🛠️ Equipment</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -6167,8 +6177,33 @@ function loadDriverStickyNotesToUI(){
     wrap.style.display = 'none';
     return;
   }
-  wrap.style.display = 'flex';
+  wrap.style.display = 'block';
   el.value = (d.stickyNotes || "");
+
+  // Collapsed-header hint: preview of this driver's notes
+  const hint = document.getElementById('driverNotesHint');
+  if (hint) {
+    const txt = (d.stickyNotes || '').trim().replace(/\s+/g, ' ');
+    hint.textContent = txt ? '— ' + (txt.length > 70 ? txt.slice(0, 70) + '…' : txt) : '— saved per driver · none yet';
+  }
+
+  // Apply remembered open/collapsed state (collapsed by default)
+  let open = false;
+  try { open = localStorage.getItem('dash_notes_open_v1') === '1'; } catch(e) {}
+  const body  = document.getElementById('driverNotesBody');
+  const caret = document.getElementById('driverNotesCaret');
+  if (body)  body.style.display = open ? 'block' : 'none';
+  if (caret) caret.style.transform = open ? 'rotate(90deg)' : '';
+}
+
+function toggleDriverNotes(force){
+  const body  = document.getElementById('driverNotesBody');
+  const caret = document.getElementById('driverNotesCaret');
+  if (!body) return;
+  const open = (typeof force === 'boolean') ? force : body.style.display === 'none';
+  body.style.display = open ? 'block' : 'none';
+  if (caret) caret.style.transform = open ? 'rotate(90deg)' : '';
+  try { localStorage.setItem('dash_notes_open_v1', open ? '1' : '0'); } catch(e) {}
 }
 
 function saveDriverStickyNotes(){
@@ -6284,6 +6319,106 @@ function saveDriverOverrides(){
 /************************* 
  * DRIVER STATUS MANAGEMENT
  *************************/
+// ── Toast notifications ──────────────────────────────────────────────────
+// Was being called by saveDriverStickyNotes() but never defined, which threw
+// "toast is not defined" and aborted the save handler.
+window.toast = function(msg, type) {
+  try {
+    var host = document.getElementById('wtToastHost');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'wtToastHost';
+      host.style.cssText = 'position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:30000;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none;';
+      document.body.appendChild(host);
+    }
+    var colors = type === 'error' ? ['rgba(255,68,85,0.14)','rgba(255,68,85,0.45)','#ff8e99']
+               : type === 'warn'  ? ['rgba(245,158,11,0.14)','rgba(245,158,11,0.45)','#fbbf24']
+               :                    ['rgba(59,185,80,0.14)','rgba(59,185,80,0.45)','#3fb950'];
+    var el = document.createElement('div');
+    el.style.cssText = 'background:' + colors[0] + ';border:1px solid ' + colors[1] + ';color:' + colors[2] +
+      ';padding:10px 18px;border-radius:10px;font-size:13px;font-weight:700;backdrop-filter:blur(8px);' +
+      'box-shadow:0 8px 28px rgba(0,0,0,0.45);opacity:0;transition:opacity .18s,transform .18s;transform:translateY(8px);max-width:90vw;';
+    el.textContent = msg;
+    host.appendChild(el);
+    requestAnimationFrame(function(){ el.style.opacity='1'; el.style.transform='translateY(0)'; });
+    setTimeout(function(){
+      el.style.opacity='0'; el.style.transform='translateY(8px)';
+      setTimeout(function(){ el.remove(); }, 200);
+    }, 2600);
+  } catch(e) { console.log('toast:', msg); }
+};
+
+// ── Driver pause status helpers ──────────────────────────────────────────
+// Single source of truth for pause state. The canonical field is d.status
+// ('active' | 'paused'); older/stray code wrote d.driverStatus, so both are
+// read here to avoid a driver appearing active after being paused.
+window.PAUSE_REASONS = {
+  sick:      { emoji: '🏥', label: 'Sick' },
+  home_time: { emoji: '🏠', label: 'Home Time' },
+  vacation:  { emoji: '🌴', label: 'Vacation' },
+  repairs:   { emoji: '🔧', label: 'Repairs' },
+  other:     { emoji: '📝', label: 'Other' }
+};
+
+window.isDriverPaused = function(d) {
+  return !!d && (d.status === 'paused' || d.driverStatus === 'paused');
+};
+
+// Returns {emoji, label, note, since, days} for display
+window.pauseMeta = function(d) {
+  var r = (d && d.pauseReason) || '';
+  var meta = window.PAUSE_REASONS[r] || { emoji: '⏸️', label: 'Paused' };
+  var note = (d && d.pauseNote) ? String(d.pauseNote).trim() : '';
+  var since = '', days = null;
+  if (d && d.pausedAt) {
+    var dt = new Date(d.pausedAt);
+    if (!isNaN(dt)) {
+      since = (dt.getMonth()+1) + '/' + dt.getDate();
+      days = Math.max(0, Math.floor((Date.now() - dt.getTime()) / 86400000));
+    }
+  }
+  return { emoji: meta.emoji, label: (r === 'other' && note) ? note : meta.label, note: note, since: since, days: days };
+};
+
+// Set / clear pause straight from the dispatch card (no Settings trip needed)
+window.setDriverPause = function(id, reason) {
+  var d = state.drivers && state.drivers[id];
+  if (!d) return;
+  var note = null;
+  if (reason === 'other') {
+    note = prompt('Reason for pausing ' + (d.name || 'driver') + ':', d.pauseNote || '');
+    if (note === null) return;              // cancelled
+    note = note.trim();
+    if (!note) { toast('Enter a reason to pause', 'warn'); return; }
+  }
+  d.status       = 'paused';
+  d.driverStatus = 'paused';                // keep legacy field in sync
+  d.pauseReason  = reason;
+  d.pauseNote    = note;
+  d.pausedAt     = new Date().toISOString();
+  if (!d.pauseHistory) d.pauseHistory = [];
+  d.pauseHistory.push({ status:'paused', reason:reason, note:note, timestamp:d.pausedAt });
+  saveState();
+  var m = window.pauseMeta(d);
+  toast(m.emoji + ' ' + (d.name||'Driver') + ' — ' + m.label, 'warn');
+  refreshAll();
+};
+
+window.resumeDriver = function(id) {
+  var d = state.drivers && state.drivers[id];
+  if (!d) return;
+  d.status       = 'active';
+  d.driverStatus = 'active';
+  d.pauseReason  = null;
+  d.pauseNote    = null;
+  d.pausedAt     = null;
+  if (!d.pauseHistory) d.pauseHistory = [];
+  d.pauseHistory.push({ status:'active', timestamp:new Date().toISOString() });
+  saveState();
+  toast('✅ ' + (d.name||'Driver') + ' back to active');
+  refreshAll();
+};
+
 function updateDriverStatusUI(){
   const activeRadio = document.querySelector('input[name="driver_status"][value="active"]');
   const pausedRadio = document.querySelector('input[name="driver_status"][value="paused"]');
@@ -6409,10 +6544,16 @@ function saveDriverStatus(){
   }
   
   d.status = newStatus;
+  d.driverStatus = newStatus;   // keep legacy field in sync with the canonical one
   saveState();
-  alert(`Driver status updated to: ${newStatus === 'paused' ? 'Paused' : 'Active'}`);
+  if (typeof toast === 'function') {
+    var _m = newStatus === 'paused' && window.pauseMeta ? window.pauseMeta(d) : null;
+    toast(_m ? (_m.emoji + ' ' + (d.name||'Driver') + ' — ' + _m.label) : ('✅ ' + (d.name||'Driver') + ' back to active'),
+          newStatus === 'paused' ? 'warn' : 'success');
+  }
   bindDriverStatusToInputs();
-  renderDriverSelect(); // Update driver dropdown to show status
+  renderDriverSelect();
+  if (typeof refreshAll === 'function') refreshAll();   // push status onto the dispatch cards immediately
 }
 
 function checkPausedDriverWarning(){
@@ -9861,6 +10002,74 @@ function gmapsGetKey() {
   return localStorage.getItem(GMAPS_KEY_STORAGE) || '';
 }
 
+// ── Google Maps basemap for the Weekly Route Map (via Leaflet GoogleMutant) ──
+// Dark "night mode" style so Google tiles match the app theme.
+const GMAPS_NIGHT_STYLE = [
+  { elementType: 'geometry', stylers: [{ color: '#242f3e' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#242f3e' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#746855' }] },
+  { featureType: 'administrative.locality', elementType: 'labels.text.fill', stylers: [{ color: '#d59563' }] },
+  { featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#38414e' }] },
+  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#212a37' }] },
+  { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#9ca5b3' }] },
+  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#746855' }] },
+  { featureType: 'road.highway', elementType: 'geometry.stroke', stylers: [{ color: '#1f2835' }] },
+  { featureType: 'road.highway', elementType: 'labels.text.fill', stylers: [{ color: '#f3d19c' }] },
+  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#17263c' }] },
+  { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#515c6d' }] },
+  { featureType: 'water', elementType: 'labels.text.stroke', stylers: [{ color: '#17263c' }] }
+];
+
+let _gmapsJsLoading = false;
+let _gmapsReadyCbs  = [];
+
+function gmapsMutantReady() {
+  return !!(window.google && window.google.maps && window.L && L.gridLayer && L.gridLayer.googleMutant);
+}
+
+function _gmapsFlushReady() {
+  if (!gmapsMutantReady()) return;
+  const cbs = _gmapsReadyCbs.slice();
+  _gmapsReadyCbs = [];
+  cbs.forEach(cb => { try { cb(); } catch(e) {} });
+}
+// Google Maps JS API calls this via the &callback= param
+window._gmapsJsApiLoaded = _gmapsFlushReady;
+
+function gmapsEnsureMutant(onReady) {
+  const key = gmapsGetKey();
+  if (!key) return false;
+  if (gmapsMutantReady()) { if (onReady) { try { onReady(); } catch(e) {} } return true; }
+  if (onReady) _gmapsReadyCbs.push(onReady);
+  if (_gmapsJsLoading) return false;
+  _gmapsJsLoading = true;
+
+  if (!(window.google && window.google.maps)) {
+    const s = document.createElement('script');
+    s.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(key) + '&loading=async&callback=_gmapsJsApiLoaded';
+    s.async = true;
+    s.onerror = function() { console.warn('Google Maps JS API failed to load — route map stays on Carto tiles'); };
+    document.head.appendChild(s);
+  }
+  if (!(window.L && L.gridLayer && L.gridLayer.googleMutant)) {
+    const m = document.createElement('script');
+    m.src = 'https://unpkg.com/leaflet.gridlayer.googlemutant@0.14.1/dist/Leaflet.GoogleMutant.js';
+    m.async = true;
+    m.onload = _gmapsFlushReady;
+    m.onerror = function() { console.warn('GoogleMutant plugin failed to load — route map stays on Carto tiles'); };
+    document.head.appendChild(m);
+  }
+  return false;
+}
+
+// Preload the Google Maps scripts shortly after login if a key is saved,
+// so the route map comes up on Google tiles from the first render.
+window.addEventListener('load', function() {
+  setTimeout(function() { try { gmapsEnsureMutant(); } catch(e) {} }, 1500);
+});
+
 function gmapsSaveKey() {
   const key = document.getElementById('gmapsApiKey')?.value.trim();
   if (!key) { gmapsSetStatus('⚠️ Enter a key first', 'var(--warning)'); return; }
@@ -11274,17 +11483,29 @@ function initMap() {
     if (pts && pts.length > 1) {
       segments.push({ pts: pts, load: load });
       pts.forEach(function(p) { points.push(p); });
+      // Remember this lane's road shape for future weeks on the same lane
+      if (load.origin && load.dest && !routeShapeGet(load.origin, load.dest)) {
+        routeShapeSave(load.origin, load.dest, routeShapeSimplify(pts, 80));
+      }
       return;
     }
 
-    // Fallback: straight line between stored coords (no route shape available)
+    // Fallback: no route shape on the load — try the per-lane shape cache
+    // (real road geometry from a previous fetch), else a straight line that
+    // fetchMissingRouteShapes() will upgrade in the background.
     if (load.coords && load.coords.start && load.coords.end) {
       var s = load.coords.start;
       var e = load.coords.end;
       if (s.lat && s.lon && e.lat && e.lon) {
-        segments.push({ pts: [[s.lat,s.lon],[e.lat,e.lon]], load: load });
-        points.push([s.lat,s.lon]);
-        points.push([e.lat,e.lon]);
+        var cachedShape = routeShapeGet(load.origin, load.dest);
+        if (cachedShape) {
+          segments.push({ pts: cachedShape, load: load });
+          cachedShape.forEach(function(p) { points.push(p); });
+        } else {
+          segments.push({ pts: [[s.lat,s.lon],[e.lat,e.lon]], load: load, straight: true });
+          points.push([s.lat,s.lon]);
+          points.push([e.lat,e.lon]);
+        }
       }
     }
   });
@@ -11301,16 +11522,31 @@ function initMap() {
   // Custom zoom control position
   L.control.zoom({ position: 'topright' }).addTo(_leafletMap);
 
-  // OSM tiles with CSS inversion filter to create dark map matching app theme
-  var tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; OpenStreetMap contributors',
-    maxZoom: 19
-  }).addTo(_leafletMap);
-  // Apply dark inversion filter to tile pane only (markers pane stays normal)
-  _leafletMap.getPane('tilePane').style.filter = 'invert(1) hue-rotate(180deg) brightness(0.85) saturate(0.6)';
-  // Re-invert the shadow pane so it isn't double-inverted
-  if (_leafletMap.getPane('shadowPane')) {
-    _leafletMap.getPane('shadowPane').style.filter = 'invert(1) hue-rotate(180deg)';
+  // Basemap: Google Maps (dark-styled, via GoogleMutant) when an API key is saved;
+  // Carto dark tiles otherwise / while the Google script loads.
+  // NOTE: OpenStreetMap's public tile servers blocked this app under their usage
+  // policy (osm.wiki/Blocked) — do not switch back to tile.openstreetmap.org.
+  var _gKey = (typeof gmapsGetKey === 'function') ? gmapsGetKey() : '';
+  var tileLayer;
+  if (_gKey && typeof gmapsMutantReady === 'function' && gmapsMutantReady()) {
+    tileLayer = L.gridLayer.googleMutant({ type: 'roadmap', styles: GMAPS_NIGHT_STYLE, maxZoom: 19 }).addTo(_leafletMap);
+  } else {
+    tileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+      subdomains: 'abcd',
+      maxZoom: 19
+    }).addTo(_leafletMap);
+    // First visit before the Google script is ready: swap tiles in place once it loads
+    if (_gKey && typeof gmapsEnsureMutant === 'function') {
+      gmapsEnsureMutant(function() {
+        try {
+          if (_leafletMap && tileLayer && _leafletMap.hasLayer(tileLayer)) {
+            _leafletMap.removeLayer(tileLayer);
+            L.gridLayer.googleMutant({ type: 'roadmap', styles: GMAPS_NIGHT_STYLE, maxZoom: 19 }).addTo(_leafletMap);
+          }
+        } catch(e) { console.warn('Google tile swap failed:', e); }
+      });
+    }
   }
 
   if (points.length === 0) {
@@ -11330,9 +11566,10 @@ function initMap() {
     var miles  = load ? (load.miles || load.loadedMiles || '—') : '—';
 
     // Draw route line with slight glow effect (thick dim underline + sharp bright line)
-    L.polyline(seg.pts, { color: color, weight: 5, opacity: 0.18 }).addTo(_leafletMap);
-    L.polyline(seg.pts, { color: color, weight: 2.5, opacity: 0.92,
+    var glowLine = L.polyline(seg.pts, { color: color, weight: 5, opacity: 0.18 }).addTo(_leafletMap);
+    var mainLine = L.polyline(seg.pts, { color: color, weight: 2.5, opacity: 0.92,
       dashArray: null }).addTo(_leafletMap);
+    seg._lines = [glowLine, mainLine];
 
     // Origin marker: numbered circle
     var startPt = seg.pts[0];
@@ -11366,6 +11603,88 @@ function initMap() {
   } catch(e) {
     _leafletMap.setView(defaultCenter, defaultZoom);
   }
+
+  // Upgrade any straight-line segments to real road shapes in the background
+  fetchMissingRouteShapes(segments);
+}
+
+// ═══ Per-lane route shape cache ═══
+// Real road geometry per origin|dest lane, kept in localStorage (NOT in state /
+// Firebase — polylines are large and this stays out of the 1MB doc limit).
+// Shapes are downsampled to ≤80 points (~2KB per lane), capped at 120 lanes.
+var ROUTE_SHAPE_CACHE_KEY = 'route_shape_cache_v1';
+
+function routeShapeKey(o, d) {
+  return String(o || '').trim().toLowerCase() + '|' + String(d || '').trim().toLowerCase();
+}
+
+function routeShapeGet(o, d) {
+  try {
+    var c = JSON.parse(localStorage.getItem(ROUTE_SHAPE_CACHE_KEY) || '{}');
+    var e = c[routeShapeKey(o, d)];
+    return (e && Array.isArray(e.pts) && e.pts.length > 1) ? e.pts : null;
+  } catch(e) { return null; }
+}
+
+function routeShapeSave(o, d, pts) {
+  try {
+    var c = JSON.parse(localStorage.getItem(ROUTE_SHAPE_CACHE_KEY) || '{}');
+    c[routeShapeKey(o, d)] = { pts: pts, ts: Date.now() };
+    var keys = Object.keys(c);
+    if (keys.length > 120) {
+      keys.sort(function(a, b) { return (c[a].ts || 0) - (c[b].ts || 0); });
+      keys.slice(0, keys.length - 120).forEach(function(k) { delete c[k]; });
+    }
+    localStorage.setItem(ROUTE_SHAPE_CACHE_KEY, JSON.stringify(c));
+  } catch(e) {}
+}
+
+function routeShapeSimplify(pts, maxPts) {
+  maxPts = maxPts || 80;
+  if (!Array.isArray(pts)) return [];
+  var round = function(p) { return [ +(+p[0]).toFixed(4), +(+p[1]).toFixed(4) ]; };
+  if (pts.length <= maxPts) return pts.map(round);
+  var step = (pts.length - 1) / (maxPts - 1);
+  var out = [];
+  for (var i = 0; i < maxPts; i++) out.push(round(pts[Math.round(i * step)]));
+  return out;
+}
+
+// ── Fetch real road shapes for straight-line segments (async, cached per lane) ──
+var _routeShapeFetching = false;
+function fetchMissingRouteShapes(segments) {
+  try {
+    if (_routeShapeFetching) return;
+    var key = (typeof gmapsGetKey === 'function') ? gmapsGetKey() : '';
+    if (!key) return;
+    var todo = (segments || []).filter(function(s) {
+      return s.straight && s.load && s.load.origin && s.load.dest;
+    }).slice(0, 8); // cap API calls per render — the cache covers repeats
+    if (!todo.length) return;
+    _routeShapeFetching = true;
+    var mapRef = _leafletMap;
+    (async function() {
+      for (var i = 0; i < todo.length; i++) {
+        var seg = todo[i];
+        try {
+          // A previous iteration may have fetched the same lane already
+          var pts = routeShapeGet(seg.load.origin, seg.load.dest);
+          if (!pts) {
+            var r = await gmapsRoute(seg.load.origin, seg.load.dest, {});
+            if (r && r.polylineLatLngs && r.polylineLatLngs.length > 1) {
+              pts = routeShapeSimplify(r.polylineLatLngs, 80);
+              routeShapeSave(seg.load.origin, seg.load.dest, pts);
+            }
+          }
+          // Reshape the drawn lines in place (only if this map is still live)
+          if (pts && _leafletMap === mapRef && seg._lines) {
+            seg._lines.forEach(function(pl) { try { pl.setLatLngs(pts); } catch(e) {} });
+          }
+        } catch(e) { /* no route — straight line stays */ }
+      }
+      _routeShapeFetching = false;
+    })();
+  } catch(e) { _routeShapeFetching = false; }
 }
 
 function gmapsDecodePolyline(encoded) {
@@ -14631,10 +14950,31 @@ function renderDispatchView() {
     var targetNet = getDriverTargetNet(d);
     var progPct   = targetNet > 0 ? Math.min(100, (wkT.net / targetNet) * 100) : 0;
     var progColor = progPct >= 100 ? 'var(--success)' : progPct >= 60 ? 'var(--warning)' : 'var(--danger)';
-    var isPaused  = d.driverStatus === 'paused';
+    var isPaused  = window.isDriverPaused ? window.isDriverPaused(d) : (d.status === 'paused');
+    var pMeta     = isPaused && window.pauseMeta ? window.pauseMeta(d) : null;
     var isCompany = d.driverType === 'company';
     var liveData  = window.samGetLiveDataForDriver ? window.samGetLiveDataForDriver(id) : null;
     var liveCity  = liveData && liveData.gpsCity ? liveData.gpsCity : null;
+
+    // Samsara strip — rough current-week metrics for linked drivers
+    var samStrip = '';
+    if (liveData && !isArchived) {
+      var fmtHM = function(ms) { return Math.floor(ms/3600000) + 'h ' + Math.floor((ms%3600000)/60000) + 'm'; };
+      var bits = [];
+      if (liveData.hos && liveData.hos.driveMs != null) {
+        var _dm = liveData.hos.driveMs;
+        var _dc = _dm <= 2*3600000 ? 'var(--danger)' : _dm <= 4*3600000 ? 'var(--warning)' : 'var(--success)';
+        bits.push('<span title="HOS drive time remaining">🕐 <b style="color:' + _dc + ';">' + fmtHM(_dm) + '</b> drive</span>');
+      }
+      if (liveData.truckName) bits.push('<span>🚛 ' + escapeHtml(liveData.truckName) + '</span>');
+      if (liveData.week && liveData.week.miles) bits.push('<span title="Samsara miles ' + (liveData.week.range ? escapeHtml(liveData.week.range.startDate + ' → ' + liveData.week.range.endDate) : 'this week') + '">🛣️ ' + Math.round(liveData.week.miles).toLocaleString() + ' mi</span>');
+      if (liveData.week && liveData.week.estCost) bits.push('<span title="Est. fuel cost">⛽ $' + Math.round(liveData.week.estCost).toLocaleString() + '</span>');
+      else if (liveData.week && liveData.week.mpg) bits.push('<span>⛽ ' + liveData.week.mpg.toFixed(1) + ' mpg</span>');
+      samStrip = '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:11px;color:var(--text-secondary);background:rgba(79,158,248,0.06);border:1px solid rgba(79,158,248,0.18);border-radius:8px;padding:6px 10px;margin-bottom:8px;">'
+        + '<span style="font-size:9px;font-weight:800;letter-spacing:.8px;color:var(--accent-cyan);">🛰️ SAMSARA</span>'
+        + (bits.length ? bits.join('') : '<span style="color:var(--text-muted);">linked — waiting for sync</span>')
+        + '</div>';
+    }
     var _counted  = slice.current.concat(slice.carriedIn);
     var lastLoad  = _counted.length > 0 ? _counted[_counted.length-1] : null;
     var lastDest  = lastLoad ? (lastLoad.dest || 'Unknown') : 'No loads yet';
@@ -14645,6 +14985,15 @@ function renderDispatchView() {
     var kebab = '<div style="position:relative;display:inline-block;">' +
       '<button onclick="toggleDriverKebab(\'' + id + '\')" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:18px;padding:2px 8px;border-radius:6px;line-height:1;" title="Options">···</button>' +
       '<div id="kebab-' + id + '" style="display:none;position:absolute;right:0;top:100%;background:var(--bg-elevated);border:1px solid var(--border-medium);border-radius:10px;min-width:160px;z-index:200;box-shadow:0 8px 32px rgba(0,0,0,0.5);overflow:hidden;">' +
+        (isArchived ? '' :
+          (isPaused
+            ? '<button onclick="resumeDriver(\'' + id + '\');toggleDriverKebab(\'' + id + '\')" style="width:100%;padding:10px 16px;text-align:left;background:none;border:none;border-bottom:1px solid var(--border-subtle);color:#3fb950;font-size:12px;font-weight:700;cursor:pointer;">✅ Back to Active</button>'
+            : ['home_time','sick','vacation','repairs','other'].map(function(rk) {
+                var rm = window.PAUSE_REASONS[rk];
+                return '<button onclick="setDriverPause(\'' + id + '\',\'' + rk + '\');toggleDriverKebab(\'' + id + '\')" style="width:100%;padding:9px 16px;text-align:left;background:none;border:none;border-bottom:1px solid var(--border-subtle);color:var(--text-secondary);font-size:12px;font-weight:600;cursor:pointer;">' + rm.emoji + ' ' + rm.label + '</button>';
+              }).join('')
+          ) + '<div style="padding:5px 16px;font-size:9px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-muted);background:rgba(255,255,255,0.02);border-bottom:1px solid var(--border-subtle);">Driver</div>'
+        ) +
         (isArchived
           ? '<button onclick="unarchiveDriver(\'' + id + '\');toggleDriverKebab(\'' + id + '\')" style="width:100%;padding:10px 16px;text-align:left;background:none;border:none;border-bottom:1px solid var(--border-subtle);color:#3fb950;font-size:12px;font-weight:700;cursor:pointer;">✅ Unarchive Driver</button>'
           : '<button onclick="archiveDriver(\'' + id + '\')" style="width:100%;padding:10px 16px;text-align:left;background:none;border:none;border-bottom:1px solid var(--border-subtle);color:var(--text-secondary);font-size:12px;font-weight:600;cursor:pointer;">📦 Archive Driver</button>') +
@@ -14654,7 +15003,7 @@ function renderDispatchView() {
 
     var cardStyle = isArchived
       ? 'opacity:0.55;filter:grayscale(0.4);'
-      : '';
+      : (isPaused ? 'border-color:rgba(245,158,11,0.45);background:linear-gradient(180deg,rgba(245,158,11,0.05),transparent);' : '');
 
     return '<div class="driver-card" style="' + cardStyle + '">'
       + '<div class="driver-card-header">'
@@ -14663,7 +15012,9 @@ function renderDispatchView() {
           + (truckInfo ? '<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">' + truckInfo + '</div>' : '')
         + '</div>'
         + '<div style="display:flex;align-items:center;gap:6px;">'
-          + (isArchived ? '' : '<span class="driver-status ' + (isPaused ? '' : 'active') + '">' + (isPaused ? ('&#x23F8; ' + escapeHtml(d.pauseReason || 'Paused')) : '&#x25CF; Active') + '</span>')
+          + (isArchived ? '' : '<span class="driver-status ' + (isPaused ? '' : 'active') + '"' +
+              (isPaused && pMeta && pMeta.since ? ' title="Since ' + pMeta.since + (pMeta.days !== null ? ' · ' + pMeta.days + ' day' + (pMeta.days===1?'':'s') : '') + '"' : '') + '>' +
+              (isPaused ? (pMeta.emoji + ' ' + escapeHtml(pMeta.label)) : '&#x25CF; Active') + '</span>')
           + kebab
         + '</div>'
       + '</div>'
@@ -14679,11 +15030,23 @@ function renderDispatchView() {
         + '</div>'
       + '</div>'
 
-      + '<div class="current-route">'
-        + '<div class="route-label">&#x1F6E3; Current Route</div>'
-        + '<div class="route-display">' + currentRoute + '</div>'
-        + (liveCity ? '<div style="font-size:11px;color:var(--accent-cyan);margin-top:4px;font-weight:700;">&#x25CF; LIVE: ' + escapeHtml(liveCity) + '</div>' : '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">&#x1F4CD; Last: ' + escapeHtml(lastDest) + '</div>')
-      + '</div>'
+      + (isPaused
+        ? '<div class="current-route" style="border-color:rgba(245,158,11,0.35);background:rgba(245,158,11,0.06);">'
+            + '<div class="route-label" style="color:var(--warning);">' + pMeta.emoji + ' ' + escapeHtml(pMeta.label) + '</div>'
+            + '<div class="route-display" style="font-size:13px;color:var(--warning);">'
+              + (pMeta.since ? 'Since ' + pMeta.since + (pMeta.days !== null ? ' &middot; ' + pMeta.days + ' day' + (pMeta.days===1?'':'s') : '') : 'Not available')
+            + '</div>'
+            + (pMeta.note && pMeta.note !== pMeta.label
+                ? '<div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">&#x1F4DD; ' + escapeHtml(pMeta.note) + '</div>' : '')
+            + '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">&#x1F4CD; Last: ' + escapeHtml(lastDest) + '</div>'
+          + '</div>'
+        : '<div class="current-route">'
+            + '<div class="route-label">&#x1F6E3; Current Route</div>'
+            + '<div class="route-display">' + currentRoute + '</div>'
+            + (liveCity ? '<div style="font-size:11px;color:var(--accent-cyan);margin-top:4px;font-weight:700;">&#x25CF; LIVE: ' + escapeHtml(liveCity) + '</div>' : '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">&#x1F4CD; Last: ' + escapeHtml(lastDest) + '</div>')
+          + '</div>')
+
+      + samStrip
 
       + '<div style="height:6px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;margin-bottom:6px;">'
         + '<div style="height:100%;width:' + Math.max(0,progPct) + '%;background:' + progColor + ';border-radius:3px;"></div>'
@@ -14929,8 +15292,9 @@ function renderFleetCards(){
     else if (rpm >= CONFIG.RPM_TIER_YELLOW) rpmTier = 'yellow';
     
     // Status
-    const isPaused = d.driverStatus === 'paused';
-    const pauseReason = d.pauseReason || '';
+    const isPaused = window.isDriverPaused ? window.isDriverPaused(d) : (d.status === 'paused');
+    const _pm = isPaused && window.pauseMeta ? window.pauseMeta(d) : null;
+    const pauseReason = _pm ? (_pm.emoji + ' ' + _pm.label) : (d.pauseReason || '');
     const pauseNote = d.pauseNote || '';
     
     // Live Samsara GPS + HOS (if synced)
@@ -15465,6 +15829,10 @@ if __name__=="__main__":
     rows.forEach(r => {
       r.style.display = r.textContent.toLowerCase().includes(q) ? '' : 'none';
     });
+    // Also filter the Link Your Drivers panel rows
+    document.querySelectorAll('#samLinkPanel .sam-link-row').forEach(r => {
+      r.style.display = r.textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
   };
 
   window.samFilterVehicles = function() {
@@ -15554,11 +15922,26 @@ if __name__=="__main__":
 
     try { window._sam.links = JSON.parse(localStorage.getItem(SAM_LINK_STORAGE) || '{}'); } catch(e) {}
 
-    const appDriverOptions = Object.entries(state.drivers || {})
+    // App driver options: ACTIVE (non-archived) only, sorted by name
+    const activeAppDrivers = Object.entries(state.drivers || {})
+      .filter(([id, d]) => !d.archived)
+      .sort((a, b) => (a[1].name || '').localeCompare(b[1].name || ''));
+    const appDriverOptions = activeAppDrivers
       .map(([id, d]) => `<option value="${id}">${escapeHtml(d.name)}</option>`)
       .join('');
 
+    // Roster order: active Samsara drivers alphabetically, deactivated hidden behind toggle
+    const samActive  = drivers.filter(d => !d.isDeactivated).sort((a,b) => (a.name||'').localeCompare(b.name||''));
+    const samInactive = drivers.filter(d => d.isDeactivated).sort((a,b) => (a.name||'').localeCompare(b.name||''));
+    const showInactive = !!window._sam._showDeactivated;
+    const roster = showInactive ? samActive.concat(samInactive) : samActive;
+
     el.innerHTML = `
+      <div id="samLinkPanel">${samLinkPanelHtml()}</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin:18px 0 8px;">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);font-weight:700;">🛰️ Samsara Roster (${samActive.length} active${samInactive.length ? ', ' + samInactive.length + ' deactivated' : ''})</div>
+        ${samInactive.length ? `<label style="font-size:11px;color:var(--text-muted);cursor:pointer;display:flex;align-items:center;gap:6px;"><input type="checkbox" ${showInactive ? 'checked' : ''} onchange="window._sam._showDeactivated=this.checked;samRenderDrivers_pub();">Show deactivated</label>` : ''}
+      </div>
       <table class="sam-table">
         <thead><tr>
           <th>Samsara Driver</th>
@@ -15568,12 +15951,17 @@ if __name__=="__main__":
           <th>Assign Truck</th>
         </tr></thead>
         <tbody>
-          ${drivers.map((d, idx) => {
+          ${roster.map(d => {
+            const idx = drivers.indexOf(d);
             const linked = window._sam.links[d.id] || '';
             let truckAssigns = {};
             try { truckAssigns = JSON.parse(localStorage.getItem(SAM_TRUCK_STORAGE) || '{}'); } catch(e) {}
             const assignedTruckId = truckAssigns[d.id] || '';
             const pickerId = 'truckpicker_' + d.id.replace(/[^a-zA-Z0-9]/g,'_');
+            // If linked to an archived driver, surface it so the select doesn't silently show "Not linked"
+            const linkedDrv = linked && state.drivers ? state.drivers[linked] : null;
+            const extraOpt = (linkedDrv && linkedDrv.archived)
+              ? `<option value="${linked}">${escapeHtml(linkedDrv.name)} (archived)</option>` : '';
             return `<tr style="cursor:pointer;" onclick="if(!event.target.closest('.truck-picker-cell'))samOpenDriverProfile(${idx})">
               <td>
                 <div style="font-weight:700;color:var(--accent-cyan);text-decoration:underline dotted;">${escapeHtml(d.name || 'Unknown')}</div>
@@ -15581,10 +15969,10 @@ if __name__=="__main__":
               </td>
               <td><span class="sam-badge ${d.isDeactivated ? 'gray' : 'green'}">${d.isDeactivated ? 'Inactive' : 'Active'}</span></td>
               <td style="font-size:12px;color:var(--text-muted);">${escapeHtml(d.licenseNumber || '—')}</td>
-              <td>
+              <td onclick="event.stopPropagation()">
                 <select class="sam-link-select" data-samid="${escapeHtml(d.id)}" onchange="samLinkDriver(this.dataset.samid, this.value)" style="min-width:150px;">
                   <option value="">-- Not linked --</option>
-                  ${appDriverOptions.replace(`value="${linked}"`, `value="${linked}" selected`)}
+                  ${(appDriverOptions + extraOpt).replace(`value="${linked}"`, `value="${linked}" selected`)}
                 </select>
               </td>
               <td class="truck-picker-cell" onclick="event.stopPropagation()" style="min-width:200px;">
@@ -15606,8 +15994,268 @@ if __name__=="__main__":
           window.samRenderTruckPicker(pickerId, d.id, assignedTruckId);
         }
       });
+      samInitLinkPickers();
     }, 0);
   }
+  // Public handle so inline HTML attributes can re-render the pane
+  window.samRenderDrivers_pub = samRenderDrivers;
+
+  // ═══ DRIVER LINK PANEL — one row per active Watchtower driver ═══
+  function samLinkPanelHtml() {
+    let links = {};
+    try { links = JSON.parse(localStorage.getItem(SAM_LINK_STORAGE) || '{}'); } catch(e) {}
+    let truckAssigns = {};
+    try { truckAssigns = JSON.parse(localStorage.getItem(SAM_TRUCK_STORAGE) || '{}'); } catch(e) {}
+    const appActive = Object.entries(state.drivers || {})
+      .filter(([id, d]) => !d.archived)
+      .sort((a, b) => (a[1].name || '').localeCompare(b[1].name || ''));
+    const rev = {};
+    Object.keys(links).forEach(k => { rev[links[k]] = k; });
+    const unlinked = appActive.filter(([id]) => !rev[id]).length;
+
+    const rows = appActive.map(([appId, d]) => {
+      const samId  = rev[appId];
+      const samDrv = samId ? (window._sam.drivers || []).find(s => s.id === samId) : null;
+      const truckId = samId ? truckAssigns[samId] : null;
+      const truck   = truckId ? (window._sam.vehicles || []).find(v => v.id === truckId) : null;
+      const pickId  = 'linkpicker_' + appId.replace(/[^a-zA-Z0-9]/g, '_');
+      return `<div class="sam-link-row" style="display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--border-subtle);">
+        <div style="flex:1;min-width:140px;">
+          <div style="font-weight:700;color:var(--text-primary);font-size:13px;">${escapeHtml(d.name || 'Unnamed')}</div>
+          <div style="font-size:11px;color:var(--text-muted);">${d.driverType === 'company' ? 'Company' : 'Owner Op'}${d.truckNumber ? ' · #' + escapeHtml(String(d.truckNumber)) : ''}</div>
+        </div>
+        <div style="flex:1.4;min-width:210px;">
+          ${samId
+            ? `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                 <span style="font-size:12px;font-weight:700;color:var(--success);">🔗 ${escapeHtml(samDrv ? (samDrv.name || samId) : 'Samsara driver')}</span>
+                 ${truck ? `<span style="font-size:11px;color:var(--accent-cyan);">🚛 ${escapeHtml(truck.name || truckId)}</span>` : `<span style="font-size:11px;color:var(--warning);">no truck yet</span>`}
+                 <button onclick="samLinkDriver('${escapeHtml(samId)}','')" style="background:none;border:1px solid var(--border-medium);border-radius:6px;color:var(--text-muted);font-size:10px;padding:2px 8px;cursor:pointer;">✕ Unlink</button>
+               </div>`
+            : `<div id="${pickId}" data-appid="${escapeHtml(appId)}"></div>`}
+        </div>
+      </div>`;
+    }).join('');
+
+    return `<div style="background:var(--bg-elevated);border:1px solid var(--border-medium);border-radius:12px;overflow:hidden;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-bottom:1px solid var(--border-medium);background:rgba(79,158,248,0.05);flex-wrap:wrap;">
+        <div>
+          <div style="font-size:13px;font-weight:800;color:var(--text-primary);">🔗 Link Your Drivers</div>
+          <div style="font-size:11px;color:var(--text-muted);">${unlinked ? unlinked + ' active driver' + (unlinked === 1 ? '' : 's') + ' not linked yet' : 'All active drivers linked ✓'} · archived drivers hidden · truck comes over automatically</div>
+        </div>
+        ${unlinked ? `<button onclick="samAutoMatchAll()" style="padding:8px 16px;background:var(--accent-cyan);border:none;border-radius:8px;color:#04121f;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;">⚡ Auto-Match by Name</button>` : ''}
+      </div>
+      ${rows || '<div class="sam-empty">No active drivers in Watchtower.</div>'}
+    </div>`;
+  }
+
+  // Init searchable Samsara-driver pickers for every unlinked row in the panel
+  function samInitLinkPickers() {
+    document.querySelectorAll('#samLinkPanel [id^="linkpicker_"]').forEach(elp => {
+      window.samRenderLinkPicker(elp.id, elp.dataset.appid);
+    });
+  }
+
+  window.samRenderLinkPicker = function(containerId, appId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    container.innerHTML = `
+      <div style="position:relative;">
+        <input type="text" id="${containerId}_search" autocomplete="off" placeholder="🔍 Type Samsara driver name…"
+          style="width:100%;padding:8px 10px;background:var(--bg-primary);border:1px solid var(--border-medium);border-radius:8px;color:var(--text-primary);font-size:13px;box-sizing:border-box;"
+          oninput="samFilterLinkDrivers('${containerId}')"
+          onfocus="samFilterLinkDrivers('${containerId}')"
+          onclick="event.stopPropagation()">
+        <div id="${containerId}_list" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:9999;background:var(--bg-elevated);border:1px solid var(--border-medium);border-radius:8px;max-height:220px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,0.5);margin-top:2px;"></div>
+      </div>`;
+    container._appId = appId;
+  };
+
+  window.samFilterLinkDrivers = function(containerId) {
+    const container = document.getElementById(containerId);
+    const input = document.getElementById(containerId + '_search');
+    const list  = document.getElementById(containerId + '_list');
+    if (!container || !input || !list) return;
+    const appId = container._appId || container.dataset.appid;
+    const appName = (state.drivers && state.drivers[appId]) ? state.drivers[appId].name : '';
+
+    let links = {};
+    try { links = JSON.parse(localStorage.getItem(SAM_LINK_STORAGE) || '{}'); } catch(e) {}
+    const q = (input.value || '').toLowerCase();
+
+    // Candidates: active Samsara drivers not already linked to someone else
+    let cands = (window._sam.drivers || [])
+      .filter(s => !s.isDeactivated && (!links[s.id] || links[s.id] === appId))
+      .map(s => ({ s, score: samNameScore(appName, s.name) }))
+      .filter(c => !q || (c.s.name || '').toLowerCase().includes(q))
+      .sort((a, b) => b.score - a.score || (a.s.name || '').localeCompare(b.s.name || ''));
+
+    if (!(window._sam.drivers || []).length) {
+      list.style.display = 'block';
+      list.innerHTML = '<div style="padding:10px 12px;color:var(--warning);font-size:12px;">No Samsara drivers loaded — go to Sync tab and run Sync All first.</div>';
+      return;
+    }
+
+    list.style.display = 'block';
+    list.innerHTML = cands.length
+      ? cands.slice(0, 30).map((c, i) => `
+          <div onclick="samPickLinkDriver('${containerId}','${escapeHtml(c.s.id)}')"
+            style="padding:9px 12px;cursor:pointer;font-size:13px;color:var(--text-primary);border-bottom:1px solid var(--border-subtle);display:flex;justify-content:space-between;align-items:center;gap:8px;"
+            onmouseover="this.style.background='rgba(79,158,248,0.08)'" onmouseout="this.style.background=''">
+            <span>👤 ${escapeHtml(c.s.name || c.s.id)}</span>
+            ${i === 0 && c.score >= 60 && !q ? '<span style="font-size:10px;font-weight:800;color:var(--success);white-space:nowrap;">⭐ best match</span>' : ''}
+          </div>`).join('')
+      : '<div style="padding:10px 12px;color:var(--text-muted);font-size:12px;">No matching Samsara drivers</div>';
+
+    setTimeout(() => {
+      const closer = (e) => {
+        if (!list.contains(e.target) && e.target !== input) {
+          list.style.display = 'none';
+          document.removeEventListener('click', closer);
+        }
+      };
+      document.addEventListener('click', closer);
+    }, 0);
+  };
+
+  window.samPickLinkDriver = function(containerId, samId) {
+    const container = document.getElementById(containerId);
+    const appId = container ? (container._appId || container.dataset.appid) : null;
+    if (!appId) return;
+    window.samLinkDriver(samId, appId);
+  };
+
+  // ═══ Fuzzy name matching ═══
+  function samNameTokens(s) {
+    return String(s || '').toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(Boolean);
+  }
+  function samNameScore(a, b) {
+    const ta = samNameTokens(a), tb = samNameTokens(b);
+    if (!ta.length || !tb.length) return 0;
+    if (ta.join(' ') === tb.join(' ')) return 100;
+    const setB = new Set(tb);
+    let hits = 0;
+    ta.forEach(t => {
+      if (setB.has(t)) hits += 1;
+      else if (tb.some(x => x.length >= 3 && t.length >= 3 && (x.startsWith(t) || t.startsWith(x)))) hits += 0.7;
+    });
+    return Math.round((hits / Math.max(ta.length, tb.length)) * 90);
+  }
+
+  // ═══ Auto-match all unlinked active drivers by name ═══
+  window.samAutoMatchAll = function() {
+    if (!(window._sam.drivers || []).length) {
+      if (window.toast) toast('Load Samsara drivers first — Sync tab → Sync All', 'warn');
+      return;
+    }
+    let links = {};
+    try { links = JSON.parse(localStorage.getItem(SAM_LINK_STORAGE) || '{}'); } catch(e) {}
+    const rev = {};
+    Object.keys(links).forEach(k => { rev[links[k]] = k; });
+    const takenSam = new Set(Object.keys(links));
+    const made = [];
+
+    Object.entries(state.drivers || {})
+      .filter(([id, d]) => !d.archived && !rev[id])
+      .forEach(([appId, d]) => {
+        let best = null, bestScore = 0, second = 0;
+        (window._sam.drivers || []).forEach(s => {
+          if (s.isDeactivated || takenSam.has(s.id)) return;
+          const sc = samNameScore(d.name, s.name);
+          if (sc > bestScore) { second = bestScore; bestScore = sc; best = s; }
+          else if (sc > second) second = sc;
+        });
+        if (best && bestScore >= 60 && bestScore > second) {
+          window.samLinkDriver(best.id, appId, { silent: true });
+          takenSam.add(best.id);
+          made.push(d.name);
+        }
+      });
+
+    samRenderDrivers();
+    if (window.toast) {
+      toast(made.length
+        ? '⚡ Auto-linked ' + made.length + ' driver' + (made.length === 1 ? '' : 's') + ': ' + made.join(', ')
+        : 'No confident name matches — use the search boxes to link manually', made.length ? 'success' : 'warn');
+    }
+    if (typeof renderDispatchView === 'function') { try { renderDispatchView(); } catch(e) {} }
+  };
+
+  // ═══ Pull Samsara's truck assignment over to Watchtower on link ═══
+  window.samAutoAssignTruckFor = function(samId, appId) {
+    try {
+      const samDrv = (window._sam.drivers || []).find(s => s.id === samId);
+      let vehicleId = samDrv?.staticAssignedVehicle?.id || samDrv?.vehicle?.id || null;
+      let vehicleName = samDrv?.staticAssignedVehicle?.name || samDrv?.vehicle?.name || null;
+      // Fallback 1: vehicle records carry staticAssignedDriver
+      if (!vehicleId) {
+        const v = (window._sam.vehicles || []).find(v => v.staticAssignedDriver?.id === samId);
+        if (v) { vehicleId = v.id; vehicleName = v.name || null; }
+      }
+      // Fallback 2: live vehicle stats carry a current-driver decoration
+      if (!vehicleId && window._sam._vehicleStats) {
+        const entry = Object.values(window._sam._vehicleStats).find(e => e.driver?.id === samId);
+        if (entry) {
+          vehicleId = entry.id;
+          const v = (window._sam.vehicles || []).find(v => v.id === entry.id);
+          vehicleName = (v && v.name) || null;
+        }
+      }
+      if (!vehicleId) return null;
+
+      // Save the Samsara-side truck assignment (powers live GPS lookup)
+      const assigns = JSON.parse(localStorage.getItem(SAM_TRUCK_STORAGE) || '{}');
+      assigns[samId] = vehicleId;
+      localStorage.setItem(SAM_TRUCK_STORAGE, JSON.stringify(assigns));
+
+      // Mirror the truck number onto the Watchtower driver card
+      if (appId && state.drivers && state.drivers[appId] && vehicleName) {
+        const m = String(vehicleName).match(/\d{2,}/);
+        const num = m ? m[0] : String(vehicleName).trim();
+        if (num && state.drivers[appId].truckNumber !== num) {
+          state.drivers[appId].truckNumber = num;
+          if (typeof saveState === 'function') saveState();
+        }
+      }
+      return vehicleName || vehicleId;
+    } catch(e) {
+      console.warn('samAutoAssignTruckFor error:', e);
+      return null;
+    }
+  };
+
+  window.samLinkDriver = function(samId, appId, opts) {
+    opts = opts || {};
+    try { window._sam.links = JSON.parse(localStorage.getItem(SAM_LINK_STORAGE) || '{}'); } catch(e) {}
+    if (appId) {
+      // Enforce one-to-one: clear any other Samsara driver pointing at this app driver
+      Object.keys(window._sam.links).forEach(k => {
+        if (window._sam.links[k] === appId && k !== samId) delete window._sam.links[k];
+      });
+      window._sam.links[samId] = appId;
+    } else {
+      delete window._sam.links[samId];
+    }
+    localStorage.setItem(SAM_LINK_STORAGE, JSON.stringify(window._sam.links));
+
+    // Bring over Samsara's current truck assignment automatically
+    let truckName = null;
+    if (appId) truckName = window.samAutoAssignTruckFor(samId, appId);
+
+    if (!opts.silent) {
+      const samDrv = (window._sam.drivers || []).find(s => s.id === samId);
+      const appDrv = (appId && state.drivers) ? state.drivers[appId] : null;
+      if (window.toast) {
+        toast(appId
+          ? '🔗 Linked ' + ((appDrv && appDrv.name) || 'driver') + ' ↔ ' + ((samDrv && samDrv.name) || 'Samsara') + (truckName ? ' · 🚛 ' + truckName : '')
+          : 'Driver unlinked', appId ? 'success' : 'warn');
+      } else {
+        samSetStatus('Driver link saved.', 'ok');
+      }
+      samRenderDrivers();
+      if (typeof renderDispatchView === 'function') { try { renderDispatchView(); } catch(e) {} }
+      if (typeof renderFleetCards === 'function') { try { renderFleetCards(); } catch(e) {} }
+    }
+  };
 
   // ── Searchable truck picker ──
   // Renders a search input + dropdown list instead of a plain <select>
@@ -15707,16 +16355,8 @@ if __name__=="__main__":
   };
 
 
-  window.samLinkDriver = function(samId, appId) {
-    try { window._sam.links = JSON.parse(localStorage.getItem(SAM_LINK_STORAGE) || '{}'); } catch(e) {}
-    if (appId) {
-      window._sam.links[samId] = appId;
-    } else {
-      delete window._sam.links[samId];
-    }
-    localStorage.setItem(SAM_LINK_STORAGE, JSON.stringify(window._sam.links));
-    samSetStatus('Driver link saved.', 'ok');
-  };
+  // (samLinkDriver is defined above, next to the link panel — handles one-to-one
+  //  links, auto truck assignment, and dispatch refresh.)
 
   // ── Load Vehicles ──
   window.samLoadVehicles = async function() {
@@ -15770,6 +16410,9 @@ if __name__=="__main__":
           window._sam._vehicleStats = statsMap;
         } catch(e) { /* locations endpoint optional */ }
       }
+
+      samSaveCache('vehicles', vehicles);
+      samSaveCache('vehicleStats', statsMap);
 
       samRenderVehicles(statsMap);
       samSetStatus(`✅ Loaded ${vehicles.length} vehicles from Samsara`, 'ok');
@@ -15990,6 +16633,7 @@ if __name__=="__main__":
 
     window._sam.fuelData  = rows;
     window._sam.fuelDates = { startDate, endDate };
+    if (rows.length) samSaveCache('fuel', { rows, startDate, endDate });
 
     if (rows.length) {
       samRenderFuel(rows, startDate, endDate);
@@ -16015,7 +16659,10 @@ if __name__=="__main__":
     try { window._sam.links = JSON.parse(localStorage.getItem(SAM_LINK_STORAGE) || '{}'); } catch(e) {}
 
     // Reverse link map: samId → appDriverId, and appDriverId → samId
+    // Active (non-archived) drivers only, sorted by name
     const appDriverOptions = Object.entries(state.drivers || {})
+      .filter(([id, d]) => !d.archived)
+      .sort((a, b) => (a[1].name || '').localeCompare(b[1].name || ''))
       .map(([id, d]) => `<option value="${id}">${escapeHtml(d.name)}</option>`)
       .join('');
 
@@ -16190,6 +16837,7 @@ if __name__=="__main__":
       window._sam.hos     = clocks;
       window._sam.hosById = {};
       clocks.forEach(c => { if (c.driver?.id) window._sam.hosById[c.driver.id] = c; });
+      samSaveCache('hos', clocks);
 
       samRenderHOS(clocks, violations);
       samSetStatus(`✅ HOS loaded for ${clocks.length} drivers`, 'ok');
@@ -16299,7 +16947,28 @@ if __name__=="__main__":
         }
       }
 
-      return { samId, hos, gpsCity, hasTruck: !!samVehicleId };
+      // Truck name (from the linked Samsara vehicle)
+      let truckName = null;
+      if (samVehicleId) {
+        const v = (window._sam.vehicles || []).find(v => v.id === samVehicleId);
+        truckName = (v && v.name) || null;
+      }
+
+      // Current-week stats from the fuel-energy report (if loaded)
+      let week = null;
+      let fr = (window._sam.fuelData || []).find(r => r.source === 'drivers' && r.id === samId);
+      if (!fr && samVehicleId) fr = (window._sam.fuelData || []).find(r => r.source === 'vehicles' && r.id === samVehicleId);
+      if (fr) {
+        week = {
+          miles:   fr.distanceMiles || null,
+          fuelGal: fr.fuelConsumedGal || null,
+          mpg:     fr.mpg || null,
+          estCost: fr.estCost ?? null,
+          range:   window._sam.fuelDates || null
+        };
+      }
+
+      return { samId, hos, gpsCity, hasTruck: !!samVehicleId, truckName, week };
     } catch(e) {
       console.warn('samGetLiveDataForDriver error:', e);
       return null;
@@ -16359,6 +17028,9 @@ if __name__=="__main__":
     const _lbl = document.getElementById('samLastSyncedLabel');
     if (_lbl) { const _t = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); _lbl.textContent = errors.length ? '⚠️ Sync error ' + _t : '🛰️ Synced · ' + _t; }
     if (typeof updateUI === 'function') updateUI(); // refresh dashboard GPS + HOS
+    // Push fresh Samsara data onto the dispatch + fleet tiles
+    if (typeof renderDispatchView === 'function') { try { renderDispatchView(); } catch(e) {} }
+    if (typeof renderFleetCards === 'function') { try { renderFleetCards(); } catch(e) {} }
   };
 
   // Quick refresh of GPS + HOS only — for use in fleet modal
@@ -16430,6 +17102,33 @@ if __name__=="__main__":
 
     // Load saved driver links
     try { window._sam.links = JSON.parse(localStorage.getItem(SAM_LINK_STORAGE) || '{}'); } catch(e) {}
+
+    // Hydrate Samsara state from the local cache (up to 6h old) so linked drivers
+    // show their truck / HOS / week metrics on dispatch tiles immediately,
+    // before the next live sync completes.
+    try {
+      const AGE = 6 * 3600 * 1000;
+      const cd = samGetCache('drivers', AGE);      if (cd) window._sam.drivers = cd;
+      const cv = samGetCache('vehicles', AGE);     if (cv) window._sam.vehicles = cv;
+      const cs = samGetCache('vehicleStats', AGE); if (cs) window._sam._vehicleStats = cs;
+      const ch = samGetCache('hos', AGE);
+      if (ch) {
+        window._sam.hos = ch;
+        window._sam.hosById = {};
+        ch.forEach(c => { if (c.driver?.id) window._sam.hosById[c.driver.id] = c; });
+      }
+      const cf = samGetCache('fuel', AGE);
+      if (cf && cf.rows) {
+        window._sam.fuelData  = cf.rows;
+        window._sam.fuelDates = { startDate: cf.startDate, endDate: cf.endDate };
+      }
+      if (cd || cv) {
+        // Re-render dispatch tiles now that cached Samsara data is available
+        setTimeout(() => {
+          if (typeof renderDispatchView === 'function') { try { renderDispatchView(); } catch(e) {} }
+        }, 800);
+      }
+    } catch(e) { console.warn('Samsara cache hydrate failed:', e); }
   });
 
   // ═══════════════════════════════════════════
