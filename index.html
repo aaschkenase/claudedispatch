@@ -2742,8 +2742,7 @@ body.light-mode .flatpickr-current-month input.cur-year, body.light-mode .flatpi
               </div>
             </div>
 
-            <!-- ── Rate Intelligence Panel (auto-shows when origin+dest+miles filled) ── -->
-            <div id="rateIntelPanel" style="display:none;margin-bottom:10px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-lg);overflow:hidden;"></div>
+            <!-- Rate Intelligence + Load Analyzer now live in the right column ("Load Intelligence" card) -->
 
             <!-- RPM Feedback Bar -->
             <!-- ── Save Lane button (appears when origin+dest+gross filled) ── -->
@@ -2753,29 +2752,7 @@ body.light-mode .flatpickr-current-month input.cur-year, body.light-mode .flatpi
             </div>
             <div id="rpmFeedbackBar" style="display:none;margin-bottom:10px;padding:9px 14px;border-radius:9px;font-size:12px;font-weight:700;line-height:1.4;"></div>
 
-            <!-- Clickable Preview Box with Cost Breakdown -->
-            <div class="preview-box" id="previewBox" onclick="togglePreviewBreakdown()" style="cursor:pointer;text-align:left;">
-              <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
-                <div style="flex:1;">
-                  <div class="preview-label">Trip Net Preview</div>
-                  <div class="preview-value" id="preview_net" style="text-align:left;">$0.00</div>
-                  <div class="preview-hint" id="preview_hint"></div>
-                </div>
-                <div id="previewBreakdownToggle" style="font-size:10px;font-weight:800;color:var(--accent-cyan);letter-spacing:0.5px;padding:4px 8px;background:rgba(232,93,47,0.08);border:1px solid rgba(232,93,47,0.2);border-radius:6px;white-space:nowrap;">▼ BREAKDOWN</div>
-              </div>
-              <!-- Expandable breakdown container -->
-              <div id="previewBreakdown" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border-subtle);"></div>
-              <!-- DH cost display (inside box) -->
-              <div id="dh_cost_display" style="display:none; margin-top:8px; padding:8px 12px; background:rgba(255,51,102,0.06); border:1px solid rgba(255,51,102,0.15); border-radius:8px; font-size:12px; color:var(--text-secondary);"></div>
-            </div>
-
-            <!-- LOAD ANALYZER — compact summary bar, opens modal -->
-            <div id="analyzerSummaryBar" onclick="openAnalyzerModal()" style="display:none;">
-              <div style="display:flex; align-items:center; justify-content:space-between;">
-                <div id="analyzerSummaryText" style="font-size:13px; font-weight:700;"></div>
-                <div style="font-size:11px; color:var(--accent-cyan); font-weight:600;">TAP FOR DETAILS ▸</div>
-              </div>
-            </div>
+            <!-- Trip Net Preview now lives in the right column ("Load Intelligence" card) -->
 
             <button class="btn-primary" onclick="addLoad()">Add Load to Week</button>
 
@@ -2808,11 +2785,48 @@ body.light-mode .flatpickr-current-month input.cur-year, body.light-mode .flatpi
       </div>
 
       <div>
-        <!-- MAP -->
+        <!-- MAP (collapsible) -->
         <div class="card">
-          <div class="card-header">Weekly Route Map</div>
-          <div class="card-body" style="padding: 0;">
+          <div class="card-header" onclick="toggleDashMap()" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;user-select:none;">
+            <span>Weekly Route Map</span>
+            <span id="dashMapCaret" style="font-size:12px;color:var(--text-muted);">▼</span>
+          </div>
+          <div class="card-body" id="dashMapBody" style="padding: 0;">
             <div id="map"></div>
+          </div>
+        </div>
+
+        <!-- LOAD INTELLIGENCE — fed live by the New Trip Entry form -->
+        <div class="card no-print">
+          <div class="card-header">🧠 Load Intelligence</div>
+          <div class="card-body" style="padding:14px;">
+            <!-- Clickable Trip Net Preview with Cost Breakdown -->
+            <div class="preview-box" id="previewBox" onclick="togglePreviewBreakdown()" style="cursor:pointer;text-align:left;margin-bottom:10px;">
+              <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
+                <div style="flex:1;">
+                  <div class="preview-label">Trip Net Preview</div>
+                  <div class="preview-value" id="preview_net" style="text-align:left;">$0.00</div>
+                  <div class="preview-hint" id="preview_hint"></div>
+                </div>
+                <div id="previewBreakdownToggle" style="font-size:10px;font-weight:800;color:var(--accent-cyan);letter-spacing:0.5px;padding:4px 8px;background:rgba(232,93,47,0.08);border:1px solid rgba(232,93,47,0.2);border-radius:6px;white-space:nowrap;">▼ BREAKDOWN</div>
+              </div>
+              <!-- Expandable breakdown container -->
+              <div id="previewBreakdown" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border-subtle);"></div>
+              <!-- DH cost display (inside box) -->
+              <div id="dh_cost_display" style="display:none; margin-top:8px; padding:8px 12px; background:rgba(255,51,102,0.06); border:1px solid rgba(255,51,102,0.15); border-radius:8px; font-size:12px; color:var(--text-secondary);"></div>
+            </div>
+            <!-- Rate Intelligence + Destination Intelligence (auto-shows when origin+dest+miles filled) -->
+            <div id="rateIntelPanel" style="display:none;margin-bottom:10px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-lg);overflow:hidden;"></div>
+            <!-- LOAD ANALYZER — compact summary bar, opens modal -->
+            <div id="analyzerSummaryBar" onclick="openAnalyzerModal()" style="display:none;">
+              <div style="display:flex; align-items:center; justify-content:space-between;">
+                <div id="analyzerSummaryText" style="font-size:13px; font-weight:700;"></div>
+                <div style="font-size:11px; color:var(--accent-cyan); font-weight:600;">TAP FOR DETAILS ▸</div>
+              </div>
+            </div>
+            <div id="liEmptyHint" style="font-size:12px;color:var(--text-muted);line-height:1.6;">
+              Enter a pickup, drop and miles in New Trip Entry — lane history, counter-offer rates, the destination reload outlook and load analysis will appear here as you type.
+            </div>
           </div>
         </div>
       </div>
@@ -6217,6 +6231,36 @@ function toggleDriverNotes(force){
   body.style.display = open ? 'block' : 'none';
   if (caret) caret.style.transform = open ? 'rotate(90deg)' : '';
   try { localStorage.setItem('dash_notes_open_v1', open ? '1' : '0'); } catch(e) {}
+}
+
+// ── Collapsible Weekly Route Map (right column) ──
+function toggleDashMap(force){
+  const body  = document.getElementById('dashMapBody');
+  const caret = document.getElementById('dashMapCaret');
+  if (!body) return;
+  const open = (typeof force === 'boolean') ? force : body.style.display === 'none';
+  body.style.display = open ? '' : 'none';
+  if (caret) caret.textContent = open ? '▼' : '▶';
+  try { localStorage.setItem('dash_map_open_v1', open ? '1' : '0'); } catch(e) {}
+  // Re-render the map when reopened (Leaflet can't size itself while hidden)
+  if (open) setTimeout(function(){ try { if (typeof initMap === 'function') initMap(); } catch(e) {} }, 50);
+}
+
+// Restore the map's collapsed/open state on load (default: open)
+window.addEventListener('load', function(){
+  try {
+    if (localStorage.getItem('dash_map_open_v1') === '0') toggleDashMap(false);
+  } catch(e) {}
+});
+
+// ── "Load Intelligence" card empty-state hint ──
+function liUpdateHint(){
+  const hint = document.getElementById('liEmptyHint');
+  if (!hint) return;
+  const ri = document.getElementById('rateIntelPanel');
+  const an = document.getElementById('analyzerSummaryBar');
+  const anyVisible = (ri && ri.style.display !== 'none') || (an && an.style.display !== 'none');
+  hint.style.display = anyVisible ? 'none' : '';
 }
 
 function saveDriverStickyNotes(){
@@ -10342,6 +10386,8 @@ function mcleodGetMeta() {
 }
 
 function mcleodSaveLoads(loads, meta) {
+  // Fresh market data — rebuild the Destination Intelligence index on next use
+  if (typeof diInvalidate === 'function') { try { diInvalidate(); } catch(e) {} }
   // ── 1) Cloud + in-memory cache FIRST — authoritative and unaffected by
   // localStorage quota. Previously this ran after localStorage.setItem, so a
   // quota error silently skipped the cloud push AND the cache refresh, which
@@ -11464,6 +11510,11 @@ function _makeDestIcon(num, color) {
 function initMap() {
   var container = document.getElementById('map');
   if (!container) return;
+
+  // Map card collapsed — skip the render (and its route-shape fetches);
+  // toggleDashMap() re-runs initMap when it's reopened.
+  var mapBody = document.getElementById('dashMapBody');
+  if (mapBody && mapBody.style.display === 'none') return;
 
   if (_leafletMap) {
     try { _leafletMap.remove(); } catch(e) {}
@@ -18930,8 +18981,13 @@ function rateIntelUpdate() {
   var oState = riParseState(origin);
   var dState = riParseState(dest);
 
-  if (!oState || !dState || miles < 10) { panel.style.display = 'none'; return; }
+  if (!oState || !dState || miles < 10) {
+    panel.style.display = 'none';
+    if (typeof liUpdateHint === 'function') setTimeout(liUpdateHint, 0);
+    return;
+  }
   panel.style.display = '';
+  if (typeof liUpdateHint === 'function') setTimeout(liUpdateHint, 0);
 
   // ── Get driver + specs ───────────────────────────────────────────────────
   var driver = null;
@@ -18971,55 +19027,7 @@ function rateIntelUpdate() {
   var history = rateIntelGetLaneHistory(oState, dState);
   var sum     = rateIntelSummarise(history);
 
-  // ── Net estimator for a given rate ───────────────────────────────────────
-  function estNet(g) {
-    if (!driver || !specs || !g) {
-      // No driver: rough estimate = gross - fuel - maint
-      var fuelCost  = specs ? (miles / specs.mpg) * specs.fuel : (miles / 6.5) * 3.60;
-      var maintCost = specs ? miles * specs.maint : miles * 0.17;
-      return g - fuelCost - maintCost;
-    }
-    try {
-      var cn = calcLoadNet(driver, specs, { gross:g, miles:miles, tolls:0, detention:0, accessorials:0 });
-      return cn.net;
-    } catch(e) { return 0; }
-  }
-
-  // ── Build the 4 counter tiles ─────────────────────────────────────────────
-  var tiles = [];
-  if (beRpm > 0) {
-    tiles.push({ rpm: beRpm * 1.10, label: '' });
-    tiles.push({ rpm: beRpm * 1.20, label: '' });
-  } else {
-    tiles.push({ rpm: targetRpm - 0.25, label: '' });
-    tiles.push({ rpm: targetRpm - 0.10, label: '' });
-  }
-  tiles.push({ rpm: targetRpm,        label: 'your target' });
-  tiles.push({ rpm: targetRpm + 0.50, label: '' });
-
-  function netBadge(g) {
-    var n = estNet(g);
-    if (!n && n !== 0) return '';
-    var col  = n >= 0 ? '#3fb950' : '#ff4455';
-    var sign = n >= 0 ? '+' : '';
-    return '<div style="font-size:11px;color:'+col+';margin-top:3px;font-weight:700;">'+sign+'$'+Math.round(n).toLocaleString()+' net</div>';
-  }
-
-  var tilesHtml = tiles.map(function(t) {
-    var needed   = Math.round(t.rpm * miles);
-    var isTarget = t.label === 'your target';
-    var tileBg   = isTarget ? 'rgba(227,179,65,0.15)' : 'rgba(255,255,255,0.04)';
-    var tileBord = isTarget ? '2px solid rgba(227,179,65,0.55)' : '1px solid rgba(255,255,255,0.1)';
-    var rpmCol   = t.rpm >= targetRpm ? '#3fb950' : t.rpm >= beRpm ? '#f59e0b' : '#ff6b6b';
-
-    return '<div onclick="(function(){var el=document.getElementById(\'pay_gross\');if(el){el.value='+needed+';el.dispatchEvent(new Event(\'input\',{bubbles:true}));if(typeof preview===\'function\')preview();}})()" '+
-      'style="background:'+tileBg+';border:'+tileBord+';border-radius:8px;padding:10px 8px;text-align:center;cursor:pointer;">' +
-      (isTarget ? '<div style="font-size:9px;font-weight:700;color:#e3b341;letter-spacing:.5px;text-transform:uppercase;margin-bottom:3px;">your target</div>' : '') +
-      '<div style="font-size:14px;font-weight:800;color:#fff;">$'+needed.toLocaleString()+'</div>' +
-      '<div style="font-size:10px;color:'+rpmCol+';margin-top:2px;font-weight:600;">$'+t.rpm.toFixed(2)+' RPM</div>' +
-      netBadge(needed) +
-    '</div>';
-  }).join('');
+  // (Counter-offer tiles removed — unused in practice.)
 
   // ── Offer line ────────────────────────────────────────────────────────────
   var offerHtml = '';
@@ -19063,10 +19071,13 @@ function rateIntelUpdate() {
     '</div>';
   }
 
+  // ── Destination Intelligence — reload market at the drop + whole-trip math ──
+  var destHtml = '';
+  try { destHtml = destIntelHtml(dest, origin, miles, gross, beRpm); } catch(e) { console.warn('destIntel error:', e); }
+
   var driverName = driver && driver.name ? driver.name : null;
-  var footerHtml = '<div style="font-size:11px;color:rgba(255,255,255,0.35);border-top:1px solid rgba(255,255,255,0.06);padding-top:10px;display:flex;justify-content:space-between;margin-top:14px;">' +
+  var footerHtml = '<div style="font-size:11px;color:rgba(255,255,255,0.35);border-top:1px solid rgba(255,255,255,0.06);padding-top:10px;margin-top:14px;">' +
     '<span>'+(driverName ? 'Driver: '+escapeHtml(driverName) : 'No driver — estimates only')+'</span>' +
-    '<span>Tap any tile to fill rate</span>' +
   '</div>';
 
   panel.innerHTML =
@@ -19077,10 +19088,331 @@ function rateIntelUpdate() {
     '<div style="padding:14px;">' +
       offerHtml +
       beHtml +
-      '<div style="font-size:9px;font-weight:700;color:rgba(255,255,255,0.35);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px;">Counter at</div>' +
-      '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">' + tilesHtml + '</div>' +
+      destHtml +
       footerHtml +
     '</div>';
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// DESTINATION INTELLIGENCE — how the drop area sets up the REST of the week.
+// A $5,000 load into a dead market is not a $5,000 load: this grades the
+// destination's reload market (driver logs + McLeod, origins within 250 mi
+// of the drop, last 12 months), shows the recent reloads out, and blends
+// this load + a typical reload into whole-trip RPM / profit.
+// ════════════════════════════════════════════════════════════════════════════
+var _diIndex = null, _diIndexAt = 0;
+var _diGeoPending = {};
+var DI_RADIUS_MI = 250;
+var DI_GEO_KEY = 'wt_city_geo_v1';
+
+function diParse(str) {
+  var st = riParseState(str);
+  var city = '';
+  try {
+    if (typeof parseCityStateFromTextReload === 'function') {
+      var p = parseCityStateFromTextReload(str || '');
+      city = p.city || '';
+      if (!st && p.state) st = String(p.state).toUpperCase();
+    }
+  } catch(e) {}
+  if (!city && str) city = String(str).split(',')[0].trim();
+  return { city: city, state: st || null };
+}
+
+function diGeoCache() { try { return JSON.parse(localStorage.getItem(DI_GEO_KEY) || '{}'); } catch(e) { return {}; } }
+function diCityKey(city, st) { return String(city || '').trim().toLowerCase() + ',' + (st || ''); }
+
+// Sync coordinate lookup: geocode cache → state centroid (approx)
+function diCoordSync(city, st) {
+  if (city && st) {
+    var c = diGeoCache()[diCityKey(city, st)];
+    if (c && c.length === 2) return { lat: c[0], lon: c[1], approx: false };
+  }
+  if (st && WL_CENTERS[st]) return { lat: WL_CENTERS[st][0], lon: WL_CENTERS[st][1], approx: true };
+  return null;
+}
+
+// Async precise geocode (Google if key saved, else Nominatim), cached, then cb
+function diGeocodeAsync(city, st, cb) {
+  var key = diCityKey(city, st);
+  if (!city || !st || _diGeoPending[key]) return;
+  _diGeoPending[key] = true;
+  var q = city + ', ' + st + ', USA';
+  var done = function(lat, lon) {
+    if (lat != null) {
+      try {
+        var cache = diGeoCache();
+        cache[key] = [+(+lat).toFixed(4), +(+lon).toFixed(4)];
+        localStorage.setItem(DI_GEO_KEY, JSON.stringify(cache));
+      } catch(e) {}
+      if (cb) { try { cb(); } catch(e) {} }
+    }
+    // Leave _diGeoPending set on failure — no retry loops this session
+  };
+  var gk = (typeof gmapsGetKey === 'function') ? gmapsGetKey() : '';
+  if (gk) {
+    fetch('https://maps.googleapis.com/maps/api/geocode/json?address=' + encodeURIComponent(q) + '&key=' + gk)
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        var loc = d.results && d.results[0] && d.results[0].geometry && d.results[0].geometry.location;
+        done(loc ? loc.lat : null, loc ? loc.lng : null);
+      }).catch(function() { done(null); });
+  } else {
+    fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q),
+      { headers: { 'Accept': 'application/json' } })
+      .then(function(r) { return r.json(); })
+      .then(function(d) { done(d && d[0] ? +d[0].lat : null, d && d[0] ? +d[0].lon : null); })
+      .catch(function() { done(null); });
+  }
+}
+
+function diDateTs(s) { var t = Date.parse(s || ''); return isNaN(t) ? 0 : t; }
+
+// Build the outbound-market sample index (cached 10 min in memory)
+function diBuildIndex() {
+  if (_diIndex && (Date.now() - _diIndexAt) < 10 * 60 * 1000) return _diIndex;
+  var samples = [];
+  var cutoffTs = Date.now() - 365 * 86400000;
+
+  // Driver-logged loads — ALL drivers incl. archived (it's market data)
+  try {
+    Object.values(state.drivers || {}).forEach(function(drv) {
+      Object.entries(drv.weeks || {}).forEach(function(we) {
+        var ts = diDateTs(we[0]);
+        if (ts && ts < cutoffTs) return;
+        (we[1].loads || []).forEach(function(l) {
+          var g = +l.gross || 0;
+          if (!l.origin || g <= 0) return;
+          var o = diParse(l.origin);
+          if (!o.state) return;
+          var coord = (l.coords && l.coords.start && l.coords.start.lat)
+            ? { lat: +l.coords.start.lat, lon: +l.coords.start.lon, approx: false }
+            : diCoordSync(o.city, o.state);
+          if (!coord) return;
+          samples.push({ origin: l.origin, dest: l.dest || '', gross: g, miles: +l.miles || 0,
+            ts: ts, date: we[0], lat: coord.lat, lon: coord.lon, src: 'driver' });
+        });
+      });
+    });
+  } catch(e) {}
+
+  // McLeod company loads
+  try {
+    var ml = (typeof mcleodGetStoredLoads === 'function') ? mcleodGetStoredLoads() : [];
+    ml.forEach(function(l) {
+      var g = +(l.revenue || l.gross || 0);
+      if (!l.origin || g <= 0) return;
+      var ts = diDateTs(l.date);
+      if (ts && ts < cutoffTs) return;
+      var o = diParse(l.origin);
+      if (!o.state) return;
+      var coord = diCoordSync(o.city, o.state);
+      if (!coord) return;
+      samples.push({ origin: l.origin, dest: l.destination || l.dest || '', gross: g, miles: +(l.miles || 0),
+        ts: ts, date: String(l.date || ''), lat: coord.lat, lon: coord.lon, src: 'mcleod' });
+    });
+  } catch(e) {}
+
+  // Fleet-wide median outbound RPM — the baseline every area is graded against
+  var rpms = samples.filter(function(s) { return s.miles > 50; })
+    .map(function(s) { return s.gross / s.miles; })
+    .sort(function(a, b) { return a - b; });
+  _diIndex = { samples: samples, fleetMedRpm: rpms.length ? rpms[Math.floor(rpms.length / 2)] : 0 };
+  _diIndexAt = Date.now();
+  return _diIndex;
+}
+// New data invalidates the index
+function diInvalidate() { _diIndex = null; _diIndexAt = 0; }
+
+function diMedian(arr) {
+  if (!arr.length) return 0;
+  var a = arr.slice().sort(function(x, y) { return x - y; });
+  return a[Math.floor(a.length / 2)];
+}
+
+// Grade the market within DI_RADIUS_MI of the drop point
+function diAreaStats(destCoord) {
+  var idx = diBuildIndex();
+  var here = { lat: destCoord.lat, lon: destCoord.lon };
+  var near = idx.samples.filter(function(s) {
+    return haversineMiles(here, { lat: s.lat, lon: s.lon }) <= DI_RADIUS_MI;
+  });
+  var withMiles = near.filter(function(s) { return s.miles > 50; });
+  var medRpm   = diMedian(withMiles.map(function(s) { return s.gross / s.miles; }));
+  var medGross = diMedian(near.map(function(s) { return s.gross; }));
+  var medMiles = diMedian(withMiles.map(function(s) { return s.miles; }));
+  var medDh    = diMedian(near.map(function(s) {
+    return haversineMiles(here, { lat: s.lat, lon: s.lon }) * 1.25;
+  }));
+  var recent = near.slice().sort(function(a, b) { return b.ts - a.ts; }).slice(0, 4)
+    .map(function(r) {
+      return Object.assign({}, r, {
+        dh: Math.round(haversineMiles(here, { lat: r.lat, lon: r.lon }) * 1.25)
+      });
+    });
+  var grade;
+  if (!near.length) grade = 'NONE';
+  else if (near.length < 3) grade = 'THIN';
+  else if (idx.fleetMedRpm > 0 && medRpm > 0) {
+    grade = medRpm < idx.fleetMedRpm * 0.80 ? 'BAD'
+          : medRpm < idx.fleetMedRpm * 0.95 ? 'FAIR' : 'GOOD';
+  } else grade = 'THIN';
+  return { count: near.length, medRpm: medRpm, medGross: medGross, medMiles: medMiles,
+    medDh: medDh, recent: recent, grade: grade, fleetMedRpm: idx.fleetMedRpm };
+}
+
+// When the entered destination grades poorly: rank alternative destination
+// markets reachable from the PICKUP area (where the driver is now) — by the
+// blended two-leg economics of "load out there + typical reload back out".
+function diBetterMarkets(originCoord, excludeState) {
+  var idx = diBuildIndex();
+  var here = { lat: originCoord.lat, lon: originCoord.lon };
+  var fromHere = idx.samples.filter(function(s) {
+    return s.dest && haversineMiles(here, { lat: s.lat, lon: s.lon }) <= DI_RADIUS_MI;
+  });
+  var groups = {};
+  fromHere.forEach(function(s) {
+    var d = diParse(s.dest);
+    if (!d.state || d.state === excludeState) return;
+    (groups[d.state] = groups[d.state] || []).push(s);
+  });
+  var memo = {};
+  function marketStats(st2) {
+    if (memo[st2] !== undefined) return memo[st2];
+    var c = WL_CENTERS[st2];
+    memo[st2] = c ? diAreaStats({ lat: c[0], lon: c[1] }) : null;
+    return memo[st2];
+  }
+  var out = [];
+  Object.keys(groups).forEach(function(st2) {
+    var g = groups[st2];
+    if (g.length < 2) return; // need some evidence the lane exists for us
+    var wm = g.filter(function(s) { return s.miles > 50; });
+    var outGross = diMedian(g.map(function(s) { return s.gross; }));
+    var outMiles = diMedian(wm.map(function(s) { return s.miles; }));
+    var outRpm   = diMedian(wm.map(function(s) { return s.gross / s.miles; }));
+    var mk = marketStats(st2);
+    if (!mk || !mk.count) return;
+    var blendGross = outGross + (mk.medGross || 0);
+    var blendMiles = (outMiles || 0) + (mk.medMiles || 0) + (mk.medDh || 0);
+    var blendRpm = blendMiles > 0 ? blendGross / blendMiles : 0;
+    var example = g.slice().sort(function(a, b) { return b.ts - a.ts; })[0];
+    out.push({ state: st2, n: g.length, outGross: outGross, outMiles: outMiles, outRpm: outRpm,
+      reload: mk, blendRpm: blendRpm, blendGross: blendGross, blendMiles: Math.round(blendMiles), example: example });
+  });
+  out.sort(function(a, b) { return b.blendRpm - a.blendRpm; });
+  return out.slice(0, 3);
+}
+
+// Render the destination block for the Rate Intelligence panel
+function destIntelHtml(destStr, originStr, miles, gross, beRpm) {
+  var d = diParse(destStr);
+  if (!d.state) return '';
+  var coord = diCoordSync(d.city, d.state);
+  if (!coord) return '';
+  // Upgrade state-centroid guess to the real city in the background, then re-render
+  if (coord.approx && d.city) diGeocodeAsync(d.city, d.state, function() { rateIntelUpdate(); });
+
+  var st = diAreaStats(coord);
+  var money0 = function(v) { return '$' + Math.round(v).toLocaleString(); };
+  var areaLabel = (d.city ? d.city + ', ' : '') + d.state + (coord.approx ? ' area' : '') + ' · ' + DI_RADIUS_MI + ' mi radius';
+
+  if (st.grade === 'NONE') {
+    return '<div style="border-left:2px solid #f59e0b;padding:9px 12px;border-radius:0 8px 8px 0;background:rgba(245,158,11,0.08);margin-bottom:14px;">' +
+      '<div style="font-size:12px;font-weight:700;color:#f59e0b;">🧭 Unknown reload market — ' + escapeHtml(areaLabel) + '</div>' +
+      '<div style="font-size:11px;color:#f59e0b;opacity:.85;">No outbound history within ' + DI_RADIUS_MI + ' mi in the last 12 months. Plan the exit before committing.</div>' +
+    '</div>';
+  }
+
+  if (st.grade === 'GOOD') {
+    return '<div style="border-left:2px solid #3fb950;padding:7px 12px;border-radius:0 8px 8px 0;background:rgba(59,185,80,0.07);margin-bottom:14px;">' +
+      '<div style="font-size:12px;font-weight:700;color:#3fb950;">✓ Strong reload market — ' + escapeHtml(areaLabel) + '</div>' +
+      '<div style="font-size:11px;color:#3fb950;opacity:.85;">Outbound median ' + (st.medRpm ? '$' + st.medRpm.toFixed(2) + '/mi' : money0(st.medGross)) +
+      ' (fleet median $' + st.fleetMedRpm.toFixed(2) + ') · ' + st.count + ' loads out in 12 mo</div>' +
+    '</div>';
+  }
+
+  // BAD / FAIR / THIN — full warning block
+  var accent = st.grade === 'BAD' ? '#ff4455' : '#f59e0b';
+  var bg     = st.grade === 'BAD' ? 'rgba(255,68,85,0.08)' : 'rgba(245,158,11,0.08)';
+  var title  = st.grade === 'BAD'  ? '⚠️ TOUGH RELOAD AREA'
+             : st.grade === 'THIN' ? '🧭 THIN RELOAD MARKET'
+             : '⚠️ Below-average reload market';
+
+  var statLine = (st.medRpm ? 'Outbound median <b>$' + st.medRpm.toFixed(2) + '/mi</b> vs fleet $' + st.fleetMedRpm.toFixed(2) : 'Typical outbound <b>' + money0(st.medGross) + '</b>') +
+    ' · ' + st.count + ' load' + (st.count === 1 ? '' : 's') + ' out in 12 mo';
+
+  var recentHtml = st.recent.map(function(r) {
+    var rpm = r.miles > 50 ? ' · $' + (r.gross / r.miles).toFixed(2) + '/mi' : '';
+    var when = r.ts ? new Date(r.ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
+    var dhTag = (r.dh != null) ? ' · <span style="color:#f59e0b;">~' + r.dh.toLocaleString() + ' mi DH</span>' : '';
+    return '<div style="font-size:11px;color:var(--text-secondary);padding:2px 0;">' +
+      (when ? '<span style="color:var(--text-muted);">' + when + '</span> · ' : '') +
+      escapeHtml(r.origin) + ' → ' + escapeHtml(r.dest || '?') + ' · <b>' + money0(r.gross) + '</b>' + rpm + dhTag +
+      ' <span style="color:var(--text-muted);">(' + (r.src === 'mcleod' ? 'McLeod' : 'driver log') + ')</span></div>';
+  }).join('');
+
+  // Blended two-leg week math
+  var blendHtml = '';
+  if (gross > 0 && miles > 10 && st.medGross > 0) {
+    var dh = Math.round(st.medDh || 0);
+    var leg2mi = Math.round(st.medMiles || 0);
+    var totGross = gross + st.medGross;
+    var totMiles = miles + dh + leg2mi;
+    var blendRpm = totMiles > 0 ? totGross / totMiles : 0;
+    var thisRpm  = gross / miles;
+    var profitLine = '';
+    if (beRpm > 0 && totMiles > 0) {
+      var p = totGross - beRpm * totMiles;
+      profitLine = ' · est. ' + (p >= 0 ? '<b style="color:#3fb950;">+' : '<b style="color:#ff4455;">') + money0(Math.abs(p)) + '</b> vs break-even';
+    }
+    blendHtml = '<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.08);font-size:11px;color:var(--text-secondary);line-height:1.6;">' +
+      '📊 <b>Whole-trip math:</b> this load ' + money0(gross) + ' / ' + Math.round(miles).toLocaleString() + ' mi ($' + thisRpm.toFixed(2) + ')' +
+      ' + typical reload ' + money0(st.medGross) + (leg2mi ? ' / ' + leg2mi.toLocaleString() + ' mi' : '') +
+      (dh ? ' + ~' + dh.toLocaleString() + ' mi deadhead' : '') + '<br>' +
+      '→ <b>' + money0(totGross) + ' gross · ' + totMiles.toLocaleString() + ' total mi · $' + blendRpm.toFixed(2) + '/mi blended</b>' + profitLine +
+    '</div>';
+  }
+
+  // ── Better plays: where ELSE could this driver go from the pickup area? ──
+  var suggHtml = '';
+  try {
+    var o = diParse(originStr || '');
+    if (o.state) {
+      var oCoord = diCoordSync(o.city, o.state);
+      if (oCoord) {
+        if (oCoord.approx && o.city) diGeocodeAsync(o.city, o.state, function() { rateIntelUpdate(); });
+        var alts = diBetterMarkets(oCoord, d.state);
+        if (alts.length) {
+          var gradeChip = function(g2) {
+            var c2 = g2 === 'GOOD' ? '#3fb950' : g2 === 'BAD' ? '#ff4455' : '#f59e0b';
+            var t2 = g2 === 'GOOD' ? 'strong reloads' : g2 === 'BAD' ? 'weak reloads' : g2 === 'THIN' ? 'thin reloads' : 'fair reloads';
+            return '<span style="color:' + c2 + ';font-weight:700;">' + t2 + '</span>';
+          };
+          suggHtml = '<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.08);">' +
+            '<div style="font-size:9px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:3px;">🎯 Better plays from ' + escapeHtml((o.city ? o.city + ', ' : '') + o.state) + '</div>' +
+            alts.map(function(a) {
+              var ex = a.example ? '<div style="font-size:10px;color:var(--text-muted);padding-left:14px;">e.g. ' + escapeHtml(a.example.origin) + ' → ' + escapeHtml(a.example.dest) + ' · ' + money0(a.example.gross) + '</div>' : '';
+              return '<div style="font-size:11px;color:var(--text-secondary);padding:2px 0;">' +
+                '→ <b style="color:var(--text-primary);">' + a.state + '</b>' +
+                ' · from here: ' + money0(a.outGross) + (a.outMiles ? ' / ' + Math.round(a.outMiles).toLocaleString() + ' mi' : '') + (a.outRpm ? ' ($' + a.outRpm.toFixed(2) + ')' : '') +
+                ' · ' + a.n + ' loads · ' + gradeChip(a.reload.grade) + (a.reload.medRpm ? ' $' + a.reload.medRpm.toFixed(2) + '/mi out' : '') +
+                ' · <b>2-leg ≈ $' + a.blendRpm.toFixed(2) + '/mi</b>' +
+              '</div>' + ex;
+            }).join('') +
+          '</div>';
+        }
+      }
+    }
+  } catch(e) { console.warn('betterMarkets error:', e); }
+
+  return '<div style="border-left:2px solid ' + accent + ';padding:9px 12px;border-radius:0 8px 8px 0;background:' + bg + ';margin-bottom:14px;">' +
+    '<div style="font-size:12px;font-weight:800;color:' + accent + ';margin-bottom:2px;">' + title + ' — ' + escapeHtml(areaLabel) + '</div>' +
+    '<div style="font-size:11px;color:' + accent + ';opacity:.9;margin-bottom:6px;">' + statLine + '</div>' +
+    (recentHtml ? '<div style="font-size:9px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:2px;">Recent reloads out</div>' + recentHtml : '') +
+    blendHtml +
+    suggHtml +
+  '</div>';
 }
 
 // Attach listeners to dispatch form fields whenever they exist
