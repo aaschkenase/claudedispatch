@@ -2188,8 +2188,9 @@ body.light-mode .flatpickr-current-month input.cur-year, body.light-mode .flatpi
             <input type="text" id="samProxyUrl" class="sam-input" placeholder="http://localhost:3377" />
             <button class="sam-btn green" onclick="samSaveProxy()" style="white-space:nowrap;">💾 Save & Test</button>
             <button class="sam-btn" onclick="samCheckProxy()" style="white-space:nowrap;">🔄 Re-check</button>
+            <button class="sam-btn" onclick="samClearProxy()" style="white-space:nowrap;border-color:rgba(255,68,85,0.4);color:#ff6b6b;">✕ Clear Proxy</button>
           </div>
-          <div id="samProxyStatus" style="margin-top:8px;font-size:12px;font-weight:600;color:var(--text-muted);">⚪ No proxy configured — direct API calls (may hit CORS)</div>
+          <div id="samProxyStatus" style="margin-top:8px;font-size:12px;font-weight:600;color:var(--text-muted);">🟢 Direct mode — no proxy needed</div>
         </div>
       </div>
     </div>
@@ -15643,6 +15644,14 @@ if __name__=="__main__":
     }
     samCheckProxy(); // immediately test the new proxy
   };
+  window.samClearProxy = function() {
+    localStorage.removeItem(SAM_PROXY_KEY);
+    const inp = document.getElementById('samProxyUrl');
+    if (inp) inp.value = '';
+    _samDirectBlocked = false;
+    if (window.toast) toast('✕ Proxy cleared — connecting directly to Samsara', 'success');
+    samCheckProxy();
+  };
   window.samCheckProxy = samCheckProxy;
   const SAM_LINK_STORAGE  = 'samsara_driver_links_v1';  // { samsaraDriverId: appDriverId }
   const SAM_TRUCK_STORAGE = 'samsara_truck_assign_v1';   // { samsaraDriverId: samsaraVehicleId }
@@ -15718,10 +15727,11 @@ if __name__=="__main__":
         pillEl.style.borderColor = 'rgba(63,185,80,0.35)';
         pillEl.style.color = 'var(--success)';
       } else {
-        pillEl.textContent = proxy ? '❌ Proxy down' : '⚠️ No proxy';
-        pillEl.style.background = 'rgba(255,68,85,0.1)';
-        pillEl.style.borderColor = 'rgba(255,68,85,0.35)';
-        pillEl.style.color = 'var(--danger)';
+        // No proxy = direct mode, which is the normal healthy state now
+        pillEl.textContent = proxy ? '⚠️ Proxy down — using direct' : '🟢 Direct connection';
+        pillEl.style.background = proxy ? 'rgba(255,184,0,0.12)' : 'rgba(63,185,80,0.1)';
+        pillEl.style.borderColor = proxy ? 'rgba(255,184,0,0.3)' : 'rgba(63,185,80,0.35)';
+        pillEl.style.color = proxy ? 'var(--warning)' : 'var(--success)';
       }
     }
 
@@ -15729,8 +15739,8 @@ if __name__=="__main__":
 
     if (!proxy) {
       if (statusEl) {
-        statusEl.textContent = '⚪ No proxy configured — direct API calls will fail due to CORS. Enter proxy URL below and start the proxy server.';
-        statusEl.style.color = 'var(--warning)';
+        statusEl.textContent = '🟢 Direct mode — connecting straight to api.samsara.com. No proxy needed. (Set one up below only if your network blocks the direct connection.)';
+        statusEl.style.color = 'var(--success)';
       }
       setPill(false);
       return false;
@@ -15739,15 +15749,15 @@ if __name__=="__main__":
       const r = await fetch(proxy.replace(/\/$/, '') + '/health', { signal: AbortSignal.timeout(3000) });
       const ok = r.ok;
       if (statusEl) {
-        statusEl.textContent = ok ? '✅ Proxy running at ' + proxy : '❌ Proxy unreachable at ' + proxy + ' — is the proxy server running?';
-        statusEl.style.color = ok ? 'var(--success)' : 'var(--danger)';
+        statusEl.textContent = ok ? '✅ Proxy running at ' + proxy : '⚠️ Proxy unreachable at ' + proxy + ' — no problem, the app connects directly to Samsara. Click "Clear Proxy" to stop checking, or restart the proxy if you need it.';
+        statusEl.style.color = ok ? 'var(--success)' : 'var(--warning)';
       }
       setPill(ok);
       return ok;
     } catch(e) {
       if (statusEl) {
-        statusEl.textContent = '❌ Proxy not responding at ' + proxy + ' — run: node proxy.js (or python3 proxy.py) then refresh.';
-        statusEl.style.color = 'var(--danger)';
+        statusEl.textContent = '⚠️ Proxy not responding at ' + proxy + ' — no problem, the app connects directly to Samsara. Click "Clear Proxy" to stop checking, or restart the proxy if you need it.';
+        statusEl.style.color = 'var(--warning)';
       }
       setPill(false);
       return false;
@@ -15762,25 +15772,44 @@ if __name__=="__main__":
 
   function _samCorsError() {
     const proxy = localStorage.getItem(SAM_PROXY_KEY) || '';
-    const proxyRunning = proxy && document.getElementById('samProxyStatus')?.textContent?.includes('✅');
-    if (proxyRunning) {
-      return new Error('CORS: Proxy is configured but not responding. Restart proxy.js / proxy.py then retry.');
+    if (proxy) {
+      return new Error('Samsara unreachable: direct connection was blocked AND the proxy at ' + proxy + ' is not responding. Check your internet connection, or restart the proxy.');
     }
     return new Error(
-      'CORS: Samsara blocks direct browser requests. ' +
-      'Go to Samsara → 🔀 Proxy Setup and start the local proxy.'
+      'Samsara unreachable: this browser blocked the direct connection. ' +
+      'Check your internet/firewall, or set up the local proxy under Samsara → 🔀 Proxy Setup as a fallback.'
     );
   }
 
   // ── Core fetch wrapper ──
   // Priority: 1) Chrome extension bridge (window.__samExtBridge)
-  //           2) Configured proxy URL
-  //           3) Direct fetch (works only if no CORS block)
+  //           2) DIRECT to api.samsara.com (works in modern browsers — no proxy needed)
+  //           3) Configured proxy URL as automatic fallback
+  // A stale proxy URL (e.g. localhost:3377 saved on another machine) no longer
+  // breaks anything: direct is tried first, and once direct is known to be
+  // CORS-blocked in this browser, the order flips to proxy-first.
+  var _samDirectBlocked = false;
+
+  async function _samRawFetch(base, endpoint, params, key) {
+    const url = new URL(base + endpoint);
+    Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+    const res = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        'Authorization': 'Bearer ' + key,
+        'Content-Type': 'application/json'
+      }
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`Samsara API ${res.status}: ${body.slice(0, 200)}`);
+    }
+    return res.json();
+  }
+
   async function samFetch(endpoint, params = {}) {
     const key = samGetKey();
     if (!key) throw new Error('No API key configured. Enter your Samsara API token in the API Key tab.');
-
-    const queryStr = Object.entries(params).map(([k,v]) => k + '=' + encodeURIComponent(v)).join('&');
 
     // ── Path 1: Chrome extension bridge (injected by extension into window) ──
     if (typeof window.__samExtBridge === 'function') {
@@ -15792,31 +15821,27 @@ if __name__=="__main__":
       }
     }
 
-    // ── Path 2: Proxy ──
-    const proxy = localStorage.getItem(SAM_PROXY_KEY) || '';
-    const base  = proxy ? proxy.replace(/\/$/, '') : 'https://api.samsara.com';
+    // ── Paths 2+3: direct first, proxy fallback (order flips if direct is blocked) ──
+    const DIRECT = 'https://api.samsara.com';
+    const proxy  = (localStorage.getItem(SAM_PROXY_KEY) || '').replace(/\/$/, '');
+    const order  = [];
+    if (_samDirectBlocked && proxy) { order.push(proxy, DIRECT); }
+    else { order.push(DIRECT); if (proxy) order.push(proxy); }
 
-    const url = new URL(base + endpoint);
-    Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-
-    try {
-      const res = await fetch(url.toString(), {
-        method: 'GET',
-        headers: {
-          'Authorization': 'Bearer ' + key,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!res.ok) {
-        const body = await res.text().catch(() => '');
-        throw new Error(`Samsara API ${res.status}: ${body.slice(0, 200)}`);
+    let lastErr = null;
+    for (let i = 0; i < order.length; i++) {
+      try {
+        const out = await _samRawFetch(order[i], endpoint, params, key);
+        if (order[i] === DIRECT) _samDirectBlocked = false;
+        return out;
+      } catch(e) {
+        // A real API response (401, 404, …) is final — don't mask it by retrying elsewhere
+        if (!_isCorsError(e)) throw e;
+        lastErr = e;
+        if (order[i] === DIRECT) _samDirectBlocked = true;
       }
-      return res.json();
-    } catch(e) {
-      if (_isCorsError(e)) throw _samCorsError();
-      throw e;
     }
+    throw _samCorsError();
   }
 
   // ── Paginated fetch (handles cursor pagination) ──
@@ -17143,10 +17168,10 @@ if __name__=="__main__":
       samSetConnectStatus('disconnected', 'Key loaded — click Test Connection');
     }
 
-    // Load saved proxy URL
+    // Load saved proxy URL (empty = direct mode, the normal state)
     const savedProxy = localStorage.getItem(SAM_PROXY_KEY) || '';
     const proxyInput = document.getElementById('samProxyUrl');
-    if (proxyInput) proxyInput.value = savedProxy || 'http://localhost:3377';
+    if (proxyInput) proxyInput.value = savedProxy;
     // Run health check after a short delay (don't block page load)
     setTimeout(samCheckProxy, 2000);
 
